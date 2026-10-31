@@ -55,5 +55,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Guiyu-Windows-preview
-          path: Windows/out/*.zip
+          path: |
+            Windows/out/*.zip
+            Windows/out/*-setup.exe
 
