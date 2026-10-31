@@ -7,6 +7,30 @@ struct BrowserRow: Identifiable, Equatable {
 }
 enum BrowserTableAppearance { case files, projects }
 
+private enum CategoryDisclosureImages {
+    static let expanded = make(expanded:true)
+    static let collapsed = make(expanded:false)
+    private static func make(expanded:Bool) -> NSImage {
+        let symbol = NSImage(systemSymbolName:"chevron.down",accessibilityDescription:"展开或收起")!
+        let side:CGFloat = 12
+        let scale = min(side/symbol.size.width,side/symbol.size.height)
+        let size = NSSize(width:symbol.size.width*scale,height:symbol.size.height*scale)
+        let image = NSImage(size:NSSize(width:side,height:side),flipped:false) { _ in
+            NSGraphicsContext.saveGraphicsState()
+            defer { NSGraphicsContext.restoreGraphicsState() }
+            let transform = NSAffineTransform()
+            transform.translateX(by:side/2,yBy:side/2)
+            if !expanded { transform.rotate(byDegrees:90) }
+            transform.concat()
+            symbol.draw(in:NSRect(x:-size.width/2,y:-size.height/2,width:size.width,height:size.height))
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+    static func image(expanded:Bool) -> NSImage { expanded ? self.expanded : collapsed }
+}
+
 struct BrowserTable: NSViewRepresentable {
     let rows: [BrowserRow]; @Binding var selection: String?
     var multipleSelection: Binding<Set<String>>? = nil
@@ -115,8 +139,9 @@ struct BrowserTable: NSViewRepresentable {
             cell.titleCenter.constant = value.subtitle == nil ? 0 : -7
             cell.dateWidth.constant = value.date != nil && !value.header ? 112 : 0
             cell.date.stringValue = value.header ? "" : value.date?.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour().minute()) ?? ""
-            let symbol = value.header ? (value.expanded ? "chevron.down" : "chevron.right") : value.folder ? "folder.fill" : value.file?.symbol ?? "doc"
-            cell.icon.image = value.folder && !value.header ? WorkspaceTheme.folder : (!value.header ? WorkspaceFileIcons.image(for:value.file) : nil) ?? NSImage(systemSymbolName:symbol,accessibilityDescription:value.header ? "展开或收起" : "文件")
+            let symbol = value.folder ? "folder.fill" : value.file?.symbol ?? "doc"
+            cell.icon.imageScaling = value.header ? .scaleNone : .scaleProportionallyUpOrDown
+            cell.icon.image = value.header ? CategoryDisclosureImages.image(expanded:value.expanded) : value.folder ? WorkspaceTheme.folder : WorkspaceFileIcons.image(for:value.file) ?? NSImage(systemSymbolName:symbol,accessibilityDescription:"文件")
             cell.icon.contentTintColor = value.header ? NSColor(WorkspaceTheme.secondary) : nil
             cell.toolTip = value.title + (value.subtitle.map { "\n所属项目："+$0 } ?? ""); return cell
         }
@@ -473,7 +498,7 @@ struct ProjectWorkspace: View {
                 if !search.output.unavailableProjects.isEmpty { Text("部分项目无法读取，已显示其余结果；请检查访问权限后刷新。").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20).padding(.bottom,8) }
             }
             if !isScopeSearch, let p = project, sourceFolder != p.path {
-                HStack { Button { let parent = URL(fileURLWithPath:sourceFolder).deletingLastPathComponent().path; sourceFolder = (parent == p.path || parent.hasPrefix(p.path+"/")) ? parent : p.path; loadSource() } label: { Image(systemName:"chevron.left") }.disabled(sourceFolder == p.path); Text(sourceFolder == p.path ? "项目根目录" : String(sourceFolder.dropFirst(p.path.count+1))).font(.caption).lineLimit(1); Spacer() }.padding(.horizontal,20).padding(.bottom,10)
+                DirectoryBreadcrumbBar(root:p.path,current:sourceFolder,rootTitle:"项目根目录",navigate:navigateSource).padding(.horizontal,20).padding(.bottom,8)
             }
             if fileSelections.count > 1 { HStack(spacing:10) {
                 Text("已选 \(fileSelections.count) 项").font(.caption).foregroundStyle(.secondary)
@@ -510,6 +535,11 @@ struct ProjectWorkspace: View {
         query = ""; filePath = nil; fileSelections = []
         if projectPath == owner { sourceFolder = row.id; loadSource() }
         else { searchFolderToOpen = row.id; projectPath = owner }
+    }
+    func navigateSource(to path:String) {
+        guard let p = project, let destination = DirectoryBreadcrumb.destination(path,root:p.path,current:sourceFolder) else { return }
+        filePath = nil; fileSelections = []; showPreview = false
+        sourceFolder = destination; loadSource()
     }
     func requestDirectRename(_ row: BrowserRow) { manualNaming = NamingTarget(path:row.id,folder:row.folder,projectPath:row.file?.project ?? projectOwnerPath(row.id,projects:store.settings.projects) ?? project?.path ?? row.id) }
     func requestRename(_ path: String, folder: Bool) { naming = NamingTarget(path:path,folder:folder,projectPath:projectOwnerPath(path,projects:store.settings.projects) ?? project?.path ?? selectedDirectory?.path ?? path) }

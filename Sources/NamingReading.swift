@@ -2,14 +2,15 @@ import Foundation
 import PDFKit
 import AppKit
 
+let unpaginatedNamingCharacterLimit = 300
+
 // Naming text is intentionally separate from the full text cache used by archiving.
-// Stop after the cover and second page when a usable identity is already available.
+// Naming has a hard two-page budget, including when no title is found.
 func namingPageText(count: Int, cancelled: () -> Bool, page: (Int) -> String, enough: (String) -> Bool) -> String {
     var text = ""
-    for i in 0..<count {
+    for i in 0..<min(count,2) {
         if cancelled() { break }
         text += (text.isEmpty ? "" : "\n\u{000C}\n") + page(i)
-        if i >= 1 && enough(text) { break }
         if text.count >= 100000 { break }
     }
     return String(text.prefix(100000))
@@ -19,33 +20,93 @@ private final class NamingWordReader: NSObject, XMLParserDelegate {
     var text = ""; var pages = 1; var paragraphs = 0; var inText = false; var paragraph = ""
     var hasPageMarkers = false
     var openingOnly = false
+    var openingCharacterLimit:Int? = nil
+    var preserveSoftWrappedTitles = false
+    var currentParagraph:String {
+        guard preserveSoftWrappedTitles else { return paragraph }
+        // A w:br inside one Word paragraph is a soft line break, not another
+        // paragraph/title. Preserve real page delimiters independently.
+        return paragraph.components(separatedBy:"\u{000C}").map(namingTitleWhitespace).joined(separator:"\n\u{000C}\n")
+    }
+    private var boundaryKinds = Set<String>()
+    private var textSinceBoundary = false
     let cancelled: () -> Bool; let enough: (String) -> Bool
     init(cancelled: @escaping () -> Bool, enough: @escaping (String) -> Bool) { self.cancelled = cancelled; self.enough = enough }
-    func boundary(_ parser: XMLParser) {
-        // Break occurs before the next page: never consume page 3 if pages 1–2 suffice.
-        if pages >= 2 && (openingOnly || enough(text + "\n" + paragraph)) { text += "\n" + paragraph; paragraph = ""; parser.abortParsing(); return }
-        pages += 1; paragraph += "\n\u{000C}\n"
+    func boundary(_ parser: XMLParser,kind:String) {
+        if !textSinceBoundary, !boundaryKinds.isEmpty, !boundaryKinds.contains(kind) { boundaryKinds.insert(kind); return }
+        if kind == "before", pages == 1, (text+paragraph).trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { return }
+        // Break occurs before the next page: opening-only readers never consume page 3.
+        if pages >= 2 && (openingOnly || enough(text + "\n" + paragraph)) { text += "\n" + currentParagraph; paragraph = ""; parser.abortParsing(); return }
+        pages += 1; paragraph += "\n\u{000C}\n"; boundaryKinds = [kind]; textSinceBoundary = false
     }
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String:String]) {
-        if cancelled() || text.count > (openingOnly ? 12000 : 100000) { parser.abortParsing(); return }
+        if cancelled() || text.count+paragraph.count >= (openingCharacterLimit ?? (openingOnly ? 12000 : 100000)) { parser.abortParsing(); return }
         if elementName == "w:t" { inText = true }
         if elementName == "w:tab" { paragraph += " " }
-        if elementName == "w:lastRenderedPageBreak" || (elementName == "w:br" && attributes["w:type"] == "page") { boundary(parser) }
+        if elementName == "w:lastRenderedPageBreak" { boundary(parser,kind:"rendered") }
+        if elementName == "w:br" && attributes["w:type"] == "page" { boundary(parser,kind:"manual") }
         if elementName == "w:br" && attributes["w:type"] != "page" { paragraph += "\n" }
-        if elementName == "w:pageBreakBefore" && attributes["w:val"] != "0" && attributes["w:val"] != "false" { boundary(parser) }
+        if elementName == "w:pageBreakBefore" && attributes["w:val"] != "0" && attributes["w:val"] != "false" { boundary(parser,kind:"before") }
     }
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        if inText { paragraph += string }
-        if openingOnly && text.count+paragraph.count >= 12000 { parser.abortParsing() }
+        if inText {
+            if let limit = openingCharacterLimit { paragraph += string.prefix(max(0,limit-text.count-paragraph.count)) }
+            else { paragraph += string }
+            if !string.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { textSinceBoundary = true }
+        }
+        if openingOnly && text.count+paragraph.count >= (openingCharacterLimit ?? 12000) { parser.abortParsing() }
     }
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
         if elementName == "w:t" { inText = false }
         if elementName == "w:p" {
-            text += "\n" + paragraph; paragraph = ""; paragraphs += 1
+            text += "\n" + currentParagraph; paragraph = ""; paragraphs += 1
             // Unpaginated Word has no reliable physical pages. Use a bounded opening excerpt.
-            if !hasPageMarkers && (paragraphs >= 60 || text.count >= 6000) && (openingOnly || enough(text)) { parser.abortParsing() }
+            if let limit = openingCharacterLimit {
+                if text.count >= limit { parser.abortParsing() }
+            } else if !hasPageMarkers && (paragraphs >= 60 || text.count >= 6000) && (openingOnly || enough(text)) { parser.abortParsing() }
         }
     }
+}
+
+// Word files without rendered pagination use an explicitly bounded opening excerpt.
+// This exception is not described as two physical pages.
+func wordNamingOpening(_ file:FileItem,token:IndexCancellation) -> (text:String,paginated:Bool) {
+    guard !token.isCancelled else { return ("",false) }
+    if file.ext == "docx" {
+        let xml = run("/usr/bin/unzip",["-p",file.path,"word/document.xml"])
+        guard !token.isCancelled else { return ("",false) }
+        let paginated = xml.contains("lastRenderedPageBreak")
+        let reader = NamingWordReader(cancelled:{token.isCancelled},enough:{_ in false})
+        reader.openingOnly = true; reader.hasPageMarkers = paginated;reader.preserveSoftWrappedTitles = true
+        if !paginated { reader.openingCharacterLimit = unpaginatedNamingCharacterLimit }
+        let parser = XMLParser(data:Data(xml.utf8)); parser.delegate = reader; parser.shouldResolveExternalEntities = false
+        _ = parser.parse()
+        let text = String((reader.text+"\n"+reader.currentParagraph).prefix(paginated ? 12000 : unpaginatedNamingCharacterLimit))
+        return (text,paginated)
+    }
+    guard ["doc","rtf"].contains(file.ext) else { return ("",false) }
+    let process = Process(), pipe = Pipe()
+    process.executableURL = URL(fileURLWithPath:"/usr/bin/textutil"); process.arguments = ["-convert","txt","-stdout",file.path]
+    process.standardOutput = pipe; process.standardError = FileHandle.nullDevice; process.standardInput = FileHandle.nullDevice
+    do {
+        try process.run()
+        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global(qos:.utility).asyncAfter(deadline:.now()+15,execute:timeout)
+        defer { timeout.cancel(); try? pipe.fileHandleForReading.close(); if process.isRunning { process.terminate() }; process.waitUntilExit() }
+        var data = Data()
+        func completeUTF8Prefix() -> String {
+            for count in 0...min(3,data.count) {
+                if let text = String(data:data.dropLast(count),encoding:.utf8) { return text }
+            }
+            return String(decoding:data,as:UTF8.self)
+        }
+        while data.count < 32768 && !token.isCancelled {
+            guard let part = try pipe.fileHandleForReading.read(upToCount:min(300,32768-data.count)), !part.isEmpty else { break }
+            data.append(part)
+            if completeUTF8Prefix().count >= unpaginatedNamingCharacterLimit { break }
+        }
+        return (String(completeUTF8Prefix().prefix(unpaginatedNamingCharacterLimit)),false)
+    } catch { return ("",false) }
 }
 
 func extractForNaming(_ file: FileItem, token: IndexCancellation) -> String {
@@ -60,24 +121,15 @@ func extractForNaming(_ file: FileItem, token: IndexCancellation) -> String {
             return text + "\n" + ocr(cg)
         },enough:enough)
     }
-    if file.ext == "docx" {
-        let xml = run("/usr/bin/unzip",["-p",file.path,"word/document.xml"])
-        if !xml.isEmpty, !token.isCancelled {
-            let reader = NamingWordReader(cancelled:{ token.isCancelled },enough:enough)
-            reader.hasPageMarkers = xml.contains("lastRenderedPageBreak") || xml.range(of:"w:type=[\"']page[\"']|w:pageBreakBefore",options:.regularExpression) != nil
-            let parser = XMLParser(data:Data(xml.utf8)); parser.delegate = reader; parser.shouldResolveExternalEntities = false
-            _ = parser.parse()
-            if !reader.text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty { return reader.text }
-        }
-    }
-    if token.isCancelled { return "" }
-    let text = extract(file.url)
-    // Legacy Word/text formats may expose form-feed page separators; otherwise inspect chunks.
+    if ["docx","doc","rtf"].contains(file.ext) { return wordNamingOpening(file,token:token).text }
+    guard !token.isCancelled else { return "" }
+    if ["png","jpg","jpeg","heic","tiff"].contains(file.ext) { return extract(file.url) }
+    guard ["txt","md"].contains(file.ext), let handle = try? FileHandle(forReadingFrom:file.url) else { return "" }
+    defer { try? handle.close() }
+    guard let data = try? handle.read(upToCount:32768) else { return "" }
+    let text = String(data:data,encoding:.utf8) ?? String(data:data,encoding:.utf16) ?? ""
     let pages = text.components(separatedBy:"\u{000C}")
-    if pages.count > 1 { return namingPageText(count:pages.count,cancelled:{ token.isCancelled },page:{ pages[$0] },enough:enough) }
-    let characters = Array(text)
-    let chunks = stride(from:0,to:characters.count,by:3000).map { String(characters[$0..<min($0+3000,characters.count)]) }
-    return namingPageText(count:chunks.count,cancelled:{ token.isCancelled },page:{ chunks[$0] },enough:enough)
+    return namingPageText(count:pages.count,cancelled:{token.isCancelled},page:{String(pages[$0].prefix(6000))},enough:{_ in false})
 }
 
 func namingReadingTest(root: URL) throws {
@@ -90,7 +142,7 @@ func namingReadingTest(root: URL) throws {
     read = []
     let later = ["响应文件", "目录", "项目名称：第三页智慧园区建设项目", "后面不必读取"]
     let fallback = namingPageText(count:4,cancelled:{false},page:{ read.append($0); return later[$0] },enough:enough)
-    try verify(read == [0,1,2] && fallback.contains("第三页"),"Continue only when first two pages lack identity")
+    try verify(read == [0,1] && !fallback.contains("第三页"),"Never read page three even when the first two lack a title")
     read = []
     _ = namingPageText(count:3,cancelled:{true},page:{ read.append($0); return cover[$0] },enough:enough)
     try verify(read.isEmpty,"Cancellation must prevent further reads")
@@ -109,15 +161,15 @@ func namingReadingTest(root: URL) throws {
     try verify(text.contains("前两页") && !text.contains("后文其他"),"Real PDF extraction must not include later-page examples")
     func wordRead(_ pageTexts: [String]) -> String {
         let xml = "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>" + pageTexts.map { "<w:p><w:r><w:t>"+$0+"</w:t></w:r></w:p>" }.joined(separator:"<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>") + "</w:body></w:document>"
-        let reader = NamingWordReader(cancelled:{false},enough:enough); reader.hasPageMarkers = true
+        let reader = NamingWordReader(cancelled:{false},enough:enough); reader.hasPageMarkers = true; reader.openingOnly = true
         let parser = XMLParser(data:Data(xml.utf8)); parser.delegate = reader; _ = parser.parse(); return reader.text
     }
     try verify(!wordRead(cover).contains("后文其他"),"Word page breaks preserve cover-first extraction")
-    try verify(wordRead(later).contains("第三页") && !wordRead(later).contains("后面不必"),"Word missing identity falls back to later page")
-    print("PASS: naming reads pages 1–2 first, stops on identity, falls back to later pages, PDFKit and Word page boundaries, cancellation")
+    try verify(!wordRead(later).contains("第三页"),"Word extraction stops after page two without identity")
+    print("PASS: strict naming pages 1–2, no later-page fallback, PDFKit and Word boundaries, cancellation")
 }
 
-// Quick archive has a strict two-page budget; naming's progressive reading is unchanged.
+// Archive extraction retains its own existing two-page opening policy.
 func archiveFirstPages(count: Int, token: IndexCancellation, page: (Int) -> String) -> String {
     var values: [String] = []
     for index in 0..<min(count,2) {

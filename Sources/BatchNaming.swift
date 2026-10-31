@@ -41,7 +41,7 @@ struct BatchRenameDialog: View {
         VStack(alignment:.leading,spacing:14) {
             HStack { Text(request.recommended ? "批量智能命名" : "批量更改名称").font(.title2.bold()); Spacer(); Text("\(edits.filter(\.included).count) / \(edits.count) 项").foregroundStyle(.secondary) }
             Text("逐项核对并修改新名称；取消勾选可跳过。确认后同步更改 Finder 中的名称，同名不覆盖。").font(.caption).foregroundStyle(.secondary)
-            if loading { HStack { ProgressView().controlSize(.small); Text("正在读取第 \(min(progress+1,edits.count)) / \(edits.count) 项，优先前两页…").font(.caption) } }
+            if loading { HStack { ProgressView().controlSize(.small); Text("正在读取第 \(min(progress+1,edits.count)) / \(edits.count) 项：前两页／Word 开头节选／Excel 表头…").font(.caption) } }
             if !request.recommended {
                 HStack {
                     TextField("查找文字",text:$find).textFieldStyle(.roundedBorder)
@@ -60,7 +60,7 @@ struct BatchRenameDialog: View {
                                 TextField("新名称（文件须含扩展名）",text:Binding(get:{edit.name},set:{edit.name=$0;edit.userEdited=true})).textFieldStyle(.roundedBorder)
                                 if !edit.candidates.isEmpty {
                                     Menu("其他候选") { ForEach(edit.candidates) { candidate in Button(candidate.name) {
-                                        edit.name = store.smartProposedName(base:candidate.name,target:edit.target,now:namingReferenceDate); edit.evidence = candidate.evidence; edit.userEdited = true
+                                        edit.name = store.titleProposedName(candidate.name,target:edit.target,date:store.namingDate(for:edit.target,now:namingReferenceDate)); edit.evidence = candidate.evidence; edit.userEdited = true
                                     } } }.fixedSize()
                                 }
                                 if !edit.evidence.isEmpty { Text(edit.evidence).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
@@ -91,9 +91,9 @@ struct BatchRenameDialog: View {
             edits[index].candidates = values
             if !edits[index].userEdited {
                 if let first = values.first {
-                    edits[index].name = store.smartProposedName(base:first.name,target:target,now:namingReferenceDate)
+                    edits[index].name = store.titleProposedName(first.name,target:target,date:store.namingDate(for:target,now:namingReferenceDate))
                     edits[index].evidence = first.evidence
-                } else { edits[index].included = false; edits[index].evidence = "未找到明确名称，已跳过；可填写后勾选。" }
+                } else { edits[index].included = false; edits[index].evidence = "未找到明确标题，保留原名；可修改后勾选。" }
             }
             loadNext(index+1)
         }

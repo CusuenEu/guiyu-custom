@@ -1,10 +1,10 @@
 import SwiftUI
 
 enum SmartNamingFormat:String,Codable,CaseIterable,Identifiable {
-    case month, monthDay, category
+    case nameOnly, month, monthDay, category
     var id:String { rawValue }
     var title:String {
-        switch self { case .month: return "月份 + 识别的名称"; case .monthDay: return "月日 + 识别的名称"; case .category: return "分类 + 识别的名称" }
+        switch self { case .nameOnly: return "仅识别的名称"; case .month: return "月份 + 识别的名称"; case .monthDay: return "月日 + 识别的名称"; case .category: return "分类 + 识别的名称" }
     }
 }
 enum NamingDateSource:String,Codable,CaseIterable {
@@ -12,36 +12,38 @@ enum NamingDateSource:String,Codable,CaseIterable {
     var title:String { self == .today ? "命名当天" : "文件创建日期" }
 }
 struct NamingRuleSettings:Codable,Equatable {
-    var folder:SmartNamingFormat = .month
-    var document:SmartNamingFormat = .category
+    var folder:SmartNamingFormat = .nameOnly
+    var document:SmartNamingFormat = .nameOnly
     var dateSource:NamingDateSource = .today
+    init() {}
+    private enum CodingKeys:String,CodingKey { case folder,document,dateSource }
+    init(from decoder:Decoder) throws {
+        let values = try decoder.container(keyedBy:CodingKeys.self)
+        folder = try values.decodeIfPresent(SmartNamingFormat.self,forKey:.folder) ?? .nameOnly
+        document = try values.decodeIfPresent(SmartNamingFormat.self,forKey:.document) ?? .nameOnly
+        dateSource = try values.decodeIfPresent(NamingDateSource.self,forKey:.dateSource) ?? .today
+    }
 }
 func namingCalendar() -> Calendar {
     var calendar = Calendar(identifier:.gregorian)
     calendar.timeZone = TimeZone(identifier:"Asia/Shanghai")!
     return calendar
 }
-func smartRecognitionStem(_ value:String,target:NamingTarget,category:String) -> String {
-    var text = value.trimmingCharacters(in:.whitespacesAndNewlines)
-    let ext = URL(fileURLWithPath:target.path).pathExtension
-    if !target.folder && !ext.isEmpty && text.hasSuffix("."+ext) { text = String(text.dropLast(ext.count+1)) }
-    // Only remove explicit prefixes, never a bare number inside the recognized title.
-    for _ in 0..<3 {
-        let old = text
-        text = text.replacingOccurrences(of:"^(?:1[0-2]|[1-9])月\\s+",with:"",options:.regularExpression)
-        text = text.replacingOccurrences(of:"^(?:0[1-9]|1[0-2])(?:0[1-9]|[12][0-9]|3[01])[ _-]+",with:"",options:.regularExpression)
-        for prefix in ["解决方案-","招标文件-","投标文件-",cleanName(category)+" "] where !prefix.trimmingCharacters(in:.whitespaces).isEmpty {
-            if text.hasPrefix(prefix) { text = String(text.dropFirst(prefix.count)); break }
-        }
-        if text == old { break }
-    }
-    return text.trimmingCharacters(in:.whitespacesAndNewlines)
-}
 @MainActor extension Store {
     var namingRuleSettings:NamingRuleSettings { settings.namingRules ?? NamingRuleSettings() }
     func namingFormat(for target:NamingTarget) -> SmartNamingFormat { target.folder ? namingRuleSettings.folder : namingRuleSettings.document }
-    func smartNamingCategory(for target:NamingTarget) -> String {
-        let row = BrowserRow(id:target.path,title:URL(fileURLWithPath:target.path).lastPathComponent,folder:target.folder)
+    func smartNamingCategory(for target:NamingTarget,recognizedName:String? = nil) -> String {
+        let url = URL(fileURLWithPath:target.path)
+        var title = url.lastPathComponent
+        if let recognizedName, !recognizedName.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {
+            // Match the current rules against both the source name and the extracted title.
+            // Keep the source path for identity-checked manual assignments and entry scope.
+            let originalStem = target.folder ? title : url.deletingPathExtension().lastPathComponent
+            let recognizedStem = smartNamingLiteralStem(recognizedName,target:target)
+            title = CategoryRule.unique([originalStem,recognizedStem]).joined(separator:" ")
+            if !target.folder && !url.pathExtension.isEmpty { title += "."+url.pathExtension }
+        }
+        let row = BrowserRow(id:target.path,title:title,folder:target.folder)
         return resolvedCategory(row,categories:workspaceCategories,assignments:workspaceAssignments)?.name ?? "其他"
     }
     func namingDate(for target:NamingTarget,now:Date = Date()) -> Date {
@@ -56,6 +58,7 @@ func smartRecognitionStem(_ value:String,target:NamingTarget,category:String) ->
     }
     func smartNamingPrefix(for target:NamingTarget,date:Date,month:Int? = nil) -> String {
         switch namingFormat(for:target) {
+        case .nameOnly: return ""
         case .month: return "\(month ?? namingMonth(for:target,date:date))月"
         case .monthDay:
             let parts = namingCalendar().dateComponents([.month,.day],from:date)
@@ -66,11 +69,7 @@ func smartRecognitionStem(_ value:String,target:NamingTarget,category:String) ->
         }
     }
     func smartProposedName(base:String,target:NamingTarget,now:Date = Date(),dateOverride:Date? = nil,monthOverride:Int? = nil) -> String {
-        let stem = smartRecognitionStem(base,target:target,category:smartNamingCategory(for:target))
-        guard !stem.isEmpty else { return "" }
-        let prefix = smartNamingPrefix(for:target,date:dateOverride ?? namingDate(for:target,now:now),month:monthOverride)
-        let name = prefix+" "+stem
-        return target.folder ? name : proposedName(base:name,month:1,folder:false,original:target.path)
+        titleProposedName(base,target:target,date:dateOverride ?? namingDate(for:target,now:now),month:monthOverride)
     }
     @discardableResult func saveNamingRuleSettings(_ value:NamingRuleSettings) -> Bool {
         var updated = settings;updated.namingRules = value
@@ -89,9 +88,9 @@ func smartRecognitionStem(_ value:String,target:NamingTarget,category:String) ->
             let calendar = namingCalendar()
             guard let date = calendar.date(from:DateComponents(year:2000,month:month,day:day)) else { return false }
             return calendar.component(.month,from:date) == month && calendar.component(.day,from:date) == day
-        case .category:
-            let prefix = smartNamingPrefix(for:target,date:Date())+" "
-            return name.hasPrefix(prefix) && !name.dropFirst(prefix.count).trimmingCharacters(in:.whitespacesAndNewlines).isEmpty
+        case .nameOnly, .category:
+            // The generated category is ordinary editable text, not an execution constraint.
+            return !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty
         }
     }
 }
@@ -108,13 +107,14 @@ struct NamingRulesSettingsView:View {
     private func example(_ format:SmartNamingFormat,folder:Bool) -> String {
         let prefix:String
         switch format {
+        case .nameOnly: prefix = ""
         case .month: prefix = "\(namingCalendar().component(.month,from:Date()))月"
         case .monthDay:
             let parts = namingCalendar().dateComponents([.month,.day],from:Date())
             prefix = String(format:"%02d%02d",parts.month ?? 1,parts.day ?? 1)
         case .category: prefix = "方案"
         }
-        return prefix+" 智慧园区建设项目"+(folder ? "" : ".docx")
+        return (prefix.isEmpty ? "" : prefix+" ")+"智慧园区建设项目"+(folder ? "" : ".docx")
     }
     func block(_ folder:Bool) -> some View {
         VStack(alignment:.leading,spacing:12) {
@@ -124,7 +124,7 @@ struct NamingRulesSettingsView:View {
                     Spacer()
                     Text("命名示例").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary)
                 }
-                Text(folder ? "识别顺序：招标项目名 → 方案标题 → 单位＋关键方案名" : "优先识别文档自身项目名／标题，必要时参考同项目材料。").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary).fixedSize(horizontal:false,vertical:true)
+                Text(folder ? "首页标题优先，最多前两页；无分页 Word 只读开头节选，Excel 只读表头。" : "首页标题优先，最多前两页；无分页 Word 只读开头节选，Excel 识别横向、纵向表头。").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary).fixedSize(horizontal:false,vertical:true)
             }
             VStack(spacing:3) {
                 ForEach(SmartNamingFormat.allCases) { format in
@@ -154,7 +154,7 @@ struct NamingRulesSettingsView:View {
                 })) { ForEach(NamingDateSource.allCases,id:\.self) { Text($0.title).tag($0) } }.labelsHidden().frame(width:170)
                 Spacer()
             }
-            Text("两类命名独立设置。分类取当前文件分类，未匹配时使用“其他”；文档保留扩展名。仅在确认智能命名后改名。").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary).fixedSize(horizontal:false,vertical:true)
+            Text("默认不加前缀，保留标题原意和原扩展名。多个标题可选择，找不到则保留原名；可手动修改，确认后才改名。").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary).fixedSize(horizontal:false,vertical:true)
         }.foregroundStyle(WorkspaceTheme.ink)
     }
 }

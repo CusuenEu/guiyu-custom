@@ -96,3 +96,11 @@ func smartNamingEditableBase(_ name: String, target: NamingTarget) -> String {
     let ext = URL(fileURLWithPath:target.path).pathExtension
     return !ext.isEmpty && name.hasSuffix("."+ext) ? String(name.dropLast(ext.count+1)) : name
 }
+
+// For editable category names, strip only the protected original extension.
+// Do not normalize away category words or date-like text typed by the user.
+func smartNamingLiteralStem(_ name:String,target:NamingTarget) -> String {
+    guard !target.folder else { return name }
+    let ext = URL(fileURLWithPath:target.path).pathExtension
+    return !ext.isEmpty && name.hasSuffix("."+ext) ? String(name.dropLast(ext.count+1)) : name
+}

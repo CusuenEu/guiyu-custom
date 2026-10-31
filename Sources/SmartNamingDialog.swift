@@ -10,14 +10,32 @@ struct RenameDialog: View {
     @State var month = 1
     @State var namingDate = Date()
     @State var edited = false
+    @State private var originalFallback = false
     @State var token = IndexCancellation()
     @State private var fieldFocused = false
     var onClose: (() -> Void)? = nil
-    var finalName: String { store.smartProposedName(base:base,target:target,dateOverride:namingDate,monthOverride:month) }
-    func editableBase(_ value:String) -> String { smartRecognitionStem(value,target:target,category:store.smartNamingCategory(for:target)) }
-    var canConfirm: Bool { !editableBase(base).isEmpty && !store.busy }
+    private var literalName:Bool { let format = store.namingFormat(for:target); return format == .category || format == .nameOnly }
+    var finalName: String {
+        if originalFallback && !edited { return URL(fileURLWithPath:target.path).lastPathComponent }
+        if literalName || originalFallback {
+            let value = cleanNamingTitle(base)
+            return target.folder ? value : proposedName(base:value,month:1,folder:false,original:target.path)
+        }
+        return store.titleProposedName(base,target:target,date:namingDate,month:month)
+    }
+    func editableBase(_ value:String) -> String {
+        if store.namingFormat(for:target) == .category {
+            return smartNamingLiteralStem(store.titleProposedName(value,target:target,date:namingDate,month:month),target:target)
+        }
+        return cleanNamingTitle(smartNamingLiteralStem(value,target:target))
+    }
+    var canConfirm: Bool { !cleanNamingTitle(smartNamingLiteralStem(base,target:target)).isEmpty && !store.busy }
     private func close() { token.cancel(); if let onClose { onClose() } else { dismiss() } }
-    func confirm() { guard canConfirm else { return }; if store.confirmRename(target,newName:finalName) { close() } }
+    func confirm() {
+        guard canConfirm else { return }
+        if originalFallback && !edited { close();return }
+        if store.confirmRename(target,newName:finalName,requireMonth:!originalFallback) { close() }
+    }
     var body: some View {
         VStack(spacing:0) {
             SmartDialogHeader(title:"智能命名",symbol:"text.cursor")
@@ -30,18 +48,15 @@ struct RenameDialog: View {
                 VStack(alignment:.leading,spacing:9) {
                     Text("修改名称").font(.system(size:12,weight:.semibold))
                     HStack(spacing:0) {
-                        if store.namingFormat(for:target) == .month {
+                        if !originalFallback && store.namingFormat(for:target) == .month {
                             Picker("月份",selection:$month) { ForEach(1...12,id:\.self) { Text("\($0)月").tag($0) } }.labelsHidden().frame(width:76).padding(.leading,8)
                             Rectangle().fill(WorkspaceTheme.line).frame(width:1,height:18)
                         }
-                        if store.namingFormat(for:target) == .monthDay {
+                        if !originalFallback && store.namingFormat(for:target) == .monthDay {
                             Text(store.smartNamingPrefix(for:target,date:namingDate)).font(.system(size:13)).padding(.horizontal,12).help("月日格式：MMDD")
                             Rectangle().fill(WorkspaceTheme.line).frame(width:1,height:18)
-                        } else if store.namingFormat(for:target) == .category {
-                            Text(store.smartNamingPrefix(for:target,date:namingDate)).font(.system(size:13)).lineLimit(1).truncationMode(.middle).frame(maxWidth:110).padding(.horizontal,12).help(store.smartNamingCategory(for:target))
-                            Rectangle().fill(WorkspaceTheme.line).frame(width:1,height:18)
                         }
-                        SmartDialogTextField(text:Binding(get:{editableBase(base)},set:{base=$0;edited=true}),focused:$fieldFocused,placeholder:"修改名称",submit:confirm).frame(height:20).padding(.horizontal,12)
+                        SmartDialogTextField(text:Binding(get:{base},set:{base=$0;edited=true}),focused:$fieldFocused,placeholder:"修改名称",submit:confirm).frame(height:20).padding(.horizontal,12)
                         let ext = URL(fileURLWithPath:target.path).pathExtension
                         if !target.folder && !ext.isEmpty {
                             Rectangle().fill(WorkspaceTheme.line).frame(width:1,height:18)
@@ -53,13 +68,13 @@ struct RenameDialog: View {
                 VStack(alignment:.leading,spacing:9) {
                     Text("推荐名称").font(.system(size:12,weight:.semibold))
                     if loading { HStack(spacing:8) { ProgressView().controlSize(.small); Text("正在读取文档…").font(.system(size:12)).foregroundStyle(WorkspaceTheme.secondary) } }
-                    else if candidates.isEmpty { Text("未找到推荐名称，可直接填写。").font(.system(size:12)).foregroundStyle(WorkspaceTheme.secondary).padding(.vertical,12) }
+                    else if candidates.isEmpty { Text("未找到明确标题，已保留原名，可直接修改。").font(.system(size:12)).foregroundStyle(WorkspaceTheme.secondary).padding(.vertical,12) }
                     else {
                         ScrollView {
                             VStack(spacing:4) {
                                 ForEach(candidates) { candidate in
-                                    let chosen = editableBase(base) == editableBase(candidate.name)
-                                    Button { base = editableBase(candidate.name); edited = true } label: {
+                                    let chosen = base == editableBase(candidate.name)
+                                    Button { originalFallback = false; base = editableBase(candidate.name); edited = true } label: {
                                         HStack(spacing:10) {
                                             Image(systemName:chosen ? "checkmark.circle.fill" : "circle").font(.system(size:16)).foregroundStyle(chosen ? accent : WorkspaceTheme.secondary)
                                             Text(editableBase(candidate.name)).font(.system(size:13,weight:chosen ? .medium : .regular)).multilineTextAlignment(.leading).fixedSize(horizontal:false,vertical:true)
@@ -85,7 +100,14 @@ struct RenameDialog: View {
             month = store.namingMonth(for:target,date:namingDate)
             store.loadSuggestions(target,token:token) { values in
                 candidates = values; loading = false
-                if !edited && base.isEmpty { base = values.first.map { editableBase($0.name) } ?? "" }
+                if !edited && base.isEmpty {
+                    if let first = values.first { base = editableBase(first.name) }
+                    else {
+                        originalFallback = true
+                        let url = URL(fileURLWithPath:target.path)
+                        base = target.folder ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent
+                    }
+                }
             }
         }.onDisappear { token.cancel() }
         .alert("重命名未完成",isPresented:Binding(get:{!store.error.isEmpty},set:{if !$0 { store.error = "" }})) { Button("知道了") { store.error = "" } } message: { Text(store.error) }

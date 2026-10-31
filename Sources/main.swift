@@ -339,7 +339,9 @@ struct Preview: NSViewRepresentable {
     let png = root.appendingPathComponent("ocr.png"); try NSBitmapImageRep(data:image.tiffRepresentation!)!.representation(using:.png,properties:[:])!.write(to:png)
     precondition(extract(png).contains("ALPHA"))
     try directoryPresentationTest(root:root)
+    try directoryBreadcrumbTest(root:root)
     try namingTest(root:root)
+    try namingPolicyTest(root:root)
     try namingRulesTest(root:root)
     try categoryManagementTest(root:root)
     try categoryRulesTest(root:root)
@@ -356,18 +358,22 @@ struct Preview: NSViewRepresentable {
     try indexingTest(root:root)
     try directoryOrderingTest(root:root)
     try sidebarSectionsTest(root:root)
+    try windowFrameTest(root:root)
     try projectRootsTest(root:root)
     try AppUpdater.selfTest()
     try automationTest(root:root)
     print("PASS: extraction + OCR; explicit-click routing, no unrequested moves, ambiguity, stable downloads, undo suppression, time sorting, persisted records")
 }
 if CommandLine.arguments.contains("--self-test") { do { try MainActor.assumeIsolated { try selfTest() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if let index = CommandLine.arguments.firstIndex(of:"--window-frame-read-test"), CommandLine.arguments.indices.contains(index+1) { do { try MainActor.assumeIsolated { try windowFrameReadTest(CommandLine.arguments[index+1]) } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--project-roots-review") { do { try MainActor.assumeIsolated { try projectRootsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--finder-services-review") { do { try MainActor.assumeIsolated { try finderServicesUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--update-probe") { do { try MainActor.assumeIsolated { try AppUpdater.probeDiagnostic() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--smart-dialogs-review") { do { try MainActor.assumeIsolated { try smartDialogsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--category-flow-review") { do { try MainActor.assumeIsolated { try categoryWorkflowUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--naming-rules-review") { do { try MainActor.assumeIsolated { try namingRulesUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--archive-source-layout-review") { do { try MainActor.assumeIsolated { try archiveSourceLayoutReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--category-disclosure-review") { do { try MainActor.assumeIsolated { try categoryDisclosureReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--ui-review") { do { try MainActor.assumeIsolated { try batchUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else { GuiyuApp.main() }
 @MainActor final class GuiyuAppDelegate: NSObject, NSApplicationDelegate {
@@ -390,5 +396,5 @@ else { GuiyuApp.main() }
 }
 struct GuiyuApp: App {
     @NSApplicationDelegateAdaptor(GuiyuAppDelegate.self) var delegate
-    var body: some Scene { WindowGroup("归屿") { ProjectWorkspace(store:delegate.store).preferredColorScheme(.light) }.defaultSize(width:1280,height:820).windowStyle(.hiddenTitleBar).commands { CommandGroup(replacing:.newItem) {}; CommandGroup(replacing:.appInfo) { Button("关于归屿") { NSApp.orderFrontStandardAboutPanel(options:[.applicationVersion:Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "开发版本",.version:""]) } }; CommandGroup(after:.appInfo) { UpdateMenu() } } }
+    var body: some Scene { WindowGroup("归屿") { ProjectWorkspace(store:delegate.store).preferredColorScheme(.light).background(MainWindowFramePersistence().frame(width:0,height:0)) }.defaultSize(width:1280,height:820).windowStyle(.hiddenTitleBar).commands { CommandGroup(replacing:.newItem) {}; CommandGroup(replacing:.appInfo) { Button("关于归屿") { NSApp.orderFrontStandardAboutPanel(options:[.applicationVersion:Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "开发版本",.version:""]) } }; CommandGroup(after:.appInfo) { UpdateMenu() } } }
 }

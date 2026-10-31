@@ -121,64 +121,13 @@ func namingCategory(_ file: FileItem) -> DocumentCategory {
     return .other
 }
 func folderSuggestions(files: [FileItem]) -> [Suggestion] {
-    var ranked: [(String,String,Int)] = []
-    let sorted = files.sorted { a,b in
-        let x = namingCategory(a) == .tender ? 0 : namingCategory(a) == .proposal ? 1 : 2
-        let y = namingCategory(b) == .tender ? 0 : namingCategory(b) == .proposal ? 1 : 2
-        return x == y ? a.path < b.path : x < y
-    }
-    for file in sorted {
-        let lines = linesOf(file)
-        if namingCategory(file) == .tender {
-            for name in fieldValues(lines,labels:["项目名称","工程名称","采购项目名称","招标项目名称","项目全称"]) { ranked.append((projectIdentity(name),"招标文件中的项目名称 · "+file.name,0)) }
-            for name in projectNames(file) { ranked.append((name,"招标文件封面项目名称 · "+file.name,1)) }
-            for title in titleCandidates(file) where title.contains("项目") || title.contains("工程") {
-                let value = title.replacingOccurrences(of:"[（(]?招标文件[）)]?$",with:"",options:.regularExpression)
-                ranked.append((cleanName(value),"招标文件标题 · "+file.name,1))
-            }
-        }
-        if namingCategory(file) == .proposal {
-            for title in titleCandidates(file) { ranked.append((title,"方案标题 · "+file.name,2)) }
-            let stem = file.url.deletingPathExtension().lastPathComponent
-            if stem.count >= 5 { ranked.append((cleanName(stem),"方案文件名称 · "+file.name,3)) }
-        }
-        let units = fieldValues(lines,labels:["建设单位","采购人","招标人","客户名称","单位名称","业主单位"]) + lines.prefix(60).filter { $0.count >= 5 && $0.count <= 50 && ($0.hasSuffix("有限公司") || $0.hasSuffix("委员会") || $0.hasSuffix("管理局")) }
-        let key = fieldValues(lines,labels:["方案名称","关键方案名称","建设内容"]).first ?? titleCandidates(file).first { $0.contains("方案") || $0.contains("建设") || $0.contains("系统") || $0.contains("服务") }
-        if let unit = units.first, let key {
-            ranked.append((cleanName(key.contains(unit) ? key : unit+" "+key),"单位名称＋关键方案名称 · "+file.name,4))
-        }
-    }
     var seen = Set<String>()
-    return ranked.sorted { $0.2 == $1.2 ? $0.0 < $1.0 : $0.2 < $1.2 }.compactMap { name,evidence,_ in
-        let name = cleanName(name); guard name.count >= 4, !seen.contains(name) else { return nil }; seen.insert(name)
-        return Suggestion(name:name,evidence:evidence)
-    }.prefix(8).map { $0 }
+    return files.sorted { (documentCategory($0) == .tender ? 0 : 1) < (documentCategory($1) == .tender ? 0 : 1) }.flatMap { fileSuggestions(file:$0) }.filter { seen.insert(FilenameQuery.normalize($0.name)).inserted }.prefix(8).map{$0}
 }
 func fileSuggestions(file: FileItem, context: [Suggestion] = []) -> [Suggestion] {
-    let category = namingCategory(file)
-    let prefix: String? = category == .bid ? "投标文件-" : category == .proposal ? "解决方案-" : category == .tender ? "招标文件-" : nil
-    var values: [Suggestion] = []
-    if let prefix {
-        for name in projectNames(file) { values.append(Suggestion(name:prefix+name,evidence:"前页项目名称／标题 · "+file.name)) }
-        if values.isEmpty {
-            for suggestion in context {
-                let name = projectIdentity(suggestion.name)
-                if validProjectIdentity(name) { values.append(Suggestion(name:prefix+name,evidence:"同项目参考 · "+suggestion.evidence)) }
-            }
-            let stem = projectIdentity(file.url.deletingPathExtension().lastPathComponent)
-            if validProjectIdentity(stem), stem.contains("项目") || stem.contains("工程") || stem.contains("服务") || stem.contains("系统") {
-                values.append(Suggestion(name:prefix+stem,evidence:"原文件名中的项目名称（请核对） · "+file.name))
-            }
-        }
-    }
-    for title in titleCandidates(file) {
-        let name = projectIdentity(title)
-        guard validProjectIdentity(name) else { continue }
-        if prefix != nil && !["项目","工程","系统","服务","建设","改造","升级","平台"].contains(where:name.contains) { continue }
-        values.append(Suggestion(name:prefix.map { $0+name } ?? title,evidence:"文档自身标题 · "+file.name))
-    }
-    var seen = Set<String>()
-    return values.filter { seen.insert($0.name).inserted }.prefix(8).map { $0 }
+    // The caller supplies only this document's bounded opening. Never invent
+    // prefixes, remove meaningful title words, or borrow another file's title.
+    namingTitleSuggestions(pages:textNamingPages(file.text),source:file.name)
 }
 func suggestedMonth(_ path: String) -> Int {
     let name = URL(fileURLWithPath:path).lastPathComponent
@@ -223,25 +172,14 @@ func remapPath(_ path: String, source: String, destination: String, folder: Bool
             let existing = (files+incoming).first { $0.path == target.path }
             candidates = [existing ?? browserEntry(target.path)?.file].compactMap { $0 }
         }
-        let references = target.folder ? [] : namingFiles.filter { $0.project == target.projectPath && $0.path != target.path }
         DispatchQueue.global(qos:.utility).async {
-            var parsed: [FileItem] = []
-            for var file in candidates {
+            var suggestions:[Suggestion] = []
+            for file in candidates {
                 guard !token.isCancelled else { return }
-                file.text = autoreleasepool { extractForNaming(file,token:token) }; parsed.append(file)
+                suggestions += autoreleasepool { recognizeNamingTitles(file,token:token) }
             }
-            var context: [Suggestion] = []
-            if !target.folder, let file = parsed.first, projectNames(file).isEmpty, [.bid,.proposal].contains(namingCategory(file)) {
-                let tenders = references.filter { documentCategory($0) == .tender }.sorted { $0.size < $1.size }.prefix(3)
-                let plans = references.filter { documentCategory($0) == .proposal }.sorted { $0.size < $1.size }.prefix(2)
-                for var reference in Array(tenders) + Array(plans) {
-                    guard !token.isCancelled else { return }
-                    reference.text = autoreleasepool { extractForNaming(reference,token:token) }
-                    let found = folderSuggestions(files:[reference])
-                    if !found.isEmpty { context = found; break }
-                }
-            }
-            let suggestions = target.folder ? folderSuggestions(files:parsed) : parsed.first.map { fileSuggestions(file:$0,context:context) } ?? []
+            var seen = Set<String>()
+            suggestions = suggestions.filter { seen.insert(FilenameQuery.normalize($0.name)).inserted }.prefix(12).map{$0}
             DispatchQueue.main.async {
                 guard !token.isCancelled else { return }; guard self.settings.workspaceIdentity == workspaceID else { completion([]); return }
                 completion(suggestions)
@@ -296,32 +234,32 @@ func namingError(_ message: String) -> NSError { NSError(domain:"命名",code:1,
     let proposal = parsed.filter { $0.path == planPath.path }
     try verify(folderSuggestions(files:proposal).first?.name == "园区网络升级建设方案","Proposal title is the next fallback")
     var fallback = parsed[0]; fallback.path = dir.appendingPathComponent("说明.txt").path; fallback.text = "单位名称：贵阳园区管理有限公司\n方案名称：网络安全改造"
-    // Explicit proposal-name data without a proposal file is combined with the customer name.
-    try verify(folderSuggestions(files:[fallback]).first?.name == "贵阳园区管理有限公司 网络安全改造")
-    try verify(fileSuggestions(file:proposal[0]).first?.name == "解决方案-园区网络升级")
+    // An explicit title is retained without inventing a unit-plus-title composite.
+    try verify(folderSuggestions(files:[fallback]).first?.name == "网络安全改造")
+    try verify(fileSuggestions(file:proposal[0]).first?.name == "园区网络升级建设方案")
     try verify(suggestedMonth(dir.path) == 10)
     try verify(proposedName(base:"10月 贵阳智慧园区建设项目",month:5,folder:true,original:dir.path) == "5月 贵阳智慧园区建设项目")
     try verify(proposedName(base:"园区网络升级建设方案",month:5,folder:false,original:planPath.path) == "园区网络升级建设方案.txt")
     var response = FileItem(path:dir.appendingPathComponent("附件3响应文件.docx").path,project:dir.path,text:"响应文件\n项 目 名 称 ： 贵阳智慧园区建设项目\n根据招标文件要求编制",size:1,date:Date())
-    try verify(fileSuggestions(file:response).first?.name == "投标文件-贵阳智慧园区建设项目","Response uses standardized bid name and spaced project label")
+    try verify(fileSuggestions(file:response).first?.name == "贵阳智慧园区建设项目","Spaced project labels retain the original title without an invented document-type prefix")
     response.text = "响应文件\n项目名称：\n贵阳智慧园区建设项目\n采购人：测试单位"
-    try verify(fileSuggestions(file:response).first?.name == "投标文件-贵阳智慧园区建设项目","Multiline project fields are supported")
+    try verify(fileSuggestions(file:response).first?.name == "贵阳智慧园区建设项目","Multiline project fields are supported")
     response.path = dir.appendingPathComponent("附件3.docx").path
     response.text = "贵阳智慧园区建设项目\n响应文件\n根据招标文件要求编制"
-    try verify(namingCategory(response) == .bid && fileSuggestions(file:response).first?.name == "投标文件-贵阳智慧园区建设项目","Own response cover must beat references to tender")
+    try verify(namingCategory(response) == .bid && fileSuggestions(file:response).first?.name == "贵阳智慧园区建设项目","Own response cover must beat references to tender")
     response.text = "响应文件\n技术部分\n目录"
-    try verify(!hasNamingIdentity(response),"Generic cover and section labels must trigger further reading")
+    try verify(!hasNamingIdentity(response),"Generic cover and section labels are insufficient to invent a title")
     response.text = "解决方案-园区网络升级\n方案名称：解决方案-园区网络升级"
     response.path = dir.appendingPathComponent("解决方案-园区网络升级.docx").path
     try verify(fileSuggestions(file:response).first?.name == "解决方案-园区网络升级","Repeated naming must not duplicate the type prefix")
     response.path = dir.appendingPathComponent("响应文件.docx").path; response.text = "响应文件\n技术部分"
-    try verify(fileSuggestions(file:response,context:[Suggestion(name:"贵阳智慧园区建设项目",evidence:"招标文件中的项目名称")]).first?.name == "投标文件-贵阳智慧园区建设项目","Missing own name can use tender identity from same project")
+    try verify(fileSuggestions(file:response,context:[Suggestion(name:"贵阳智慧园区建设项目",evidence:"招标文件中的项目名称")]).isEmpty,"Missing own title must not borrow a different document title")
     try namingReadingTest(root:root)
     let store = Store(stateURL:root.appendingPathComponent("NamingState/settings.json"),loadOnLaunch:false)
     store.settings.root = dir.deletingLastPathComponent().path; store.settings.projects = [Project(path:dir.path,name:"10 A")]; store.files = parsed
     let target = NamingTarget(path:dir.path,folder:true,projectPath:dir.path)
     _ = folderSuggestions(files:parsed); try verify(fm.fileExists(atPath:dir.path),"Suggestions must not rename without confirmation")
-    try verify(!store.confirmRename(target,newName:"无月份名称")); store.error = ""
+    try verify(store.validateSmartFolderPrefix("无月份名称",target:target),"Default name-only folders do not require a month prefix")
     let name = "10月 贵阳智慧园区建设项目"
     try verify(store.confirmRename(target,newName:name))
     let newDir = dir.deletingLastPathComponent().appendingPathComponent(name)

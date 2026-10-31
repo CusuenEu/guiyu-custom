@@ -5,6 +5,12 @@ import AppKit
     let dir = root.appendingPathComponent("naming-rules")
     try fm.createDirectory(at:dir,withIntermediateDirectories:true)
     let store = Store(stateURL:dir.appendingPathComponent("state/settings.json"),loadOnLaunch:false)
+    try verify(store.namingRuleSettings.folder == .nameOnly && store.namingRuleSettings.document == .nameOnly,"Fresh and missing settings default both entry kinds to name only")
+    let missing = try JSONDecoder().decode(NamingRuleSettings.self,from:Data("{}".utf8))
+    let partial = try JSONDecoder().decode(NamingRuleSettings.self,from:Data("{\"folder\":\"month\"}".utf8))
+    let legacy = try JSONDecoder().decode(NamingRuleSettings.self,from:Data("{\"folder\":\"monthDay\",\"document\":\"category\",\"dateSource\":\"created\"}".utf8))
+    try verify(missing == NamingRuleSettings() && partial.folder == .month && partial.document == .nameOnly,"Missing fields use new defaults while explicit choices remain intact")
+    try verify(legacy.folder == .monthDay && legacy.document == .category && legacy.dateSource == .created,"Existing saved formats and date source remain compatible")
     let folder = dir.appendingPathComponent("6月 原文件夹")
     try fm.createDirectory(at:folder,withIntermediateDirectories:true)
     let file = dir.appendingPathComponent("合同资料.DOCX")
@@ -17,12 +23,13 @@ import AppKit
     for format in SmartNamingFormat.allCases {
         var rules = NamingRuleSettings();rules.folder = format;rules.document = format
         try verify(store.saveNamingRuleSettings(rules))
-        let prefix = format == .month ? "10月" : format == .monthDay ? "1001" : "合同管理"
-        let expectedFolder = prefix+" 智慧园区建设项目"
+        let prefix = format == .nameOnly ? "" : format == .month ? "10月" : format == .monthDay ? "1001" : "合同管理"
+        let expectedFolder = (prefix.isEmpty ? "" : prefix+" ")+"智慧园区建设项目"
         let expectedFile = expectedFolder+".DOCX"
         try verify(store.smartProposedName(base:"智慧园区建设项目",target:folderTarget,now:now) == expectedFolder,"Each folder format uses the selected rule")
-        try verify(store.smartProposedName(base:"解决方案-智慧园区建设项目",target:fileTarget,now:now) == expectedFile,"Each document format strips the recognized type prefix and preserves extension case")
-        try verify(store.smartProposedName(base:expectedFile,target:fileTarget,now:now) == expectedFile,"Formatting an already formatted candidate is idempotent")
+        let expectedFullTitle = (prefix.isEmpty ? "" : prefix+" ")+"解决方案-智慧园区建设项目.DOCX"
+        try verify(store.smartProposedName(base:"解决方案-智慧园区建设项目",target:fileTarget,now:now) == expectedFullTitle,"Each document format preserves the title meaning, including its type words and extension case")
+        try verify(store.smartProposedName(base:"智慧园区建设项目.DOCX",target:fileTarget,now:now) == expectedFile,"An existing extension is retained exactly once")
         try verify(store.validateSmartFolderPrefix(expectedFolder,target:folderTarget),"Configured folder prefix passes the execution guard")
     }
     var rules = NamingRuleSettings();rules.folder = .monthDay;rules.document = .category
@@ -56,12 +63,32 @@ import AppKit
     rules.folder = .category;try verify(store.saveNamingRuleSettings(rules))
     let categoryName = store.smartProposedName(base:"项目名称",target:updatedTarget,now:now)
     try verify(store.confirmRename(updatedTarget,newName:categoryName) && categoryName == "合同管理 项目名称","Confirmed category-prefix folder naming preserves manual category assignments")
+    let categorizedFolder = NamingTarget(path:dir.appendingPathComponent(categoryName).path,folder:true,projectPath:dir.path)
+    try verify(store.confirmRename(categorizedFolder,newName:"用户删除分类后的文件夹"),"Category-mode folder text can be removed or changed without being enforced as a prefix")
+    rules.folder = .nameOnly;rules.document = .nameOnly
+    try verify(store.saveNamingRuleSettings(rules))
+    let plainTarget = NamingTarget(path:dir.appendingPathComponent("用户删除分类后的文件夹").path,folder:true,projectPath:dir.path)
+    let plainEdit = BatchNameEdit(target:plainTarget,name:store.smartProposedName(base:"解决方案-仅使用识别结果",target:plainTarget,now:now))
+    let plainResult = store.confirmBatchRenames([plainEdit],requireMonth:true)
+    try verify(plainResult.failed == nil && fm.fileExists(atPath:dir.appendingPathComponent("解决方案-仅使用识别结果").path),"Name-only batch adds no prefix and preserves all original title words")
     try "collision".write(to:dir.appendingPathComponent("1001 碰撞.DOCX"),atomically:true,encoding:.utf8)
     try verify(!store.confirmRename(fileTarget,newName:"1001 碰撞.DOCX"),"No-overwrite protection still applies to prefixed document names")
     store.error = ""
     try verify(store.confirmRename(fileTarget,newName:"手动名称.DOCX",requireMonth:false),"Manual renaming is independent of smart settings")
+    let generic = dir.appendingPathComponent("PDF合并.txt")
+    try "云业务安全承诺书".write(to:generic,atomically:true,encoding:.utf8)
+    let genericTarget = NamingTarget(path:generic.path,folder:false,projectPath:dir.path)
+    store.settings.categories = [WorkspaceCategory(id:"sales",name:"售中材料",rule:CategoryRule(keywords:["承诺书"],origin:.edited)),WorkspaceCategory(id:"其他",name:"其他")]
+    rules.document = .category;try verify(store.saveNamingRuleSettings(rules))
+    try verify(store.smartProposedName(base:"云业务安全承诺书",target:genericTarget,now:now) == "售中材料 云业务安全承诺书.txt","Category suggestions must use current custom rules and the recognized title")
+    try verify(store.saveCategory(id:"sales",name:"合规材料"))
+    try verify(store.smartProposedName(base:"云业务安全承诺书",target:genericTarget,now:now) == "合规材料 云业务安全承诺书.txt","Category labels must be read from live settings, not fixed built-in names")
+    try verify(store.saveCategoryRule(id:"sales",rule:CategoryRule(keywords:["合规证明"],origin:.edited)))
+    try verify(store.smartProposedName(base:"云业务安全承诺书",target:genericTarget,now:now) == "其他 云业务安全承诺书.txt","Changed rules must take effect on the next suggestion")
+    try verify(store.assignCategory(browserEntry(generic.path)!,to:"sales"))
+    try verify(store.smartProposedName(base:"云业务安全承诺书",target:genericTarget,now:now) == "合规材料 云业务安全承诺书.txt","Identity-checked manual categories remain first priority")
     _ = current
-    print("PASS: six folder/document formats, independent persistence, Beijing/creation dates, prefix idempotence, numeric titles, extension preservation, failed-save rollback, preview isolation, MMDD batch/category physical rename, collision guard and manual rename independence")
+    print("PASS: eight folder/document formats, name-only defaults and missing-field compatibility, saved-choice preservation, independent persistence, Beijing/creation dates, complete title meaning, numeric titles, extension preservation, failed-save rollback, preview isolation, name-only/MMDD/category batch physical rename, collision guard and manual rename independence")
 }
 
 @MainActor func namingRulesUIReview() throws {
@@ -97,5 +124,5 @@ import AppKit
     }
     let rows = [browserEntry(file.path)!,browserEntry(folder.path)!]
     try capture(BatchRenameDialog(store:store,request:BatchNamingRequest(rows:rows,projectPath:root.path,recommended:true)),760,560,"batch-smart-rules.png")
-    print("PASS: native settings sidebar/page and all six smart naming editors plus mixed folder/document batch captured")
+    print("PASS: native settings sidebar/page with both name-only defaults and all eight smart naming editors plus mixed folder/document batch captured")
 }
