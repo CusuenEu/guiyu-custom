@@ -1,0 +1,15 @@
+dist/
+.DS_Store
+
+.build/
+.swiftpm/
+
+# Local delivery, generated reviews and unrelated video project
+交付/
+video/
+.impeccable/review/
+.env
+*.private-key
+*.p12
+*.p8
+Release/archives/
