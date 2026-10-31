@@ -19,6 +19,7 @@ struct CategoryRuleAssistant: View {
     @State private var selected = Set<String>()
     @State private var message = ""
     @State private var failed = false
+    @State private var aiBusy = false
     init(store:Store,importing:Bool = false,response:String = "",reviewing:Bool = false,onApplied:@escaping () -> Void = {}) {
         self.store = store; _snapshot = State(initialValue:store.workspaceCategories); self.onApplied = onApplied
         _stage = State(initialValue:importing ? 1 : 0); _response = State(initialValue:response)
@@ -33,11 +34,12 @@ struct CategoryRuleAssistant: View {
     private var prompt:String { CategoryRuleExchange.prompt(categories:snapshot) }
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
-            Text("借助豆包生成分类规则").font(.system(size:22,weight:.semibold,design:.rounded))
-            Text("复制提示词发给豆包，再把回复粘贴回来。归屿会识别规则，供你确认后应用。").font(.callout).foregroundStyle(WorkspaceTheme.secondary).fixedSize(horizontal:false,vertical:true)
+            Text("生成分类规则").font(.system(size:22,weight:.semibold,design:.rounded))
+            Text("推荐「AI 生成规则」：直连小米 MiMo 或 Kimi 一步生成并识别。也可复制提示词发给任意 AI 助手，把回复粘贴回来录入。归屿会识别规则，供你确认后应用。").font(.callout).foregroundStyle(WorkspaceTheme.secondary).fixedSize(horizontal:false,vertical:true)
             HStack(spacing:12) {
                 Picker("操作步骤",selection:$stage) { Text("生成提示词").tag(0); Text("录入回复").tag(1) }.pickerStyle(.segmented).frame(width:270)
                 Spacer()
+                Button(aiBusy ? "AI 生成中…" : "AI 生成规则") { aiGenerate() }.buttonStyle(SoftWorkspaceButton(peach:true)).disabled(aiBusy || targets.isEmpty)
                 Button("去豆包官网",action:openDoubaoWebsite).buttonStyle(SoftWorkspaceButton())
             }
             Group {
@@ -128,6 +130,22 @@ struct CategoryRuleAssistant: View {
     private func pasteResponse() {
         guard let text = NSPasteboard.general.string(forType:.string),!text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { failed = true; message = "剪贴板中没有文字，请先复制豆包的回复。"; return }
         response = text; message = ""; failed = false
+    }
+    private func aiGenerate() {
+        aiBusy = true; failed = false; message = "正在调用 AI 生成规则，请稍候…"
+        AIService.complete(prompt: prompt) { result in
+            DispatchQueue.main.async {
+                aiBusy = false
+                switch result {
+                case .success(let text):
+                    response = text; stage = 1
+                    parse()
+                    if !failed { message = "AI 已生成规则并完成识别，请在预览中勾选后应用。" }
+                case .failure(let error):
+                    failed = true; message = error.localizedDescription
+                }
+            }
+        }
     }
     private func parse() {
         do { parsed = try CategoryRuleExchange.parse(response,categories:snapshot); selected = Set(parsed.map(\.id)); message = ""; failed = false }

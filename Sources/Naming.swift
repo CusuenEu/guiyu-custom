@@ -205,6 +205,7 @@ func remapPath(_ path: String, source: String, destination: String, folder: Bool
             let destination = try validateRename(target,newName:newName,requireMonth:requireMonth)
             if destination == source { return true }
             try fm.moveItem(atPath:source,toPath:destination)
+            FinderTagWriter.writeTag(at: destination, label: FinderTagWriter.match(name: URL(fileURLWithPath: destination).lastPathComponent, isFolder: target.folder, categories: workspaceCategories, assignments: workspaceAssignments, identity: fileIdentity(destination)))
             func map(_ path: String) -> String { remapPath(path,source:source,destination:destination,folder:target.folder) }
             settings.projects = settings.projects.map { p in var p = p; p.path = map(p.path); if p.path == destination { p.name = trimmed }; return p }
             for i in settings.moves.indices { settings.moves[i].source = map(settings.moves[i].source); settings.moves[i].destination = map(settings.moves[i].destination) }

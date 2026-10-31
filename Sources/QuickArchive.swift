@@ -77,6 +77,7 @@ func projectArchiveChoices(input: String, projects: [Project], references: [File
             for (target,destination) in plans {
                 guard target.identity == fileIdentity(target.path), !fm.fileExists(atPath:destination.path) else { throw namingError("执行时文件或目标发生变化，已停止剩余操作。") }
                 try fm.moveItem(atPath:target.path,toPath:destination.path)
+                FinderTagWriter.writeTag(at: destination.path, label: FinderTagWriter.match(name: destination.lastPathComponent, isFolder: target.folder, categories: workspaceCategories, assignments: workspaceAssignments, identity: fileIdentity(destination.path)))
                 remapCategoryAssignments(source:target.path,destination:destination.path,folder:target.folder)
                 for i in settings.moves.indices { settings.moves[i].destination = remapPath(settings.moves[i].destination,source:target.path,destination:destination.path,folder:target.folder) }
                 settings.moves.insert(MoveRecord(source:target.path,destination:destination.path,identity:fileIdentity(destination.path),automatic:false,evidence:"智能归档 · 用户确认项目",folder:target.folder),at:0)
