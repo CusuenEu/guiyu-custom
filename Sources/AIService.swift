@@ -52,7 +52,7 @@ enum AIService {
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error { completion(.failure(error)); return }
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                let preview = data.map { String($0.prefix(400)) } ?? ""
+                let preview = data.map { String(decoding: $0.prefix(400), as: UTF8.self) } ?? ""
                 completion(.failure(localError("AI 服务返回 HTTP \(http.statusCode)：\(preview)")))
                 return
             }
