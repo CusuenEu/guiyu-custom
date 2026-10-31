@@ -1,0 +1,27 @@
+name: Build macOS app
+on:
+  workflow_dispatch:
+  push:
+    branches: [custom]
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and self-tests
+        run: ./build.sh
+      - name: Verify signature
+        run: codesign --verify --deep --strict dist/归屿.app
+      - name: Package installer
+        run: |
+          cd dist
+          ditto -c -k --keepParent 归屿.app 归屿-定制版-macOS-arm64.zip
+          shasum -a 256 归屿-定制版-macOS-arm64.zip > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guiyu-custom-macos
+          path: |
+            dist/归屿-定制版-macOS-arm64.zip
+            dist/SHA256SUMS.txt

@@ -19,7 +19,9 @@ enum AIService {
         guard let data = try? Data(contentsOf: configURL),
               let config = try? JSONDecoder().decode(AIEndpointConfig.self, from: data) else { return nil }
         let trimmed = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !config.baseURL.isEmpty, !config.model.isEmpty else { return nil }
+        let trimmedBase = config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmedBase.isEmpty, !config.model.isEmpty else { return nil }
+        guard trimmedBase.lowercased().hasPrefix("https://") else { return nil }
         return AIEndpointConfig(baseURL: config.baseURL, model: config.model, apiKey: trimmed, timeoutSeconds: config.timeoutSeconds)
     }
 
@@ -29,14 +31,15 @@ enum AIService {
             completion(.failure(localError("未找到 AI 配置。请在 ~/Library/Application Support/Guiyu/ai-config.json 填写 baseURL、model、apiKey。")))
             return
         }
-        let base = config.baseURL.hasSuffix("/") ? String(config.baseURL.dropLast()) : config.baseURL
+        var base = config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        while base.hasSuffix("/") { base = String(base.dropLast()) }
         guard let url = URL(string: base + "/chat/completions") else {
             completion(.failure(localError("AI 配置的 baseURL 无效。")))
             return
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = config.timeoutSeconds ?? 300
+        request.timeoutInterval = config.timeoutSeconds ?? 120
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer " + config.apiKey, forHTTPHeaderField: "Authorization")
         request.setValue(config.apiKey, forHTTPHeaderField: "api-key")
@@ -46,8 +49,13 @@ enum AIService {
             "temperature": 0.2,
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        URLSession.shared.dataTask(with: request) { data, _, error in
+        URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error { completion(.failure(error)); return }
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                let preview = data.map { String($0.prefix(400)) } ?? ""
+                completion(.failure(localError("AI 服务返回 HTTP \(http.statusCode)：\(preview)")))
+                return
+            }
             guard let data = data else {
                 completion(.failure(localError("AI 服务无响应，请稍后重试。")))
                 return

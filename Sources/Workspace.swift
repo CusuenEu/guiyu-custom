@@ -308,7 +308,6 @@ struct ProjectWorkspace: View {
     @State var sidebarPreviewFraction: Double?
     @State var sidebarDragOrigin: CGFloat?
     @State var searchFolderToOpen: String?
-    init(store: Store) { self._store = StateObject(wrappedValue: store) }
     var isScopeSearch: Bool { archiveSourceID == nil && !FilenameQuery(query).tokens.isEmpty }
     var activeSourceRows: [BrowserRow] { isScopeSearch ? search.output.searchEntries : sourceRows }
     var activeDragScope: String { isScopeSearch ? "search:"+(selectedDirectory?.path ?? year) : sourceFolder }
