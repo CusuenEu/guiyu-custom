@@ -2,10 +2,11 @@ import SwiftUI
 import AppKit
 
 @MainActor final class CategoryWorkflow: ObservableObject {
-    enum Operation { case copy, importReply }
+    enum Operation { case copy, importReply, ai }
     @Published var operation: Operation = .importReply
     @Published var message = ""
     @Published var failed = false
+    @Published var aiBusy = false
     func copyPrompt(store:Store, pasteboard:NSPasteboard = .general, openWebsite:@MainActor () -> Void = openDoubaoWebsite) {
         operation = .copy
         guard !CategoryRuleExchange.targets(store.workspaceCategories).isEmpty else { failed = true; message = "请先添加文件分类。"; return }
@@ -16,7 +17,26 @@ import AppKit
     }
     func importReply(store:Store, pasteboard:NSPasteboard = .general) {
         operation = .importReply
-        guard let text = pasteboard.string(forType:.string), !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { failed = true; message = "未读取到文字，请先复制豆包回复。"; return }
+        guard let text = pasteboard.string(forType:.string), !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { failed = true; message = "未读取到文字，请先复制 AI 或豆包的回复。"; return }
+        importText(text,store:store)
+    }
+    /// AI 直连生成规则并直接录入（小米 MiMo / Kimi，配置见 ai-config.json）
+    func aiGenerate(store:Store) {
+        operation = .ai
+        guard !CategoryRuleExchange.targets(store.workspaceCategories).isEmpty else { failed = true; message = "请先添加文件分类。"; return }
+        aiBusy = true; failed = false; message = "正在调用 AI 生成规则，请稍候…"
+        AIService.complete(prompt: CategoryRuleExchange.prompt(categories: store.workspaceCategories)) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let strong = self else { return }
+                strong.aiBusy = false
+                switch result {
+                case .success(let text): strong.importText(text,store:store)
+                case .failure(let error): strong.failed = true; strong.message = error.localizedDescription
+                }
+            }
+        }
+    }
+    private func importText(_ text:String, store:Store) {
         do {
             let imports = try CategoryRuleExchange.parse(text,categories:store.workspaceCategories)
             guard store.importCategoryRules(imports) else { failed = true; message = store.error; store.error = ""; return }
@@ -40,25 +60,28 @@ struct CategoryWorkflowView: View {
     var body:some View {
         VStack(alignment:.leading,spacing:7) {
             HStack(spacing:6) {
-                Text("分类设置后，请务必按一下操作。").font(.system(size:13,weight:.semibold)).foregroundStyle(Color(red:0.70,green:0.16,blue:0.13)).fixedSize(horizontal:false,vertical:true)
+                Text("分类设置后，请生成并录入规则（推荐第 1 步 AI 一键完成）。").font(.system(size:13,weight:.semibold)).foregroundStyle(Color(red:0.70,green:0.16,blue:0.13)).fixedSize(horizontal:false,vertical:true)
                 Button(action:showGuide) { Image(systemName:"exclamationmark.circle").font(.system(size:15)).foregroundStyle(accent).frame(width:26,height:26) }.buttonStyle(.plain).accessibilityLabel("查看操作图解").help("复制、豆包发文、录入规则")
                 Spacer(minLength:0)
             }
             HStack(spacing:9) {
                 number("1")
-                Button("复制提示词，去豆包官网") { workflow.copyPrompt(store:store) }.buttonStyle(SmartDialogActionStyle(primary:true)).disabled(CategoryRuleExchange.targets(store.workspaceCategories).isEmpty).accessibilityIdentifier("copy-category-prompt")
-                if workflow.operation == .copy { feedback }
+                Button(workflow.aiBusy ? "AI 生成中…" : "AI 生成规则") { workflow.aiGenerate(store:store) }.buttonStyle(SmartDialogActionStyle(primary:true)).disabled(CategoryRuleExchange.targets(store.workspaceCategories).isEmpty || workflow.aiBusy).accessibilityIdentifier("ai-generate-rules")
+                Text("直连小米 MiMo / Kimi，一步生成并录入").font(.system(size:11)).foregroundStyle(.secondary)
+                if workflow.operation == .ai { feedback }
                 Spacer(minLength:0)
             }
             HStack(spacing:9) {
                 number("2")
-                Text("把提示词发给豆包，复制豆包的回复。").font(.system(size:12))
+                Text("未配置 AI 时备用：复制提示词发给任意 AI 助手，复制回复。").font(.system(size:12))
+                Button("复制提示词") { workflow.copyPrompt(store:store) }.buttonStyle(SoftWorkspaceButton()).disabled(CategoryRuleExchange.targets(store.workspaceCategories).isEmpty).accessibilityIdentifier("copy-category-prompt")
                 Button(action:openDoubaoWebsite) { Label("豆包官网",systemImage:"arrow.up.right").font(.system(size:12)).foregroundStyle(accent) }.buttonStyle(.plain)
+                if workflow.operation == .copy { feedback }
                 Spacer(minLength:0)
             }.frame(minHeight:24)
             HStack(spacing:9) {
                 number("3")
-                Button("录入豆包回复") { workflow.importReply(store:store) }.buttonStyle(SoftWorkspaceButton()).disabled(CategoryRuleExchange.targets(store.workspaceCategories).isEmpty).accessibilityIdentifier("import-category-reply")
+                Button("录入回复") { workflow.importReply(store:store) }.buttonStyle(SoftWorkspaceButton()).disabled(CategoryRuleExchange.targets(store.workspaceCategories).isEmpty).accessibilityIdentifier("import-category-reply")
                 if workflow.operation == .importReply { feedback }
                 Spacer(minLength:0)
             }
