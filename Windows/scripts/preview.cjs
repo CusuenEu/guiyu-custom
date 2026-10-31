@@ -75,7 +75,7 @@ const folderContents = new Map([
   [projectSpecification.path, [make("项目资料.txt", projectSpecification.path, false)]],
 ]);
 const state = () => ({
-  version: "20261031(02) Windows 测试版",
+  version: require("../version.json").display + " Windows 测试版",
   platform: "win32",
   arch: "x64",
   settings,

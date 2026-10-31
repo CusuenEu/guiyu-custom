@@ -6,6 +6,7 @@ const fs = require("node:fs/promises"),
   const root = path.resolve(__dirname, ".."),
     out = path.join(root, "out"),
     version = require("../package.json").devDependencies.electron;
+  const release = require("./version.cjs").sync();
   await fs.mkdir(out, { recursive: true });
   for (const arch of ["ia32", "x64"]) {
     const dirs = await packager({
@@ -18,7 +19,8 @@ const fs = require("node:fs/promises"),
       overwrite: true,
       prune: true,
       asar: true,
-      appVersion: "0.1.0",
+      appVersion: release.packageVersion,
+      buildVersion: release.packageVersion + ".0",
       icon: path.join(root, "assets/AppIcon.ico"),
       appCopyright: "Copyright © 2026 Guiyu",
       win32metadata: {
@@ -46,7 +48,7 @@ const fs = require("node:fs/promises"),
         path.join(dir, "使用说明.md"),
       );
       await fs.copyFile(path.join(root, 'VALIDATION.md'), path.join(dir, '验证范围.md'));
-      const zip = path.join(out, `Guiyu-20261031-02-test-Windows-${arch}.zip`);
+      const zip = path.join(out, `${release.assetPrefix}-test-Windows-${arch}.zip`);
       if (process.platform === "win32") {
         const { zipSync } = require("fflate");
         async function collect(d, base, files = {}) {

@@ -67,8 +67,13 @@ import SwiftUI
     secondWindow.alphaValue = 0; secondWindow.ignoresMouseEvents = true
     let host = NSHostingView(rootView:content()); secondWindow.contentView = host
     secondWindow.orderBack(nil); host.layoutSubtreeIfNeeded(); settle()
-    try verify(near(secondWindow.frame,latest),"The actual SwiftUI workspace restores the saved window on opening: expected \(latest), got \(secondWindow.frame)")
-    let manual = desired.offsetBy(dx:20,dy:14)
+    // CI can have a 1024px display: the production workspace's minimum is
+    // larger than this helper window's 400×300 minimum. Compare the fitted
+    // production geometry, not the helper's deliberately smaller saved frame.
+    let productionMinimum = secondWindow.frameRect(forContentRect:NSRect(x:0,y:0,width:1060,height:700)).size
+    let expectedProduction = WindowFrameGeometry.fitted(latest,screens:NSScreen.screens.map(\.visibleFrame),preferred:NSScreen.main?.visibleFrame,minimum:productionMinimum)
+    try verify(near(secondWindow.frame,expectedProduction),"The actual SwiftUI workspace restores the fitted saved window on opening: expected \(expectedProduction), got \(secondWindow.frame)")
+    let manual = WindowFrameGeometry.fitted(desired.offsetBy(dx:20,dy:14),screens:NSScreen.screens.map(\.visibleFrame),preferred:NSScreen.main?.visibleFrame,minimum:productionMinimum)
     secondWindow.setFrame(manual,display:false)
     fixtureStore.settings.categories = WorkspaceCategory.defaults; settle()
     try verify(near(secondWindow.frame,manual),"Content refresh does not reapply the restored/default size")

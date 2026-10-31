@@ -84,7 +84,7 @@ function state() {
   return {
     settings: store.settings,
     snapshot: store.snapshot,
-    version: "20261031(02) Windows 测试版",
+    version: require("../version.json").display + " Windows 测试版",
     platform: process.platform,
     arch: process.arch,
     pendingCommand,

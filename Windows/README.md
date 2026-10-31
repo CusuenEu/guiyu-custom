@@ -1,4 +1,4 @@
-# 归屿 20261031(02) Windows 测试版
+# 归屿 20261031(04) Windows 测试版
 
 解压整个文件夹，双击 `Guiyu.exe`。不需要安装 Node.js，不要只拷贝 exe。
 
@@ -54,6 +54,8 @@ npm start
 npm run package
 ```
 
-打包输出 `out/Guiyu-20261031-02-test-Windows-ia32.zip` 和 `out/Guiyu-20261031-02-test-Windows-x64.zip`。生产依赖不含平台原生模块，PDF文字提取不依赖native canvas。`npm run preview` 仅启动内存示例界面，不访问用户项目。
+打包输出 `out/Guiyu-20261031-04-test-Windows-ia32.zip` 和 `out/Guiyu-20261031-04-test-Windows-x64.zip`。生产依赖不含平台原生模块，PDF文字提取不依赖native canvas。`npm run preview` 仅启动内存示例界面，不访问用户项目。
 
 许可证：MIT；Electron、PDF.js、fflate、DOMMatrix及其他依赖保留各自许可证。交付包内附框架LICENSE和依赖许可证。
+
+版本由仓库根目录 `Release/version.json` 统一决定，`node scripts/version.cjs` 可同步到Windows版本镜像及package元数据；打包时也会同步。独立源码包没有仓库根目录时使用随包的 `version.json`。
