@@ -23,6 +23,13 @@ struct WorkspaceSettingsView: View {
     var close: () -> Void
     var openPending: () -> Void
     @State var section: SettingsSection = .locations
+    init(store: Store, updater: AppUpdater = .shared, close: @escaping () -> Void, openPending: @escaping () -> Void, section: SettingsSection = .locations) {
+        self._store = ObservedObject(wrappedValue: store)
+        self._updater = ObservedObject(wrappedValue: updater)
+        self.close = close
+        self.openPending = openPending
+        self._section = State(wrappedValue: section)
+    }
     var body: some View {
         HStack(spacing:0) {
             VStack(alignment:.leading,spacing:24) {
@@ -35,7 +42,7 @@ struct WorkspaceSettingsView: View {
                         Button { section = item } label: {
                             HStack(spacing:10) {
                                 Image(systemName:item.symbol).font(.system(size:16)).frame(width:20).foregroundStyle(accent)
-                                Text(item.rawValue).font(.system(size:14,weight:section == item ? .semibold : .regular,design:.rounded))
+                                Text(item.rawValue).font(.system(size:14,weight:section == item ? Font.Weight.semibold : Font.Weight.regular,design:Font.Design.rounded))
                                 Spacer(minLength:0)
                             }.padding(.horizontal,12).frame(height:44)
                                 .background(section == item ? WorkspaceTheme.mint : .clear,in:RoundedRectangle(cornerRadius:12)).contentShape(Rectangle())

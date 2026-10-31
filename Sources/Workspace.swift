@@ -280,16 +280,35 @@ final class BrowserCell: NSTableCellView {
 
 struct ProjectWorkspace: View {
     @StateObject var search = WorkspaceSearchController()
-    @StateObject var store = Store(); @State var year = ""; @State var projectPath: String?; @State var filePath: String?; @State var query = ""; @State var mode = "按类别"
-    @State var collapsed = Set<String>(); @State var sourceFolder = ""; @State var sourceRows: [BrowserRow] = []; @State var naming: NamingTarget?; @State var manualNaming: NamingTarget?
-    @State var fileSelections = Set<String>(); @State var isDragging = false; @State var batchNaming: BatchNamingRequest?; @State var processedRenameCount = 0
+    @StateObject var store = Store()
+    @State var year = ""
+    @State var projectPath: String?
+    @State var filePath: String?
+    @State var query = ""
+    @State var mode = "按类别"
+    @State var collapsed = Set<String>()
+    @State var sourceFolder = ""
+    @State var sourceRows: [BrowserRow] = []
+    @State var naming: NamingTarget?
+    @State var manualNaming: NamingTarget?
+    @State var fileSelections = Set<String>()
+    @State var isDragging = false
+    @State var batchNaming: BatchNamingRequest?
+    @State var processedRenameCount = 0
     @State var settingsDestination: SettingsSection?
-     @State var showPreview = false; @State var showPending = false
-    @State var sourceLoading = false; @State var sourceError = ""; @State var sourceGeneration = UUID()
-    @State var projectOrder = "月份倒序"; @State var archiveSourceID: String?; @State var quickArchiveRequest: QuickArchiveRequest?
+    @State var showPreview = false
+    @State var showPending = false
+    @State var sourceLoading = false
+    @State var sourceError = ""
+    @State var sourceGeneration = UUID()
+    @State var projectOrder = "月份倒序"
+    @State var archiveSourceID: String?
+    @State var quickArchiveRequest: QuickArchiveRequest?
     @State var searchFocused = false
-    @State var sidebarPreviewFraction: Double?; @State var sidebarDragOrigin: CGFloat?
+    @State var sidebarPreviewFraction: Double?
+    @State var sidebarDragOrigin: CGFloat?
     @State var searchFolderToOpen: String?
+    init(store: Store) { self._store = StateObject(wrappedValue: store) }
     var isScopeSearch: Bool { archiveSourceID == nil && !FilenameQuery(query).tokens.isEmpty }
     var activeSourceRows: [BrowserRow] { isScopeSearch ? search.output.searchEntries : sourceRows }
     var activeDragScope: String { isScopeSearch ? "search:"+(selectedDirectory?.path ?? year) : sourceFolder }
@@ -569,7 +588,10 @@ struct ProjectWorkspace: View {
 
 }
 struct PendingDialog: View {
-    @Environment(\.dismiss) var dismiss; @ObservedObject var store: Store; @State var selected: String?; @State var project = ""
+    @Environment(\.dismiss) var dismiss
+    @ObservedObject var store: Store
+    @State var selected: String?
+    @State var project = ""
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             HStack { Text("待确认文件").font(.title2.bold()); Spacer(); Button("关闭") { dismiss() } }
