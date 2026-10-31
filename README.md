@@ -4,7 +4,7 @@
 
 方案、招标文件、投标文件和报价表，常常散落在下载文件夹和层层项目目录里。归屿把真实项目目录、文件整理和快速查找放进一个原生 macOS 工作空间，让你更容易给文件起好名字、放对位置、再次找到。
 
-[下载最新版](https://github.com/tiduse1988/guiyu/releases/latest) · [观看／下载介绍视频](https://github.com/tiduse1988/guiyu/releases/download/v0.5.0/Guiyu-introduction-V3.mp4) · [构建与操作说明](#从源码构建)
+[下载最新版](https://github.com/tiduse1988/guiyu/releases/latest) · [观看／下载介绍视频](https://github.com/tiduse1988/guiyu/releases/download/v0.5.0/Guiyu-product-introduction.mp4) · [构建与操作说明](#从源码构建)
 
 ![归屿工作空间（示例数据）](docs/workspace.png)
 
@@ -26,11 +26,11 @@
 
 ## 视频介绍
 
-[![归屿：让每份文件都有归处 · 介绍视频（4分25秒）](docs/introduction-cover.png)](https://github.com/tiduse1988/guiyu/releases/download/v0.5.0/Guiyu-introduction-V3.mp4)
+[![归屿：让每份文件都有归处 · 介绍视频（3分35秒）](docs/introduction-cover.png)](https://github.com/tiduse1988/guiyu/releases/download/v0.5.0/Guiyu-product-introduction.mp4)
 
-**[观看／下载完整介绍视频（MP4，约48 MB）](https://github.com/tiduse1988/guiyu/releases/download/v0.5.0/Guiyu-introduction-V3.mp4)**
+**[观看／下载完整介绍视频（MP4，约21 MB）](https://github.com/tiduse1988/guiyu/releases/download/v0.5.0/Guiyu-product-introduction.mp4)**
 
-4 分 25 秒，包含中文旁白、字幕与操作动效，介绍命名建议、归档、搜索及实际应用界面。演示使用示例文件；部分操作以动画讲解，具体界面以当前版本为准。视频演示本地功能，检查软件更新时仍需要联网。点击封面访问视频文件；浏览器可能直接播放或下载到本地。
+3 分 35 秒，包含中文旁白、字幕与操作动效，介绍命名建议、归档、搜索及实际应用界面。演示使用示例文件；部分操作以动画讲解，具体界面以当前版本为准。视频演示本地功能，检查软件更新时仍需要联网。点击封面访问视频文件；浏览器可能直接播放或下载到本地。
 
 ## 下载与安装
 
