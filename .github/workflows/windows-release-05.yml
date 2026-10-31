@@ -1,0 +1,44 @@
+name: Publish Windows 20261031(05)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/windows-release-05.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Windows/package-lock.json
+      - name: Install dependencies
+        working-directory: Windows
+        run: npm ci --omit=optional --ignore-scripts
+      - name: Test
+        working-directory: Windows
+        run: npm test
+      - name: Find or install NSIS
+        shell: pwsh
+        run: |
+          $nsis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          if (!(Test-Path $nsis)) { choco install nsis --no-progress -y; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+          if (!(Test-Path $nsis)) { throw 'NSIS was not installed' }
+          "GUIYU_MAKENSIS=$nsis" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build Windows installers
+        working-directory: Windows
+        run: npm run package
+      - name: Publish Windows prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(Get-ChildItem Windows/out/*-setup.exe | ForEach-Object { $_.FullName })
+          if ($assets.Count -ne 2) { throw 'Expected both x86 and x64 installers' }
+          gh release create windows-20261031-05 --target $env:GITHUB_SHA --prerelease --title '20261031(05) Windows 测试版' --notes 'Windows 32 位和 64 位安装包。智能命名支持本地 PDF 和图片文字识别。' $assets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
