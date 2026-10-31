@@ -32,6 +32,11 @@ jobs:
       - name: Build Windows installers
         working-directory: Windows
         run: npm run package
+      - name: Save Windows installers as build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Guiyu-Windows-20261031-05-installers
+          path: Windows/out/*-setup.exe
       - name: Publish Windows prerelease
         shell: pwsh
         env:
