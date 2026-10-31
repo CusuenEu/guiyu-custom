@@ -1,0 +1,234 @@
+{
+  "Sources/AppUpdater.swift": {
+    "sha256": "b6743d29928b1bfa29e3b8691a97fe20eb359ac0fd8e6ae5ea2a4b2c61ecb3c2",
+    "bytes": 8640
+  },
+  "Sources/ArchiveMatching.swift": {
+    "sha256": "51243f68272a4d84fdd641eacacceeb60a40e04257a6cfd46556ac721076e3bd",
+    "bytes": 9189
+  },
+  "Sources/ArchiveMatchingTests.swift": {
+    "sha256": "618da2c7bbde87cc59d01078e24b0bbd7e833dd17ece23ad8b0553720004e04c",
+    "bytes": 8781
+  },
+  "Sources/ArchiveSourceLayoutReview.swift": {
+    "sha256": "13a65cf69c058b4d1c57b509fc5b4f811ed8cf6b604b9dbe4eb657f0fe3bc08c",
+    "bytes": 2714
+  },
+  "Sources/ArchiveSources.swift": {
+    "sha256": "3dc6affaea2a50d57b2758000cd1cfb8c5afbf7cc20ecffc297e7f5f1d076038",
+    "bytes": 11980
+  },
+  "Sources/Automation.swift": {
+    "sha256": "1c680347b89acb8799c1c4855bbcc696412f528341b6b721df0c2e51a5bfc39f",
+    "bytes": 9688
+  },
+  "Sources/BatchNaming.swift": {
+    "sha256": "6f1acdda790095f3e9c5c4384a837c8cd7f07238df3f21bcfcef007bd74d56a5",
+    "bytes": 11712
+  },
+  "Sources/Categories.swift": {
+    "sha256": "af32e2071c0ae6c930e3254de9832fb0005c43c319d4cd1f0aaba24da80008dd",
+    "bytes": 8785
+  },
+  "Sources/CategoryDisclosureReview.swift": {
+    "sha256": "0c89b389e36f113aec636d8c12a34a94ec93a5e64ec0a09f745534d43d8defc7",
+    "bytes": 1815
+  },
+  "Sources/CategoryDragging.swift": {
+    "sha256": "4e1ce9dad68c240f6d99024e89c45adaaa1d225c12416e2dd690550d59c9fdf9",
+    "bytes": 3080
+  },
+  "Sources/CategoryRuleAssistant.swift": {
+    "sha256": "1751483be34c8c555742c6685a03e7c188dac7e8d6f8e254e09511e08264b024",
+    "bytes": 9576
+  },
+  "Sources/CategoryRuleEditor.swift": {
+    "sha256": "9e586fadaa4cc0eb26ef17a66bdac1cc449959d9d92598a6709f81d93f39065c",
+    "bytes": 6636
+  },
+  "Sources/CategoryRuleExchange.swift": {
+    "sha256": "075415450f15d0cf50dc018174d8564a557e27bacf5e112e157be474848e069e",
+    "bytes": 10260
+  },
+  "Sources/CategoryRuleExchangeTests.swift": {
+    "sha256": "02a47ae1e65e6791150c1857f2aeb577a31f9c09ae40ddb27b496b769aaebc5e",
+    "bytes": 6555
+  },
+  "Sources/CategoryRules.swift": {
+    "sha256": "c4aac32da1480b16eee1eca5762a530699fa0d0915d41acd990c63aa3112e225",
+    "bytes": 12997
+  },
+  "Sources/CategoryRulesTests.swift": {
+    "sha256": "d61aa0943f5afd45bed352f833e57798addc0a6e412921cd86753179c7290fb5",
+    "bytes": 7831
+  },
+  "Sources/CategorySettings.swift": {
+    "sha256": "0d6b1a06ba779b361fa922d86cf6b6bbce20cbc9446ca93127edf83accf004f3",
+    "bytes": 6715
+  },
+  "Sources/CategoryWorkflow.swift": {
+    "sha256": "1a4353701955b8fd6037b1ca322225d81262a8fb3012ca36203867e7d0e32d08",
+    "bytes": 6465
+  },
+  "Sources/CategoryWorkflowReview.swift": {
+    "sha256": "049bc1b3dbc43f208a5b04fbf40830b15473fa5b74be8a75b226152b9c035443",
+    "bytes": 6853
+  },
+  "Sources/DirectoryBreadcrumb.swift": {
+    "sha256": "13b7a3401564623cbc42222e8d6d1b21316b478bb96c8c63ba9afa2c8522ff1b",
+    "bytes": 7590
+  },
+  "Sources/DirectoryOrdering.swift": {
+    "sha256": "5ecaee2d03529bd0d0d30b2de6d232cc039980784cf53d71f05fe337aba5ccd3",
+    "bytes": 14750
+  },
+  "Sources/DirectoryPresentation.swift": {
+    "sha256": "3ce320931ea0120d1e06ad5df873b964ff169c241219d52263447cee24166a7b",
+    "bytes": 7798
+  },
+  "Sources/FileTable.swift": {
+    "sha256": "3eb7b390e03181cdf060fb69b645482e80961f95396b3d07b3b35a8364ff0877",
+    "bytes": 2408
+  },
+  "Sources/FilenameSearch.swift": {
+    "sha256": "7cd949fad9f4ca043a28db0c2fe02ee8538ee35ca27d7df1679f7dac05a9e706",
+    "bytes": 16933
+  },
+  "Sources/FilenameSearchTests.swift": {
+    "sha256": "842cc3cb404df42c4ed637a098c1e9b49a6b0b6dda0e751da246f074e5b8c5b7",
+    "bytes": 9310
+  },
+  "Sources/FinderServices.swift": {
+    "sha256": "93782ef781581643af4e0674cf42ae97df1076635098201e924e242b6fce69e0",
+    "bytes": 12266
+  },
+  "Sources/FinderShortcuts.swift": {
+    "sha256": "94ad50d660cb65654f66e6f3e82a455a463b411779d05849f3cc3eebdb62cbae",
+    "bytes": 8301
+  },
+  "Sources/Indexing.swift": {
+    "sha256": "5656d30c8552253b3cd86215218a2af225bf46c47298fc342845c6f0001f62f2",
+    "bytes": 8580
+  },
+  "Sources/Naming.swift": {
+    "sha256": "ed314b777f42702b0776d1819d6cace1a82f8ebbb8b6150a9880b20d42e2cdc5",
+    "bytes": 23308
+  },
+  "Sources/NamingPolicyTests.swift": {
+    "sha256": "200f6cf4cdd9907591f15f39acc1e94882ed35fc1e97b52b0a324d45da96b5f2",
+    "bytes": 12897
+  },
+  "Sources/NamingReading.swift": {
+    "sha256": "7501e89f8f30aacb7502fe98bc4c49774847ad9cd9d3ff52ba49703ad0269a12",
+    "bytes": 15234
+  },
+  "Sources/NamingRules.swift": {
+    "sha256": "160fcda2b95fcb67c9cf936181a664bf214850919cbfb114c99a813348f0fea4",
+    "bytes": 9670
+  },
+  "Sources/NamingRulesReview.swift": {
+    "sha256": "86b057e761e6481c9061102faf8a625a019f0a62c166457eac95c5f87dbfbed4",
+    "bytes": 12880
+  },
+  "Sources/NamingSpreadsheet.swift": {
+    "sha256": "825c204d4f7c237b3bc5ba7682c68d0fbf8372309f95b0d779d27a864e8d8691",
+    "bytes": 10622
+  },
+  "Sources/NamingTitles.swift": {
+    "sha256": "4f68448484f4830a456ac84603fdd6981ca17c4250db830a4eeddb4c66422951",
+    "bytes": 10059
+  },
+  "Sources/ProjectRoots.swift": {
+    "sha256": "554612165b92386333c044133cfb9bfb7298ae98ad3cd219844935f49dbb5d2a",
+    "bytes": 5767
+  },
+  "Sources/ProjectRootsReview.swift": {
+    "sha256": "d45676a8d1f091b4d81d40cf7c2cfe2226fd96c12d1682abf487c402c5584fd5",
+    "bytes": 3893
+  },
+  "Sources/ProjectRootsTests.swift": {
+    "sha256": "b136122e56a2ff0fd6d61e596f5219ddc213ff3f42eb26740badf254c64d53d4",
+    "bytes": 7282
+  },
+  "Sources/QuickArchive.swift": {
+    "sha256": "6c92058f33e9d5b33b283578a255635066a8b08b0a6e87a60da384ac7e4e6ab0",
+    "bytes": 13014
+  },
+  "Sources/SidebarSearchField.swift": {
+    "sha256": "0f84936c2f4eed7c4f14ea25cc4212777c3c4feca9bc2fb36646f65dfb930eed",
+    "bytes": 2506
+  },
+  "Sources/SidebarSections.swift": {
+    "sha256": "cdc0ceb18560f872d4e3dfdd936ca073285451f7a0858c60f1f7a1b2097d2a66",
+    "bytes": 8239
+  },
+  "Sources/SmartArchiveDialog.swift": {
+    "sha256": "b3cea62c715714a3f171c74ebb44d18fa6531de55f7af2ff210fbb3757da7cb5",
+    "bytes": 7813
+  },
+  "Sources/SmartDialogComponents.swift": {
+    "sha256": "d35d7cb687ee900ed98e33db51bac7ff828af8cd4e5175fd7eac9bc5cbf635f8",
+    "bytes": 5945
+  },
+  "Sources/SmartDialogsReview.swift": {
+    "sha256": "50ce76cdf7408af32fb24bfc2ad351de2cbe694248f10d8d589e09daee84277f",
+    "bytes": 17234
+  },
+  "Sources/SmartNamingDialog.swift": {
+    "sha256": "336981ab5b9ae83b17926dc3b78c922e2a11335a47b5385cc3bfcadf61135323",
+    "bytes": 7851
+  },
+  "Sources/ThirdLevelSearch.swift": {
+    "sha256": "e62a0046e04355f9fa3383b2a620717b11df3e25790d9574fadae0470cd1cef8",
+    "bytes": 6245
+  },
+  "Sources/UIReview.swift": {
+    "sha256": "862454fc36cd3517c5658c3384a9de86ded88a6e7aa8855c4ff701a9e11c334d",
+    "bytes": 20766
+  },
+  "Sources/WindowFramePersistence.swift": {
+    "sha256": "836ce5ff2ee62ee031d3bcd1a8d2c9b9db474ade5d41071fec93318a36a15616",
+    "bytes": 5827
+  },
+  "Sources/WindowFrameTests.swift": {
+    "sha256": "3378c48a767e0c1bf586bc3e5130bc0eef0b08de5bd2ee8891052e7ec761adf6",
+    "bytes": 5775
+  },
+  "Sources/Workspace.swift": {
+    "sha256": "d03d94227a43c9ee3190c6aec1f3c2774183afa96eeed33360ee718b6eb415b6",
+    "bytes": 49329
+  },
+  "Sources/WorkspaceFileIcons.swift": {
+    "sha256": "40c6703944d145bee5076eb5210dc05c9a9f4ac95fdf793c7ac19d4e9a1671f4",
+    "bytes": 1742
+  },
+  "Sources/WorkspaceSettings.swift": {
+    "sha256": "2d9ec4fa298725cf47d3cc7b47c19df7a1e1d6a32f9f2a3797f9e1e09e2a7b21",
+    "bytes": 9349
+  },
+  "Sources/WorkspaceSplitLayout.swift": {
+    "sha256": "040d03ca3d44296e7d7cdf7e1412c1858fd11c213dd1cc0fd6d790e18d82ed49",
+    "bytes": 1566
+  },
+  "Sources/WorkspaceTheme.swift": {
+    "sha256": "b92b957f584774d2ad9691dee084cb2c339b4dcea02a47d43536506af7f809d2",
+    "bytes": 2829
+  },
+  "Sources/main.swift": {
+    "sha256": "98b4783bc38f99b1fac86821a14b8a805a310afddb73816c2cc7b572ac3ea6cd",
+    "bytes": 32847
+  },
+  "PRODUCT.md": {
+    "sha256": "d4edb87c8df44835c4b72cf203acdccfecc3afc6feb33c916e45731681d65e7f",
+    "bytes": 26556
+  },
+  "DESIGN.md": {
+    "sha256": "913f07a9eaa0fec86d2a399d18eb26bcaceaa018a95ca6cbaf135db0babf1d37",
+    "bytes": 26749
+  },
+  "README.md": {
+    "sha256": "4f5ef76a8f919401146a501be766988ce10e9f52b9fb9abdf2fd5ed79838f6b8",
+    "bytes": 34126
+  }
+}

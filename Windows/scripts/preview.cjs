@@ -2,7 +2,7 @@
 const http = require("node:http"),
   fs = require("node:fs/promises"),
   path = require("node:path");
-const { ruleFor } = require("../src/core.cjs");
+const { ruleFor, formatSuggestion, prefixFor } = require("../src/core.cjs");
 const root = path.resolve(__dirname, ".."),
   base = "C:\\GuiyuDemo",
   directory = base + "\\2026";
@@ -32,6 +32,8 @@ let projects = names.map((name) => ({ ...make(name, directory), directory })),
     "投标文件-民政厅网络安全运维项目.docx",
     "分项报价表.xlsx",
     "参考资料",
+    "PDF合并.txt",
+    "无标题原名.PDF",
   ].map((name, i) => ({
     ...make(name, projects[0].path, i === 6),
     project: projects[0].path,
@@ -55,8 +57,23 @@ let settings = {
   directoryOrders: {},
   sidebarFraction: 0.62,
   widths: [240, 390],
-  namingRules: { folder: "month", document: "category", dateSource: "today" },
+  namingRules: { folder: "nameOnly", document: "nameOnly", dateSource: "today" },
 };
+// Nested fixtures exercise breadcrumb navigation without touching local files.
+const sourceRoot = make("招标文件下载2026-07-23-165700", settings.sources[0].path);
+const sourceAttachment = make("5_附件B-技术规范书", sourceRoot.path);
+const sourceSpecification = make("附件B-技术规范书", sourceAttachment.path);
+const projectReference = files.find((file) => file.folder);
+const projectAttachment = make("附件材料", projectReference.path);
+const projectSpecification = make("技术规范书", projectAttachment.path);
+const folderContents = new Map([
+  [sourceRoot.path, [sourceAttachment, make("采购说明.txt", sourceRoot.path, false)]],
+  [sourceAttachment.path, [sourceSpecification]],
+  [sourceSpecification.path, [make("技术要求.txt", sourceSpecification.path, false)]],
+  [projectReference.path, [projectAttachment]],
+  [projectAttachment.path, [projectSpecification]],
+  [projectSpecification.path, [make("项目资料.txt", projectSpecification.path, false)]],
+]);
 const state = () => ({
   version: "20261031(02) Windows 测试版",
   platform: "win32",
@@ -72,6 +89,7 @@ const state = () => ({
     unavailable: [],
   },
 });
+let lastRename = [];
 const server = http.createServer(async (req, res) => {
   try {
     if (req.url === "/fixture-api") {
@@ -86,19 +104,20 @@ const server = http.createServer(async (req, res) => {
           break;
         case "list":
           if (process.env.GUIYU_PREVIEW_SLOW_LIST === "1") await new Promise((resolve) => setTimeout(resolve, 400));
-          result = arg.path === "C:\\Downloads\\示例文件夹"
+          result = folderContents.get(arg.path) || (arg.path === "C:\\Downloads\\示例文件夹"
             ? [make("示例文档.txt", arg.path, false), make("子文件夹", arg.path)]
             : arg.path === "C:\\Downloads\\第二个文件夹"
               ? [make("另一个文件.txt", arg.path, false)]
             : arg.path === "C:\\Downloads\\示例文件夹\\子文件夹"
               ? [make("子目录文件.txt", arg.path, false)]
-              : files.filter((e) => e.project === arg.path);
+              : files.filter((e) => e.project === arg.path));
           break;
         case "source":
           result = process.env.GUIYU_PREVIEW_MANY_FILES === "1"
             ? Array.from({ length: 100 }, (_, i) => make(`示例下载文件 ${i + 1}.txt`, "C:\\Downloads", false))
-            : [make("示例文件夹", "C:\\Downloads"), make("第二个文件夹", "C:\\Downloads"), ...files.slice(0, 2)];
+            : [sourceRoot, make("示例文件夹", "C:\\Downloads"), make("第二个文件夹", "C:\\Downloads"), ...files.slice(0, 2)];
           break;
+        case "closePreview": result=true;break;
         case "open":
           console.log("Fixture open:", arg.path);
           result = true;
@@ -127,22 +146,23 @@ const server = http.createServer(async (req, res) => {
             };
           result = state();
           break;
-        case "naming":
-          result = arg.items.map((e) => ({
-            entry: e,
-            prefix: e.folder ? "10月" : "方案",
-            category: "方案",
-            format: e.folder ? "month" : "category",
-            ext: e.folder ? "" : path.win32.extname(e.name),
-            candidates: [
-              {
-                name: "民政厅机关网络运维及网络安全运维项目",
-                evidence: "隔离示例标题",
-              },
-            ],
-            warnings: [],
-          }));
+        case "naming": {
+          const referenceDate = Date.now();
+          result = arg.items.map((e) => {
+            const titles = e.name === "无标题原名.PDF" ? [] : e.name === "PDF合并.txt" ? ["年度财务报告项目", "民政厅机关网络运维及网络安全运维项目"] : ["民政厅机关网络运维及网络安全运维项目", "年度财务报告项目"];
+            const candidates = titles.map((title) => ({
+              ...formatSuggestion(e, settings, title, referenceDate), evidence: "隔离示例标题",
+            }));
+            const format=candidates[0]||prefixFor(e,settings,referenceDate);
+            return { entry: e, prefix: format.prefix, category: format.category, format: format.format,
+              ext: e.folder ? "" : path.win32.extname(e.name), candidates, warnings: [],fallback:!candidates.length,originalName:e.name };
+          });
           break;
+        }
+        case "rename":
+          // Capture the production editor's exact confirmation payload in memory only.
+          lastRename = arg.plans; result = { ...state(), result: lastRename.length }; break;
+        case "reviewLastRename": result = lastRename; break;
         case "archiveSuggest":
           result = {
             projects: projects.map((p, i) => ({

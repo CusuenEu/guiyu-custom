@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("guiyu", {
+  cancelNaming: () => ipcRenderer.send("guiyu-cancel-naming"),
   onCommand: (callback) =>
     ipcRenderer.on("guiyu-command", (event, command) => callback(command)),
   invoke: async (method, arg) => {

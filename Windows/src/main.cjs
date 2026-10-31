@@ -7,6 +7,7 @@ const {
   clipboard,
   Menu,
   net,
+  screen,
 } = require("electron");
 const fs = require("node:fs/promises"),
   path = require("node:path"),
@@ -24,6 +25,7 @@ const {
   runPS,
 } = require("./core.cjs");
 const { naming, extract } = require("./documents.cjs");
+const namingFormat = require("./naming-format.cjs");
 let store,
   win,
   pendingCommand = null;
@@ -45,14 +47,15 @@ async function incoming(args) {
     dialog.showErrorBox("无法打开所选文件", e.message);
   }
 }
-let previewWindow;
+let previewWindow, namingCancellation;
 const review = process.env.GUIYU_REVIEW === "1";
 function createWindow() {
+  const frames = require("./window-frame.cjs"),
+    file = path.join(store.stateDir, "window-frame-v1.json");
   win = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 960,
-    minHeight: 620,
+    ...(frames.restore(file, screen) || { width: 1280, height: 820 }),
+    minWidth: frames.minimum.width,
+    minHeight: frames.minimum.height,
     title: "归屿",
     backgroundColor: "#003e30",
     icon: path.join(__dirname, "../assets/companion.png"),
@@ -65,6 +68,7 @@ function createWindow() {
       webSecurity: true,
     },
   });
+  frames.attach(win, file, screen, app);
   win.loadFile(path.join(__dirname, "index.html"));
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (e) => e.preventDefault());
@@ -96,8 +100,14 @@ async function dispatch(method, arg = {}) {
       return true;
     case "explorerMenu": {
       if (process.platform !== "win32") throw Error("此功能仅适用于 Windows。");
-      const script = await fs.readFile(path.join(__dirname, '../scripts/explorer-menu.ps1'), 'utf8');
-      await runPS(script, {GUIYU_EXE:app.getPath('exe'), GUIYU_MENU_ACTION:arg.remove?'remove':'install'});
+      const script = await fs.readFile(
+        path.join(__dirname, "../scripts/explorer-menu.ps1"),
+        "utf8",
+      );
+      await runPS(script, {
+        GUIYU_EXE: app.getPath("exe"),
+        GUIYU_MENU_ACTION: arg.remove ? "remove" : "install",
+      });
       return true;
     }
     case "refresh":
@@ -274,26 +284,37 @@ async function dispatch(method, arg = {}) {
       return true;
     }
     case "namingRules": {
-      if (
-        !["month", "monthDay", "category"].includes(arg.folder) ||
-        !["month", "monthDay", "category"].includes(arg.document) ||
-        !["today", "created"].includes(arg.dateSource)
-      )
-        throw Error("命名规则无效。");
-      await store.save({ ...store.settings, namingRules: arg });
+      await store.save({
+        ...store.settings,
+        namingRules: namingFormat.settings(arg),
+      });
       return state();
     }
     case "assign":
       await store.assign(arg.items, arg.id);
       return state();
     case "naming": {
-      let results = [];
-      for (const e of arg.items) {
-        await store.guard(e.path);
-        await verify(e);
-        results.push(await naming(e, store.settings));
+      const referenceDate = Date.now();
+      namingCancellation = new AbortController();
+      try {
+        const results = [];
+        for (const e of arg.items) {
+          namingCancellation.signal.throwIfAborted();
+          await store.guard(e.path);
+          await verify(e);
+          results.push(
+            await naming(
+              e,
+              store.settings,
+              referenceDate,
+              namingCancellation.signal,
+            ),
+          );
+        }
+        return results;
+      } finally {
+        namingCancellation = null;
       }
-      return results;
     }
     case "archiveSuggest": {
       let texts = arg.items.map((e) => e.name).join(" "),
@@ -385,6 +406,9 @@ async function dispatch(method, arg = {}) {
       }
       return state();
     }
+    case "closePreview":
+      if (previewWindow && !previewWindow.isDestroyed()) previewWindow.close();
+      return true;
     case "preview": {
       await store.guard(arg.path);
       const e = await entry(arg.path);
@@ -392,7 +416,11 @@ async function dispatch(method, arg = {}) {
         shell.showItemInFolder(e.path);
         return true;
       }
-      if(previewWindow&&!previewWindow.isDestroyed()){const previous=previewWindow.guiyuPath;previewWindow.close();if(previous===e.path)return true;}
+      if (previewWindow && !previewWindow.isDestroyed()) {
+        const previous = previewWindow.guiyuPath;
+        previewWindow.close();
+        if (previous === e.path) return true;
+      }
       const p = new BrowserWindow({
         width: 900,
         height: 720,
@@ -405,7 +433,8 @@ async function dispatch(method, arg = {}) {
           nodeIntegration: false,
         },
       });
-      previewWindow=p;p.guiyuPath=e.path;
+      previewWindow = p;
+      p.guiyuPath = e.path;
       p.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       p.webContents.on("will-navigate", (ev) => ev.preventDefault());
       if (/\.(pdf|png|jpe?g|gif|webp|bmp)$/i.test(e.name))
@@ -511,6 +540,9 @@ app.whenReady().then(async () => {
         : path.join(app.getPath("appData"), "Guiyu-Windows"),
     ).init(defaults());
     await store.refresh();
+    ipcMain.on("guiyu-cancel-naming", (event) => {
+      if (event.sender === win?.webContents) namingCancellation?.abort();
+    });
     ipcMain.handle("guiyu", async (event, method, arg) => {
       if (
         event.sender !== win?.webContents ||

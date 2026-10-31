@@ -23,7 +23,8 @@ function ReadBitmap($stream){
 }
 if([IO.Path]::GetExtension($inputPath).ToLower() -eq '.pdf'){
  $pdf=Await ([Windows.Data.Pdf.PdfDocument]::LoadFromFileAsync($file)) ([Windows.Data.Pdf.PdfDocument])
- for($i=0;$i -lt [Math]::Min($limit,$pdf.PageCount);$i++){
+ $start=[Math]::Max(0,[int]$env:GUIYU_START_PAGE)
+ for($i=$start;$i -lt [Math]::Min($start+$limit,$pdf.PageCount);$i++){
   $page=$pdf.GetPage($i);$stream=New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
   try{$options=New-Object Windows.Data.Pdf.PdfPageRenderOptions;$options.DestinationWidth=1600; WaitAction ($page.RenderToStreamAsync($stream,$options));$stream.Seek(0);ReadBitmap $stream}finally{$stream.Dispose();$page.Dispose()}
  }

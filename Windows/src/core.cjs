@@ -3,6 +3,7 @@ const fs = require("node:fs/promises"),
   path = require("node:path"),
   crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
+const namingFormat = require("./naming-format.cjs");
 const norm = (s) =>
   String(s).normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
 const matches = (name, q) =>
@@ -73,7 +74,7 @@ async function verify(e) {
     throw Error("文件已更新或被替换，请关闭窗口后重新选择：" + e.name);
   return now;
 }
-function runPS(script, env = {}, timeout = 90000) {
+function runPS(script, env = {}, timeout = 90000, signal) {
   return new Promise((resolve, reject) =>
     execFile(
       "powershell.exe",
@@ -90,6 +91,7 @@ function runPS(script, env = {}, timeout = 90000) {
         env: { ...process.env, ...env },
         windowsHide: true,
         timeout,
+        signal,
         maxBuffer: 8 * 1024 * 1024,
         encoding: "utf8",
       },
@@ -319,23 +321,19 @@ function parseRules(text, cats) {
     result.has(c.id) ? { ...c, rule: result.get(c.id) } : c,
   );
 }
-function cleanStem(s, category) {
-  for (let i = 0; i < 3; i++) {
-    s = s.replace(
-      /^(?:1[0-2]|[1-9])月\s+|^(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[ _-]+|^(?:解决方案|招标文件|投标文件)-/,
-      "",
-    );
-    if (s.startsWith(category + " ")) s = s.slice(category.length + 1);
-  }
-  return s
-    .trim()
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(/[. ]+$/, "");
+function smartCategory(e, s, recognizedName = "") {
+  const ext = e.folder ? "" : path.extname(e.name);
+  const original = namingFormat.literalStem(e.name, ext);
+  const title = namingFormat.literalStem(recognizedName, ext);
+  const row = title.trim()
+    ? { ...e, name: [...new Set([original, title])].join(" ") + ext }
+    : e;
+  return s.categories.find((c) => c.id === categoryFor(row, s))?.name || "其他";
 }
-function prefixFor(e, s, now = Date.now()) {
+function prefixFor(e, s, now = Date.now(), recognizedName = "") {
+  const rules = namingFormat.settings(s.namingRules);
   const date = new Date(
-    s.namingRules.dateSource === "created" ? e.created || now : now,
+    rules.dateSource === "created" ? e.created || now : now,
   );
   let parts = Object.fromEntries(
     new Intl.DateTimeFormat("en", {
@@ -346,21 +344,37 @@ function prefixFor(e, s, now = Date.now()) {
       .formatToParts(date)
       .map((x) => [x.type, x.value]),
   );
-  const format = e.folder ? s.namingRules.folder : s.namingRules.document;
+  const format = e.folder ? rules.folder : rules.document;
   const category =
-    s.categories.find((c) => c.id === categoryFor(e, s))?.name || "其他";
+    namingFormat.cleanTitle(smartCategory(e, s, recognizedName)) || "其他";
   let month = Number(parts.month);
-  if (e.folder && s.namingRules.dateSource === "created")
+  if (e.folder && rules.dateSource === "created")
     month = Number(e.name.match(/^(1[0-2]|[1-9])月/)?.[1] || month);
   return {
     prefix:
-      format === "month"
-        ? month + "月"
-        : format === "monthDay"
-          ? parts.month + parts.day
-          : category,
+      format === "nameOnly"
+        ? ""
+        : format === "month"
+          ? month + "月"
+          : format === "monthDay"
+            ? parts.month + parts.day
+            : category,
     format,
     category,
+  };
+}
+function formatSuggestion(e, settings, base, referenceDate = Date.now()) {
+  const format = prefixFor(e, settings, referenceDate, base);
+  const ext = e.folder ? "" : path.extname(e.name);
+  const name = namingFormat.cleanTitle(namingFormat.literalStem(base, ext));
+  const proposedStem = [format.prefix, name].filter(Boolean).join(" ");
+  return {
+    name,
+    ...format,
+    editableName: ["nameOnly", "category"].includes(format.format)
+      ? proposedStem
+      : name,
+    proposedName: proposedStem + ext,
   };
 }
 class Store {
@@ -377,11 +391,7 @@ class Store {
       directoryOrders: {},
       sidebarFraction: 0.62,
       widths: [240, 390],
-      namingRules: {
-        folder: "month",
-        document: "category",
-        dateSource: "today",
-      },
+      namingRules: namingFormat.settings(),
     };
     this.snapshot = {
       directories: [],
@@ -397,6 +407,9 @@ class Store {
         ...this.settings,
         ...JSON.parse(await fs.readFile(this.file, "utf8")),
       };
+      this.settings.namingRules = namingFormat.settings(
+        this.settings.namingRules,
+      );
     } catch (e) {
       if (e.code !== "ENOENT")
         throw Error("配置文件无法读取，已停止以防覆盖：" + e.message);
@@ -521,7 +534,14 @@ class Store {
   async rename(plans) {
     if (!plans.length) throw Error("没有勾选需要命名的条目。");
     const targets = new Set();
-    for (const { entry: e, name } of plans) {
+    for (const { entry: e, name, smart } of plans) {
+      if (smart)
+        namingFormat.validatePrefix(
+          name,
+          e.folder
+            ? this.settings.namingRules.folder
+            : this.settings.namingRules.document,
+        );
       await this.guard(e.path);
       await verify(e);
       validateName(name);
@@ -650,7 +670,8 @@ module.exports = {
   parseRules,
   categoryFor,
   prefixFor,
-  cleanStem,
+  smartCategory,
+  formatSuggestion,
   runPS,
   split,
   exists,

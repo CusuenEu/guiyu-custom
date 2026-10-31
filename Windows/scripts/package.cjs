@@ -30,6 +30,7 @@ const fs = require("node:fs/promises"),
       ignore: [
         /^\/out($|\/)/,
         /^\/tests($|\/)/,
+        /^\/review($|\/)/,
         /^\/README\.md$/,
         /^\/VALIDATION\.md$/,
         /^\/COMPATIBILITY\.md$/,

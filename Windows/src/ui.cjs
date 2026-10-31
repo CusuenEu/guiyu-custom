@@ -150,13 +150,13 @@ function render() {
           )),
     );
   projects = [...projects].sort(
-    (a, b) => (query ? relevance(a) - relevance(b) : 0) || order(a, b),
+    (a, b) => (query ? relevance(a) - relevance(b) : 0) || (source ? b.mtime-a.mtime || a.name.localeCompare(b.name,'zh') : order(a, b)),
   );
   const projectMarkup =
     projects
       .map(
         (e) =>
-          `<div role="option" tabindex="-1" aria-selected="${source ? (sourceFocus === "projects" && selected.has(e.path)) || sourceFolder?.path === e.path : project?.path === e.path}" class="project-row ${source ? ((sourceFocus === "projects" && selected.has(e.path)) || sourceFolder?.path === e.path ? "selected" : "") : project?.path === e.path ? "selected" : ""}" data-project="${esc(e.path)}" title="${esc(e.name)}">${icon(e)}<span class="name">${esc(e.name)}</span></div>`,
+          `<div role="option" tabindex="-1" aria-selected="${source ? (sourceFocus === "projects" && selected.has(e.path)) || sourceFolder?.path === e.path : project?.path === e.path}" class="project-row ${source ? "source-row" : ""} ${source ? ((sourceFocus === "projects" && selected.has(e.path)) || sourceFolder?.path === e.path ? "selected" : "") : project?.path === e.path ? "selected" : ""}" data-project="${esc(e.path)}" title="${esc(e.name)}">${icon(e)}<span class="name">${esc(e.name)}</span>${source ? `<span class="date">${esc(new Intl.DateTimeFormat("sv-SE",{year:"numeric",month:"2-digit",day:"2-digit"}).format(e.mtime))}</span>` : ""}</div>`,
       )
       .join("") ||
     `<div class="empty">${folder}<span>${!data.settings.roots.length && !source ? "在设置中选择项目总目录，开始浏览" : "当前目录没有匹配的项目或文件"}</span>${!data.settings.roots.length && !source ? '<button id="empty-settings">打开设置</button><button id="demo">体验示例空间</button>' : ""}</div>`;
@@ -169,12 +169,14 @@ function render() {
     });
   } else $("#projects").innerHTML = projectMarkup;
   $("#subnav").innerHTML = "";
+  $("#source-subnav").innerHTML = "";
+  if(source?.kind==='folder' && current && current!==source.path) renderBreadcrumbs(source.path,'#source-subnav',source.name);
+  $(".file-toolbar").hidden = Boolean(source || (!project && !query) || !data.settings.categories.length);
   let files = [];
   if (source && sourceFolder) {
     files = [...sourceChildren].sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name, "zh"));
     sourceChildren = files;
-    if (current !== sourceFolder.path)
-      $("#subnav").innerHTML = '<button id="up" aria-label="上一级">‹</button><span title="' + esc(current) + '">' + esc(basename(current)) + '</span>';
+    renderBreadcrumbs(sourceFolder.path);
   } else if (query && !source) {
     files = data.snapshot.files.filter(
       (e) => e.directory === dir && match(e.name, query),
@@ -184,13 +186,7 @@ function render() {
       (data.snapshot.unavailable.length ? " · 部分目录无法读取" : "");
   } else if (project && !source) {
     files = rows;
-    if (current !== project.path)
-      $("#subnav").innerHTML =
-        '<button id="up" aria-label="上一级">‹</button><span title="' +
-        esc(current) +
-        '">' +
-        esc(basename(current)) +
-        "</span>";
+    renderBreadcrumbs(project.path);
   }
   visibleRows = source && sourceFocus === "projects" ? projects : files;
   let body = "";
@@ -302,7 +298,7 @@ function category(e) {
       )?.id;
 }
 function groupHeader(id, name, count) {
-  return `<div role="button" tabindex="0" aria-expanded="${!collapsed.has(id)}" class="category-header" data-group="${esc(id)}"><span class="chevron" aria-hidden="true"></span><span>${esc(name)}</span><small>${count}</small></div>`;
+  return `<div role="button" tabindex="0" aria-expanded="${!collapsed.has(id)}" class="category-header" data-group="${esc(id)}"><svg class="chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style="transform:rotate(${collapsed.has(id)?'-90deg':'0deg'})"><path d="m2 4 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${esc(name)}</span><small>${count}</small></div>`;
 }
 function fileRow(e) {
   return `<div role="option" aria-selected="${selected.has(e.path)}" class="file-row ${selected.has(e.path) ? "selected" : ""}" data-file="${esc(e.path)}" draggable="true" title="${esc(e.name)}">${icon(e)}<div class="name-wrap"><div class="name">${esc(e.name)}</div>${query ? `<small>${esc(e.projectName)}</small>` : ""}</div><span class="date">${esc(new Intl.DateTimeFormat("sv-SE", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(e.mtime))}</span></div>`;
@@ -310,7 +306,7 @@ function fileRow(e) {
 async function load() {
   const gen = ++generation;
   let next = [];
-  if (source) next = await api("source", { id: source.id });
+  if (source) next = source.kind==='folder' && current && current!==source.path ? await api("list",{path:current}) : await api("source", { id: source.id });
   else if (current) next = await api("list", { path: current });
   if (gen !== generation) return;
   rows = next;
@@ -328,7 +324,7 @@ async function refresh() {
   const d = await api("refresh");
   apply(d);
   project = d.snapshot.projects.find((e) => e.path === p) || null;
-  current = project || (source && sourceFolder) ? c : "";
+  current = project || source ? c : "";
   await load();
 }
 function selectedItems() {
@@ -404,7 +400,7 @@ $("#sources").onclick = (e) => {
     source = data.settings.sources.find((s) => s.id === b.dataset.source);
     sourceFolder = null; sourceChildren = []; sourceLoading = false; sourceFocus = "projects"; sourceGeneration++;
     project = null;
-    current = "";
+    current = source.kind==='folder' ? source.path : "";
     rail();
     await sourceLoad;
     await load();
@@ -422,22 +418,9 @@ $("#projects").onclick = (e) => {
   );
   if (source) {
     if (sourceFocus !== "projects") { selected.clear(); sourceFocus = "projects"; }
-    visibleRows = [...rows].filter((x) => !query || match(x.name, query)).sort((a, b) => (query ? relevance(a) - relevance(b) : 0) || order(a, b));
+    visibleRows = [...rows].filter((x) => !query || match(x.name, query)).sort((a, b) => (query ? relevance(a) - relevance(b) : 0) || b.mtime-a.mtime || a.name.localeCompare(b.name,"zh"));
     select(item, e);
-    if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      if (e.detail > 1) return;
-      const gen = ++sourceGeneration;
-      sourceFolder = item.folder ? item : null;
-      sourceChildren = []; current = item.folder ? item.path : "";
-      sourceLoading = item.folder;
-      render();
-      if (item.folder) sourceLoad = sourceLoad.then(async () => {
-        if (gen !== sourceGeneration) return;
-        const children = await api("list", { path: item.path });
-        if (gen !== sourceGeneration) return;
-        sourceChildren = children; sourceLoading = false; render();
-      }).catch((err) => { if (gen === sourceGeneration) { sourceFolder = null; sourceLoading = false; current = ""; render(); toast(err.message, true); } });
-    }
+
   }
   else if (item.folder) {
     const gen = ++generation;
@@ -457,8 +440,9 @@ $("#projects").onclick = (e) => {
   }
 };
 $("#projects").ondblclick = (e) => {
-  const p = e.target.closest("[data-project]")?.dataset.project;
-  if (p) action(async () => { if (source) await sourceLoad; await api("open", { path: p }); });
+  const p=e.target.closest('[data-project]')?.dataset.project;
+  if(!p)return;const item=(source?rows:data.snapshot.projects).find(x=>x.path===p);
+  action(async()=>{if(source?.kind==='folder' && item?.folder){sourceGeneration++;current=p;sourceFocus='projects';await load();}else await api('open',{path:p});});
 };
 $("#files").onclick = (e) => {
   const b = e.target.closest("[data-file]"),
@@ -499,18 +483,55 @@ $("#files").ondblclick = (e) => {
     } else await api("open", { path: p });
   });
 };
-$("#subnav").onclick = (e) => {
-  if (e.target.id !== "up") return;
+function renderBreadcrumbs(root, bar = "#subnav", title = "项目根目录") {
+  const parts = GuiyuNavigation.breadcrumbs(root, current, title);
+  if (parts.length < 2) return;
+  const rootIcon = '<svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6V4.5h6l2 2h7v10h-15Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+  $(bar).innerHTML = `<button id="up" aria-label="上一级" title="上一级：${esc(parts.at(-2).name)}"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><path d="m12 4-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button><nav class="breadcrumbs" aria-label="文件夹路径"><ol>${parts.map((part, i) => `<li><button class="breadcrumb" data-breadcrumb="${i}" title="${esc(parts.slice(0, i+1).map(p=>p.name).join(' / '))}"${i === parts.length - 1 ? ' aria-current="location" disabled' : ''}>${i === 0 ? rootIcon : ''}<span class="breadcrumb-label">${esc(part.name)}</span></button></li>`).join("")}</ol></nav><button id="path-menu" aria-label="选择路径层级" title="选择任意上级目录"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="16" cy="10" r="1.5" fill="currentColor"/></svg></button>`;
+  const navigation = $(bar+" .breadcrumbs");
+  navigation.scrollLeft = navigation.scrollWidth;
+}
+function breadcrumbClick(e) {
+  const bar = e.currentTarget.id === "source-subnav" ? "#source-subnav" : "#subnav";
+  const fromSource = bar === "#source-subnav";
+  const button = e.target.closest("#up, #path-menu, [data-breadcrumb]");
+  if (!button) return;
+  const root = fromSource ? source?.path : project?.path;
+  const parts = GuiyuNavigation.breadcrumbs(root, current, fromSource ? source.name : "项目根目录");
+  if (button.id === "path-menu") {
+    const rect = button.getBoundingClientRect();
+    menu({ preventDefault() {}, clientX: rect.left, clientY: rect.bottom }, parts.map((part, i) => ({
+      label: part.name, disabled: i === parts.length - 1,
+      fn: () => $(bar+" [data-breadcrumb=\"" + i + "\"]")?.click(),
+    })));
+    return;
+  }
+  const index = button.id === "up" ? parts.length - 2 : Number(button.dataset.breadcrumb);
+  const target = parts[index]?.path;
+  if (!target || index === parts.length - 1) return;
   action(async () => {
-    const parent = current.replace(/[\\/][^\\/]+[\\/]?$/, "");
-    if (source && sourceFolder) {
-      const gen = ++sourceGeneration;
-      const children = await api("list", { path: parent });
-      if (gen !== sourceGeneration || !source || !sourceFolder) return;
-      current = parent; sourceChildren = children; selected.clear(); sourceFocus = "files"; render();
-    } else { current = parent; await load(); }
+    const sourceID = source?.id, owner = root;
+    const gen = fromSource ? ++sourceGeneration : ++generation;
+    await api('closePreview');
+    const children = fromSource && target===source.path ? await api('source',{id:source.id}) : await api("list", { path: target });
+    if (fromSource) {
+      if (gen !== sourceGeneration || source?.id !== sourceID || source?.path !== owner) return;
+      rows = children;
+      sourceFocus = "projects";
+    } else {
+      if (gen !== generation || source || project?.path !== owner) return;
+      rows = children;
+    }
+    current = target;
+    selected.clear();
+    anchor = null;
+    render();
+    (fromSource ? $("#projects") : $("#files")).focus({ preventScroll: true });
   });
-};
+}
+$("#subnav").onclick = breadcrumbClick;
+$("#source-subnav").onclick = breadcrumbClick;
+
 $$("[data-mode]").forEach(
   (b) =>
     (b.onclick = () => {
@@ -543,7 +564,7 @@ function menu(event, items) {
   el.innerHTML = items
     .map((i, n) =>
       i
-        ? `<button role="menuitem" data-menu="${n}">${esc(i.label)}</button>`
+        ? `<button role="menuitem" data-menu="${n}" ${i.disabled ? 'disabled' : ''}>${esc(i.label)}</button>`
         : "<hr>",
     )
     .join("");
@@ -553,7 +574,7 @@ function menu(event, items) {
     Math.min(event.clientY, innerHeight - el.offsetHeight - 8) + "px";
   el.onclick = (e) => {
     let n = e.target.closest("[data-menu]")?.dataset.menu;
-    if (n === undefined) return;
+    if (n === undefined || items[n].disabled) return;
     el.hidden = true;
     items[n].fn();
   };
@@ -671,145 +692,104 @@ function smartHeader(title, symbol) {
   return `<div class="smart-header"><span class="smart-header-icon" aria-hidden="true">${symbol}</span><h2>${title}</h2></div>`;
 }
 async function namingDialog(items, smart) {
-  modal(
-    `<div class="dialog-body" style="height:460px"><h2>${smart ? "智能命名" : "更改名称"}</h2><p class="muted">正在准备${items.length}个条目…</p>${actions("确认重命名")}</div>`,
-  );
+  modal(`<div class="dialog-body" style="height:460px"><h2>${smart ? "智能命名" : "更改名称"}</h2><p class="muted">正在准备${items.length}个条目…</p>${actions("确认重命名")}</div>`);
   $("#confirm").disabled = true;
+  const pending = $("#modal-content").firstElementChild;
   let suggestions;
   try {
-    suggestions = smart
-      ? await api("naming", { items })
-      : items.map((e) => ({
-          entry: e,
-          ext: e.folder ? "" : e.name.match(/\.[^.]+$/)?.[0] || "",
-          prefix: "",
-          candidates: [],
-        }));
-  } catch (e) {
-    errorIn(e);
-    return;
-  }
-  if (!$("#modal").open) return;
+    suggestions = smart ? await api("naming", { items }) : items.map((entry) => ({
+      entry, ext: entry.folder ? "" : entry.name.match(/\.[^.]+$/)?.[0] || "",
+      prefix: "", candidates: [],
+    }));
+  } catch (e) { if (pending.isConnected) errorIn(e); return; }
+  if (!$("#modal").open || !pending.isConnected) return;
   const batch = items.length > 1;
+  const editor = (r, c) => GuiyuNaming.candidateEditor(r, c);
+  const batchEditor = (r, c) => GuiyuNaming.candidateBatch(r, c);
   let body = `<div class="dialog-body ${smart && !batch ? "smart-dialog" : batch ? "batch-dialog" : "direct-dialog"}" style="height:${batch ? 600 : 460}px">${smart && !batch ? smartHeader("智能命名", "✎") : `<h2>${batch ? "批量" : ""}${smart ? "智能命名" : "更改名称"}</h2>`}`;
   if (!batch) {
-    const r = suggestions[0],
-      e = r.entry;
-    let stem = smart
-      ? r.candidates[0]?.name || ""
-      : e.name.slice(0, e.name.length - r.ext.length);
-    body += `<div class="original-name"><span class="muted">原名称</span><div>${esc(e.name)}</div></div><div class="name-editor"><label for="name-stem">${smart ? "修改名称" : "新名称"}</label><div class="naming-line">${smart ? (r.format === "month" ? `<input class="month" id="name-prefix" aria-label="月份" type="number" min="1" max="12" value="${parseInt(r.prefix)}"><span>月</span>` : `<span id="fixed-prefix">${esc(r.prefix)}</span>`) : ""}<input id="name-stem" aria-label="识别的名称" value="${esc(stem)}"><span>${esc(r.ext)}</span></div></div>${smart ? `<h3>推荐名称</h3><div class="scroll candidate-list">${r.candidates.map((c, i) => `<button class="candidate ${i === 0 ? "chosen" : ""}" aria-pressed="${i === 0}" data-candidate="${i}" title="${esc(c.evidence)}"><span aria-hidden="true" class="choice-mark"></span>${esc(c.name)}</button>`).join("") || '<p class="muted">未找到推荐名称，可直接填写。</p>'}</div>` : `<p class="muted">更改后：<span id="direct-preview">${esc(stem + r.ext)}</span></p><p class="muted">确认后同步更改本机名称，保留扩展名，同名不覆盖。</p>`}${r.warnings?.length ? '<div class="muted">部分文档未能提取，您可以手工填写；详情见提示。<span title="' + esc(r.warnings.join("\n")) + '">ⓘ</span></div>' : ""}`;
+    const r = suggestions[0], e = r.entry;
+    const stem = smart ? editor(r, r.candidates[0]) : GuiyuNaming.literalStem(e.name, r.ext);
+    const prefix = smart && !r.fallback && r.format === "month"
+      ? `<input class="month" id="name-prefix" aria-label="月份" type="number" min="1" max="12" value="${parseInt(r.prefix)}"><span>月</span>`
+      : smart && !r.fallback && r.format === "monthDay" ? `<span id="fixed-prefix">${esc(r.prefix)}</span>` : "";
+    body += `<div class="original-name"><span class="muted">原名称</span><div>${esc(e.name)}</div></div><div class="name-editor"><label for="name-stem">${smart ? "修改名称" : "新名称"}</label><div class="naming-line">${prefix}<input id="name-stem" aria-label="识别的名称" value="${esc(stem)}"><span>${esc(r.ext)}</span></div></div>`;
+    body += smart ? `<h3>推荐名称</h3><div class="scroll candidate-list">${r.candidates.map((c, i) => `<button class="candidate ${i === 0 ? "chosen" : ""}" aria-pressed="${i === 0}" data-candidate="${i}" title="${esc(c.evidence)}"><span aria-hidden="true" class="choice-mark"></span>${esc(editor(r, c))}</button>`).join("") || '<p class="muted">未找到明确标题，已保留原名，可直接修改。</p>'}</div>`
+      : `<p class="muted">更改后：<span id="direct-preview">${esc(stem + r.ext)}</span></p><p class="muted">确认后同步更改本机名称，保留扩展名，同名不覆盖。</p>`;
+    if (r.warnings?.length) body += `<div class="muted">部分文档未能提取，您可以手工填写；详情见提示。<span title="${esc(r.warnings.join("\n"))}">ⓘ</span></div>`;
   } else {
-    body += `<p class="muted batch-description">逐项核对并修改新名称；取消勾选可跳过。确认后同步更改本机名称，同名不覆盖。 <span id="batch-count">${suggestions.length} / ${suggestions.length} 项</span></p>`;
-    if (!smart)
-      body +=
-        '<div class="setting-form"><input id="find" placeholder="查找文字" aria-label="查找文字"><input id="replace" placeholder="替换为" aria-label="替换为"><input id="prefix" placeholder="添加前缀" aria-label="添加前缀"><button id="apply-batch">应用</button></div>';
-    body +=
-      '<div class="scroll">' +
-      suggestions
-        .map(
-          (r, i) =>
-            `<div class="batch-original">${esc(r.entry.name)}</div><div class="batch-row"><input type="checkbox" data-include="${i}" aria-label="处理 ${esc(r.entry.name)}" checked><input type="text" data-name="${i}" aria-label="新名称 ${esc(r.entry.name)}" value="${esc(smart ? r.prefix + " " + (r.candidates[0]?.name || "") : r.entry.name.slice(0, r.entry.name.length - r.ext.length))}"><span>${esc(r.ext)}</span>${smart ? `<select data-alternate="${i}" aria-label="其他候选"><option value="">其他候选</option>${r.candidates.map((c, j) => `<option value="${j}">${esc(c.name)}</option>`).join("")}</select>` : ""}</div>`,
-        )
-        .join("") +
-      "</div>";
+    body += `<p class="muted batch-description">逐项核对并修改新名称；取消勾选可跳过。确认后同步更改本机名称，同名不覆盖。 <span id="batch-count">${suggestions.filter(r=>!smart||!r.fallback).length} / ${suggestions.length} 项</span></p>`;
+    if (!smart) body += '<div class="setting-form"><input id="find" placeholder="查找文字" aria-label="查找文字"><input id="replace" placeholder="替换为" aria-label="替换为"><input id="prefix" placeholder="添加前缀" aria-label="添加前缀"><button id="apply-batch">应用</button></div>';
+    body += '<div class="scroll">' + suggestions.map((r, i) => `<div class="batch-original">${esc(r.entry.name)}</div><div class="batch-row"><input type="checkbox" data-include="${i}" aria-label="处理 ${esc(r.entry.name)}" ${smart && r.fallback ? "" : "checked"}><input type="text" data-name="${i}" aria-label="新名称 ${esc(r.entry.name)}" value="${esc(smart ? batchEditor(r, r.candidates[0]) : GuiyuNaming.literalStem(r.entry.name, r.ext))}"><span>${esc(r.ext)}</span>${smart ? `<select data-alternate="${i}" aria-label="其他候选"><option value="">其他候选</option>${r.candidates.map((c, j) => `<option value="${j}">${esc(batchEditor(r, c))}</option>`).join("")}</select>` : ""}</div>`).join("") + '</div>';
   }
-  body += actions("确认重命名") + "</div>";
-  modal(body);
-  $$("[data-candidate]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        $("#name-stem").value = suggestions[0].candidates[+b.dataset.candidate].name;
-        $$('[data-candidate]').forEach((item) => { const chosen = item === b; item.classList.toggle('chosen', chosen); item.setAttribute('aria-pressed', String(chosen)); });
-      }),
-  );
-  if (!batch && !smart) $("#name-stem").oninput = (e) => { $("#direct-preview").textContent = e.target.value + suggestions[0].ext; };
-  if (!batch && smart) $("#name-stem").oninput = (e) => { $$('[data-candidate]').forEach((item) => { const chosen = suggestions[0].candidates[+item.dataset.candidate].name === e.target.value; item.classList.toggle('chosen', chosen); item.setAttribute('aria-pressed', String(chosen)); }); };
-  if (batch) $$('[data-include]').forEach((b) => b.onchange = () => { $("#batch-count").textContent = `${$$('[data-include]:checked').length} / ${suggestions.length} 项`; });
-  $$("[data-alternate]").forEach(
-    (b) =>
-      (b.onchange = () => {
-        if (b.value !== "") {
-          let i = +b.dataset.alternate;
-          $(`[data-name="${i}"]`).value =
-            suggestions[i].prefix +
-            " " +
-            suggestions[i].candidates[+b.value].name;
-        }
-      }),
-  );
-  if ($("#apply-batch"))
-    $("#apply-batch").onclick = () =>
-      suggestions.forEach((r, i) => {
-        if (!$(`[data-include="${i}"]`).checked) return;
-        let stem = r.entry.name.slice(0, r.entry.name.length - r.ext.length),
-          find = $("#find").value;
-        if (find) stem = stem.split(find).join($("#replace").value);
-        $(`[data-name="${i}"]`).value = $("#prefix").value + stem;
-      });
-  $("#confirm").onclick = async () => {
-    const b = $("#confirm");
-    b.disabled = true;
+  modal(body + actions("确认重命名") + '</div>');
+  const confirm = $("#confirm");
+  function canSubmit() {
+    const active = suggestions.filter((r, i) => !batch || $(`[data-include="${i}"]`).checked);
+    return active.length > 0 && active.every((r) => {
+      const i = suggestions.indexOf(r), value = batch ? $(`[data-name="${i}"]`).value : $("#name-stem").value;
+      return GuiyuNaming.literalStem(value.trim(), r.ext).trim().length > 0;
+    });
+  }
+  function updateEditor() {
+    confirm.disabled = !canSubmit();
+    if (!batch && smart) $$('[data-candidate]').forEach((button) => {
+      const chosen = editor(suggestions[0], suggestions[0].candidates[+button.dataset.candidate]) === $("#name-stem").value;
+      button.classList.toggle('chosen', chosen); button.setAttribute('aria-pressed', String(chosen));
+    });
+    if (!batch && !smart) $("#direct-preview").textContent = $("#name-stem").value + suggestions[0].ext;
+    if (batch) $("#batch-count").textContent = `${$$('[data-include]:checked').length} / ${suggestions.length} 项`;
+  }
+  $$('[data-candidate]').forEach((button) => button.onclick = () => {
+    $("#name-stem").value = editor(suggestions[0], suggestions[0].candidates[+button.dataset.candidate]);
+    updateEditor();
+  });
+  $$('[data-alternate]').forEach((select) => select.onchange = () => {
+    if (select.value !== '') { const i = +select.dataset.alternate;
+      $(`[data-name="${i}"]`).value = batchEditor(suggestions[i], suggestions[i].candidates[+select.value]); updateEditor(); }
+  });
+  $$('[data-include]').forEach((input) => input.onchange = updateEditor);
+  $$('#modal input[type="text"], #name-stem').forEach((input) => {
+    input.oninput = updateEditor;
+    input.onkeydown = (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (!confirm.disabled) confirm.click(); } };
+  });
+  if ($("#apply-batch")) $("#apply-batch").onclick = () => {
+    suggestions.forEach((r, i) => {
+      if (!$(`[data-include="${i}"]`).checked) return;
+      let stem = GuiyuNaming.literalStem(r.entry.name, r.ext), find = $("#find").value;
+      if (find) stem = stem.split(find).join($("#replace").value);
+      $(`[data-name="${i}"]`).value = $("#prefix").value + stem;
+    }); updateEditor();
+  };
+  updateEditor();
+  confirm.onclick = async () => {
+    if (!canSubmit()) return;
+    confirm.disabled = true;
     try {
-      let plans = suggestions
-        .map((r, i) => {
-          let stem = batch
-            ? $(`[data-name="${i}"]`).value
-            : $("#name-stem").value;
-          if (!batch && smart) {
-            let prefix =
-              r.format === "month" ? $("#name-prefix").value + "月" : r.prefix;
-            stem = prefix + " " + stem;
-          }
-          return {
-            entry: r.entry,
-            name: stem.trim() + r.ext,
-            include: batch ? $(`[data-include="${i}"]`).checked : true,
-          };
-        })
-        .filter((x) => x.include);
-      if (smart)
-        for (const p of plans) {
-          const r = suggestions.find((r) => r.entry.path === p.entry.path);
-          let m = p.name.match(/^(\d+)月\s/);
-          if (r.format === "month" && (!m || +m[1] < 1 || +m[1] > 12))
-            throw Error("月份必须为1至12月。");
-          if (r.format === "monthDay") {
-            let m = p.name.match(/^(\d{2})(\d{2})\s/),
-              date = m ? new Date(2024, +m[1] - 1, +m[2]) : null;
-            if (!m || date.getMonth() !== +m[1] - 1 || date.getDate() !== +m[2])
-              throw Error("请保留有效的四位MMDD前缀。");
-          }
-          if (r.format === "category" && !p.name.startsWith(r.prefix + " "))
-            throw Error("请保留当前分类前缀。");
+      if(smart && !batch && suggestions[0].fallback && $("#name-stem").value===GuiyuNaming.literalStem(suggestions[0].entry.name,suggestions[0].ext)){ $("#modal").close(); return; }
+      const plans = suggestions.flatMap((r, i) => {
+        if (batch && !$(`[data-include="${i}"]`).checked) return [];
+        let stem = batch ? $(`[data-name="${i}"]`).value : $("#name-stem").value;
+        if (!batch && smart && !r.fallback && ["month", "monthDay"].includes(r.format)) {
+          const prefix = r.format === 'month' ? $("#name-prefix").value + '月' : r.prefix;
+          stem = prefix + ' ' + stem;
         }
-      const result = await api("rename", { plans });
+        const name = GuiyuNaming.editedName(stem, r.ext, smart);
+        if (smart && !r.fallback) GuiyuNaming.validatePrefix(name, r.format);
+        return [{ entry: r.entry, name, smart: smart && !r.fallback }];
+      });
+      const result = await api('rename', { plans });
       $("#modal").close();
-      for (const p of plans) {
-        if (p.entry.folder) {
-          const target =
-            p.entry.path.slice(0, p.entry.path.length - p.entry.name.length) +
-            p.name;
-          if (project?.path === p.entry.path)
-            project =
-              result.snapshot.projects.find((x) => x.path === target) || null;
-          if (
-            current === p.entry.path ||
-            current.startsWith(p.entry.path + "\\") ||
-            current.startsWith(p.entry.path + "/")
-          )
-            current = target + current.slice(p.entry.path.length);
-        }
+      for (const p of plans) if (p.entry.folder) {
+        const target = p.entry.path.slice(0, p.entry.path.length - p.entry.name.length) + p.name;
+        if (project?.path === p.entry.path) project = result.snapshot.projects.find((x) => x.path === target) || null;
+        if (current === p.entry.path || current.startsWith(p.entry.path + '\\') || current.startsWith(p.entry.path + '/')) current = target + current.slice(p.entry.path.length);
+        if (sourceFolder?.path === p.entry.path) sourceFolder = { ...sourceFolder, path: target, name: p.name };
       }
-      apply(result);
-      await load();
-      toast(`已重命名 ${result.result} 项`);
+      apply(result); await load(); toast(`已重命名 ${result.result} 项`);
     } catch (e) {
-      errorIn(e);
-      if (/已完成/.test(e.message)) b.dataset.partial = "true";
-    } finally {
-      if (b.dataset.partial !== "true") b.disabled = false;
-    }
+      errorIn(e); if (/已完成/.test(e.message)) confirm.dataset.partial = 'true';
+    } finally { if (confirm.dataset.partial !== 'true') confirm.disabled = !canSubmit(); }
   };
 }
 async function archiveDialog(items) {
@@ -879,13 +859,13 @@ function drawSettings() {
     content = `<form id="add-category" class="setting-form"><input id="category-name" placeholder="新分类名称" aria-label="分类名称" maxlength="40" required><button class="primary">添加分类</button></form><div class="workflow"><h3>分类设置后，请务必按一下操作。 <button id="guides" aria-label="查看操作图解">ⓘ</button></h3><div class="workflow-step"><span class="step-number">1</span><button id="copy-prompt" class="workflow-primary">复制提示词，去豆包官网</button><span id="copy-status"></span></div><div class="workflow-step"><span class="step-number">2</span><span>把提示词发给豆包，复制豆包的回复。</span></div><div class="workflow-step"><span class="step-number">3</span><button id="import-rules">录入豆包回复</button><span id="import-status"></span></div></div><div class="category-search"><span aria-hidden="true">⌕</span><input id="category-query" placeholder="搜索分类" aria-label="搜索分类"><span class="muted">${s.categories.length} 个分类</span></div><div id="category-list">${categoryList("")}</div>`;
   } else if (section === "命名规则") {
     const options = (v) =>
-      ["month", "monthDay", "category"]
+      ["nameOnly", "month", "monthDay", "category"]
         .map(
           (x, i) =>
-            `<option value="${x}" ${x === v ? "selected" : ""}>${["月份 + 识别的名称", "月日 + 识别的名称", "分类 + 识别的名称"][i]}</option>`,
+            `<option value="${x}" ${x === v ? "selected" : ""}>${["仅识别的名称", "月份 + 识别的名称", "月日 + 识别的名称", "分类 + 识别的名称"][i]}</option>`,
         )
         .join("");
-    content = `<div class="settings-card"><h3>文件夹命名</h3><select id="folder-format" aria-label="文件夹命名">${options(s.namingRules.folder)}</select></div><div class="settings-card"><h3>文档命名</h3><select id="document-format" aria-label="文档命名">${options(s.namingRules.document)}</select></div><div class="settings-card"><h3>日期来源</h3><select id="date-source" aria-label="日期来源"><option value="today" ${s.namingRules.dateSource === "today" ? "selected" : ""}>命名当天</option><option value="created" ${s.namingRules.dateSource === "created" ? "selected" : ""}>文件创建日期</option></select><p class="muted">日期按北京时间计算。智能命名将保留文档扩展名，更改规则后立即保存。</p></div>`;
+    content = `<div class="settings-card"><h3>文件夹命名</h3><select id="folder-format" aria-label="文件夹命名">${options(s.namingRules.folder)}</select></div><div class="settings-card"><h3>文档命名</h3><select id="document-format" aria-label="文档命名">${options(s.namingRules.document)}</select></div><div class="settings-card"><h3>日期来源</h3><select id="date-source" aria-label="日期来源"><option value="today" ${s.namingRules.dateSource === "today" ? "selected" : ""}>命名当天</option><option value="created" ${s.namingRules.dateSource === "created" ? "selected" : ""}>文件创建日期</option></select><p class="muted">默认不加前缀，保留标题原意和原扩展名。多个标题可选择，找不到则保留原名；可手动修改，确认后才改名。日期按北京时间计算。</p></div>`;
   } else {
     content = s.moves.length
       ? s.moves
@@ -1364,3 +1344,5 @@ api("state")
     }
   })
   .catch((e) => toast(e.message, true));
+
+$("#modal").addEventListener("close",()=>window.guiyu?.cancelNaming?.());

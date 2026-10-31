@@ -548,7 +548,69 @@ footer i {
   gap: 10px;
 }
 #subnav:not(:empty) {
-  min-height: 38px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--line);
+}
+#subnav #up {
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+}
+.breadcrumbs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 3px 0;
+}
+.breadcrumbs ol {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.breadcrumbs li {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.breadcrumbs li + li::before {
+  content: "/";
+  color: var(--secondary);
+  padding: 0 3px;
+}
+.breadcrumbs .breadcrumb {
+  max-width: 280px;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #176849;
+  font-size: 13px;
+  text-decoration: underline;
+  text-decoration-color: #17684980;
+  text-underline-offset: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.breadcrumbs .breadcrumb:hover {
+  background: var(--mint);
+  text-decoration-color: currentColor;
+}
+.breadcrumbs .breadcrumb[aria-current="location"] {
+  font-weight: 600;
+  color: var(--ink);
+}
+.breadcrumbs .breadcrumb:focus-visible {
+  outline: 2px solid #188567;
+  outline-offset: -2px;
 }
 #batch-tools {
   padding: 4px 22px;
@@ -986,3 +1048,21 @@ p {
     font-size: 13px;
   }
 }
+
+/* Project-relative ancestor navigation, matching the latest Mac behavior. */
+#path-menu { flex: 0 0 30px; width: 30px; min-height: 30px; padding: 0; display: grid; place-items: center; }
+.breadcrumbs .breadcrumb { display: flex; align-items: center; gap: 5px; }
+.breadcrumbs .breadcrumb svg { flex-shrink: 0; }
+.breadcrumb-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.breadcrumbs .breadcrumb[aria-current="location"] { opacity: 1; cursor: default; text-decoration: none; background: var(--project); }
+
+/* The Mac source browser uses the same shared toolbar and a plain file list. */
+.source-subnav:not(:empty) { display:flex; align-items:center; gap:8px; padding:4px 14px; min-height:40px; border-bottom:1px solid var(--line); }
+.source-subnav .breadcrumbs { flex:1; }
+.source-subnav #up { padding:0; width:30px; min-width:30px; min-height:30px; display:grid; place-items:center; }
+.project-row.source-row { min-height:52px; padding-top:8px; padding-bottom:8px; gap:12px; }
+.project-row.source-row .name { flex:1; min-width:0; white-space:nowrap; display:block; overflow:hidden; text-overflow:ellipsis; font-weight:400; }
+.project-row.source-row .date { font-size:10px; min-width:65px; }
+.file-toolbar[hidden] { display:none; }
+.breadcrumbs .breadcrumb:hover, .breadcrumbs .breadcrumb[aria-current="location"] { background:transparent; }
+.breadcrumbs .breadcrumb { border:0; box-shadow:none; border-radius:0; }

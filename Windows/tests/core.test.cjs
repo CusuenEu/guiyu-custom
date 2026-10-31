@@ -12,7 +12,6 @@ const {
   parseRules,
   categoryFor,
   prefixFor,
-  cleanStem,
   matches,
 } = require("../src/core.cjs");
 async function fixture(t) {
@@ -215,7 +214,7 @@ test("rule import validates all blocks atomically", () => {
   assert.throws(() => parseRules(text.split("分类：方案")[0], cats), /缺少/);
   assert.equal(cats[0].rule.origin, "automatic");
 });
-test("Beijing naming date, existing folder month and prefix cleanup", () => {
+test("Beijing naming date, existing folder month and meaningful title text", () => {
   let s = {
     categories: [],
     assignments: {},
@@ -230,7 +229,7 @@ test("Beijing naming date, existing folder month and prefix cleanup", () => {
   assert.equal(prefixFor(e, s, Date.UTC(2026, 9, 31, 17)).prefix, "11月");
   s.namingRules.dateSource = "created";
   assert.equal(prefixFor(e, s).prefix, "10月");
-  assert.equal(cleanStem("10月 方案 1001创新", "方案"), "1001创新");
+  assert.equal(require("../src/naming-format.cjs").cleanTitle("10月 方案 1001创新"), "10月 方案 1001创新");
 });
 test("settings persist and corrupted state is never overwritten", async (t) => {
   const f = await fixture(t);

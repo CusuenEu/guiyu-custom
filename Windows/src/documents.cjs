@@ -1,7 +1,7 @@
 const fs = require("node:fs/promises"),
   path = require("node:path");
 const { unzipSync, strFromU8 } = require("fflate");
-const { runPS, list, cleanStem, prefixFor } = require("./core.cjs");
+const { runPS, list, prefixFor, formatSuggestion } = require("./core.cjs");
 const xml = (s) =>
   s
     .replace(/<\/(?:w:p|row|si)>/g, "\n")
@@ -107,102 +107,243 @@ async function extract(e, pages = 2) {
   }
   return "";
 }
+const titlePolicy = require("./title-policy.cjs");
 function titles(text) {
-  let all = [];
-  for (const re of [
-    /项目名称\s*[：:]\s*([^\r\n]{4,100})/g,
-    /(?:方案名称|标题|采购项目)\s*[：:]\s*([^\r\n]{4,100})/g,
-  ])
-    for (const m of text.matchAll(re))
-      all.push({ name: m[1].trim(), evidence: "正文明确标题" });
-  for (const line of text
-    .split(/[\r\n]+/)
-    .map((x) => x.trim())
-    .slice(0, 60))
-    if (
-      line.length >= 6 &&
-      line.length <= 90 &&
-      /(项目|方案|建设|运维|采购|服务)/.test(line) &&
-      !/(目录|页码|保密|注意事项|联系人|电话|投标人|供应商)/.test(line)
-    )
-      all.push({ name: line, evidence: "文档开头标题" });
-  return all;
+  return titlePolicy.titleSuggestions(titlePolicy.textPages(text));
 }
-async function naming(e, settings) {
-  let docs = e.folder
-    ? (await list(e.path))
-        .filter((x) => !x.folder && /\.(docx?|pdf|rtf|txt|md)$/i.test(x.name))
-        .sort((a, b) => rank(a.name) - rank(b.name))
-        .slice(0, 12)
-    : [e];
-  let candidates = [],
-    warnings = [];
-  for (const d of docs) {
-    try {
-      let t = await extract(d, 2),
-        found = titles(t);
-      if (
-        !found.some((x) => x.evidence === "正文明确标题") &&
-        /\.pdf$/i.test(d.name)
-      )
-        found.push(...titles(await extract(d, 8)));
-      candidates.push(
-        ...found.map((c) => ({
-          ...c,
-          evidence: d.name + " · " + c.evidence,
-          rank: rank(d.name),
-        })),
-      );
-    } catch (err) {
-      warnings.push(d.name + "：" + err.message);
-    }
+async function pdfOpening(e, signal, ocrPage) {
+  signal?.throwIfAborted();
+  if (!pdfModule) {
+    const matrix = await import("@thednp/dommatrix");
+    global.DOMMatrix = matrix.default;
+    pdfModule = await import("pdfjs-dist/legacy/build/pdf.mjs");
   }
-  if (!e.folder && !candidates.length && /投标|方案|响应/.test(e.name)) {
-    const peers = (await list(path.dirname(e.path)))
-      .filter(
-        (d) => !d.folder && d.path !== e.path && /招标|采购|方案/.test(d.name),
+  const task = pdfModule.getDocument({
+    data: new Uint8Array(await fs.readFile(e.path)),
+    useSystemFonts: true,
+    disableFontFace: true,
+    isEvalSupported: false,
+  });
+  const doc = await task.promise,
+    pages = [];
+  try {
+    for (let i = 1; i <= Math.min(2, doc.numPages); i++) {
+      signal?.throwIfAborted();
+      const page = await doc.getPage(i),
+        content = await page.getTextContent(),
+        items = content.items.filter((x) => typeof x.str === "string");
+      if (
+        items
+          .map((x) => x.str)
+          .join("")
+          .trim().length < 15 &&
+        (process.platform === "win32" || ocrPage)
+      ) {
+        let text = "";
+        try {
+          if(ocrPage) text = await ocrPage({file:e.path,page:i-1,signal});
+          else {
+            const script=await fs.readFile(path.join(__dirname,"../scripts/read-document.ps1"),"utf8");
+            text=await runPS(script,{GUIYU_DOCUMENT:e.path,GUIYU_PAGES:"1",GUIYU_START_PAGE:String(i-1)},120000,signal);
+          }
+        } catch(error) { signal?.throwIfAborted(); /* An unavailable OCR page must not suppress page 2. */ }
+        pages.push({
+          index: i - 1,
+          lines: titlePolicy.textPages(text)[0]?.lines || [],
+        });
+        page.cleanup();
+        continue;
+      }
+      const groups = [];
+      for (const item of items) {
+        const x = item.transform[4],
+          y = item.transform[5],
+          height = Math.hypot(item.transform[2], item.transform[3]);
+        let row = groups.find((r) => Math.abs(r.y - y) < 3);
+        if (!row) {
+          row = { y, items: [] };
+          groups.push(row);
+        }
+        row.items.push({ text: item.str, x, width: item.width, height });
+      }
+      const rows = groups
+        .sort((a, b) => b.y - a.y)
+        .slice(0, 40)
+        .map((r) => {
+          const cells = r.items.sort((a, b) => a.x - b.x);
+          return {
+            text: cells.map((c) => c.text).join(" "),
+            height: Math.max(...cells.map((c) => c.height)),
+            y: r.y,
+            center: (cells[0].x + cells.at(-1).x + cells.at(-1).width) / 2,
+          };
+        });
+      const sizes = rows
+          .map((r) => r.height)
+          .filter(Boolean)
+          .sort((a, b) => a - b),
+        largest = Math.max(0, ...sizes),
+        median = sizes[Math.floor(sizes.length / 2)] || 0;
+      const lines = rows.map((r) => ({
+        ...r,
+        prominent:
+          r.height >= largest * 0.9 &&
+          largest >= 18 &&
+          (largest >= median * 1.15 || rows.length <= 8),
+      }));
+      for (let j = 0; j < lines.length - 1; j++)
+        lines[j].joinsNext =
+          lines[j].prominent &&
+          lines[j + 1].prominent &&
+          Math.abs(lines[j].center - lines[j + 1].center) < 40 &&
+          Math.abs(lines[j].y - lines[j + 1].y) <
+            Math.max(lines[j].height, lines[j + 1].height) * 2.5;
+      pages.push({ index: i - 1, lines });
+      page.cleanup();
+    }
+  } finally {
+    await task.destroy();
+  }
+  return pages;
+}
+async function recognizeTitles(e, signal) {
+  signal?.throwIfAborted();
+  if (e.size > 100 * 1024 * 1024)
+    throw Error("文档超过100MB，请手工填写名称。");
+  const ext = path.extname(e.name).toLowerCase();
+  if (ext === ".xlsx")
+    return titlePolicy.spreadsheetTitles(e.path, e.name, signal);
+  if (ext === ".xls") return [];
+  if (ext === ".pdf")
+    return titlePolicy.titleSuggestions(await pdfOpening(e, signal), e.name);
+  if (ext === ".docx") {
+    const opening = await titlePolicy.wordOpening(e.path, signal);
+    return titlePolicy
+      .titleSuggestions(titlePolicy.textPages(opening.text), e.name)
+      .map((c) => ({
+        ...c,
+        evidence: opening.paginated
+          ? c.evidence
+          : c.evidence.replace(/首页|第2页/g, "Word 开头节选"),
+      }));
+  }
+  if ([".doc", ".rtf"].includes(ext)) {
+    if (process.platform !== "win32") return [];
+    const text = await runPS(
+      `$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.Encoding]::UTF8;$w=$null;$d=$null;try{$w=New-Object -ComObject Word.Application;$w.Visible=$false;$w.DisplayAlerts=0;$w.AutomationSecurity=3;$d=$w.Documents.Open($env:GUIYU_DOCUMENT,$false,$true);$r=$d.Range(0,[Math]::Min(300,$d.Content.End));$r.Text}finally{if($d){$d.Close(0)};if($w){$w.Quit()}}`,
+      { GUIYU_DOCUMENT: e.path },
+    );
+    return titlePolicy
+      .titleSuggestions(
+        titlePolicy.textPages([...text].slice(0, 300).join("")),
+        e.name,
       )
-      .sort((a, b) => rank(a.name) - rank(b.name))
-      .slice(0, 5);
-    for (const d of peers) {
-      try {
-        candidates.push(
-          ...titles(await extract(d, 2)).map((c) => ({
-            ...c,
-            evidence: "同项目参考 " + d.name + " · " + c.evidence,
-            rank: rank(d.name),
-          })),
-        );
-      } catch (err) {
-        warnings.push(d.name + "：" + err.message);
+      .map((c) => ({
+        ...c,
+        evidence: c.evidence.replace(/首页|第2页/g, "Word 开头节选"),
+      }));
+  }
+  if ([".txt", ".md"].includes(ext)) {
+    const f = await fs.open(e.path);
+    let text = "";
+    try {
+      const buffer = Buffer.alloc(32768),
+        read = await f.read(buffer);
+      const b = buffer.subarray(0, read.bytesRead);
+      text =
+        b[0] === 255 && b[1] === 254
+          ? b.subarray(2).toString("utf16le")
+          : new TextDecoder("utf-8").decode(b);
+    } finally {
+      await f.close();
+    }
+    return titlePolicy.titleSuggestions(
+      titlePolicy.textPages(
+        text
+          .split("\f")
+          .slice(0, 2)
+          .map((p) => [...p].slice(0, 6000).join(""))
+          .join("\f"),
+      ),
+      e.name,
+    );
+  }
+  if ([".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp"].includes(ext))
+    return titlePolicy.titleSuggestions(
+      titlePolicy.textPages(await extract(e, 1)),
+      e.name,
+    );
+  return [];
+}
+async function naming(e, settings, referenceDate = Date.now(), signal) {
+  signal?.throwIfAborted();
+  let docs = [e];
+  if (e.folder) {
+    const all = [],
+      queue = [{ path: e.path, depth: 0 }];
+    while (queue.length && all.length < 1000) {
+      signal?.throwIfAborted();
+      const folder = queue.shift();
+      for (const item of await list(folder.path)) {
+        if (item.folder && folder.depth < 4)
+          queue.push({ path: item.path, depth: folder.depth + 1 });
+        else if (!item.folder) all.push(item);
+        if (all.length >= 1000) break;
       }
     }
+    const rank = (n) =>
+      /(招标|采购|rfp|rfq)/i.test(n)
+        ? 0
+        : /(方案|建议书)/.test(n)
+          ? 1
+          : /(投标|响应)/.test(n)
+            ? 3
+            : 2;
+    docs = [
+      ...all.filter((x) => rank(x.name) === 0).slice(0, 5),
+      ...all.filter((x) => rank(x.name) === 1).slice(0, 3),
+      ...all.filter((x) => rank(x.name) === 2).slice(0, 2),
+      ...all.filter((x) => rank(x.name) === 3).slice(0, 2),
+    ];
   }
-  const prefix = prefixFor(e, settings),
-    ext = e.folder ? "" : path.extname(e.name);
-  candidates.sort(
-    (a, b) =>
-      (a.evidence.includes("正文明确标题") ? 0 : 1) -
-        (b.evidence.includes("正文明确标题") ? 0 : 1) || a.rank - b.rank,
-  );
-  candidates.push({
-    name: e.folder ? e.name : path.basename(e.name, ext),
-    evidence: "原名称，可手工修改",
-  });
+  let candidates = [],
+    warnings = [];
+  for (const doc of docs) {
+    try {
+      candidates.push(...(await recognizeTitles(doc, signal)));
+    } catch (err) {
+      signal?.throwIfAborted();
+      warnings.push(doc.name + "：" + err.message);
+    }
+  }
+  signal?.throwIfAborted();
   const seen = new Set();
   candidates = candidates
-    .map((c) => ({ ...c, name: cleanStem(c.name, prefix.category) }))
+    .map((c) => ({
+      ...c,
+      ...formatSuggestion(e, settings, c.name, referenceDate),
+    }))
     .filter((c) => c.name && !seen.has(c.name) && seen.add(c.name))
-    .slice(0, 8);
-  return { entry: e, ...prefix, ext, candidates, warnings };
+    .slice(0, 12);
+  const format = candidates[0] || prefixFor(e, settings, referenceDate),
+    ext = e.folder ? "" : path.extname(e.name);
+  return {
+    entry: e,
+    prefix: format.prefix,
+    category: format.category,
+    format: format.format,
+    ext,
+    candidates,
+    warnings,
+    fallback: candidates.length === 0,
+    originalName: e.name,
+  };
 }
-function rank(n) {
-  return /(招标|采购|rfp|rfq)/i.test(n)
-    ? 0
-    : /(方案|建议书)/.test(n)
-      ? 1
-      : /(投标|响应)/.test(n)
-        ? 3
-        : 2;
-}
-module.exports = { extract, naming, titles, pdfText };
+module.exports = {
+  extract,
+  naming,
+  titles,
+  pdfText,
+  pdfOpening,
+  recognizeTitles,
+};
