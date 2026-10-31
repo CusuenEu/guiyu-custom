@@ -8,20 +8,24 @@ struct DirectoryOrderPayload: Codable { let root: String; let path: String }
     var orderedDirectories: [Project] {
         let available = settings.projects.filter { $0.shallow == true }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedDescending }
         let byPath = Dictionary(available.map { ($0.path,$0) },uniquingKeysWith:{ a,_ in a })
-        var seen = Set<String>()
-        let saved = (settings.directoryOrders?[settings.root] ?? []).compactMap { path -> Project? in
-            guard seen.insert(path).inserted else { return nil }; return byPath[path]
+        var seen = Set<String>(); var result: [Project] = []
+        for root in settings.activeProjectRoots {
+            let group = available.filter { navigationRoot(for:$0.path) == root }
+            result += (settings.directoryOrders?[root] ?? []).compactMap { path -> Project? in
+                guard let directory = byPath[path], navigationRoot(for:path) == root, seen.insert(path).inserted else { return nil }; return directory
+            }
+            result += group.filter { seen.insert($0.path).inserted }
         }
-        return saved + available.filter { !seen.contains($0.path) }
+        return result + available.filter { seen.insert($0.path).inserted }
     }
     @discardableResult func reorderDirectory(_ payload: DirectoryOrderPayload, relativeTo target: String, after: Bool) -> Bool {
-        let current = orderedDirectories.map(\.path)
-        guard payload.root == settings.root, payload.path != target, current.contains(payload.path), current.contains(target) else { return false }
+        let current = directories(in:payload.root).map(\.path)
+        guard settings.activeProjectRoots.contains(payload.root), payload.path != target, current.contains(payload.path), current.contains(target) else { return false }
         var paths = current.filter { $0 != payload.path }
         guard let index = paths.firstIndex(of:target) else { return false }
         paths.insert(payload.path,at:index+(after ? 1 : 0))
         guard paths != current else { return true }
-        var updated = settings; var orders = updated.directoryOrders ?? [:]; orders[settings.root] = paths; updated.directoryOrders = orders
+        var updated = settings; var orders = updated.directoryOrders ?? [:]; orders[payload.root] = paths; updated.directoryOrders = orders
         do {
             try fm.createDirectory(at:stateURL.deletingLastPathComponent(),withIntermediateDirectories:true)
             try JSONEncoder().encode(updated).write(to:stateURL,options:.atomic)
@@ -39,8 +43,9 @@ struct DirectoryOrderRow: NSViewRepresentable {
     let select: () -> Void
     func makeNSView(context:Context) -> DirectoryOrderRowView { DirectoryOrderRowView(frame:.zero) }
     func updateNSView(_ view:DirectoryOrderRowView,context:Context) {
-        view.store = store; view.payload = DirectoryOrderPayload(root:store.settings.root,path:directory.path)
+        view.store = store; view.payload = DirectoryOrderPayload(root:store.navigationRoot(for:directory.path),path:directory.path)
         view.title = URL(fileURLWithPath:directory.path).lastPathComponent
+        view.toolTip = directory.path+"\n按住文件夹上下拖动调整顺序"
         view.selected = selected; view.select = select
         view.setAccessibilityLabel(view.title)
         view.setAccessibilityValue(selected ? "已选中" : "")
@@ -50,8 +55,8 @@ struct DirectoryOrderRow: NSViewRepresentable {
 
 final class DirectoryOrderRowView: NSView, NSDraggingSource {
     // Every point between adjacent rows belongs to a drop target; visuals stay 48pt tall.
-    static let dropPadding: CGFloat = 9
-    static let dropHeight: CGFloat = 66
+    static let dropPadding: CGFloat = 4.5
+    static let dropHeight: CGFloat = 57
     private var rowBounds: NSRect { bounds.insetBy(dx:0,dy:Self.dropPadding) }
     static func dropAfter(y:CGFloat,height:CGFloat) -> Bool { y > height/2 }
 
@@ -139,7 +144,7 @@ final class DirectoryOrderRowView: NSView, NSDraggingSource {
         guard sender.draggingSource is DirectoryOrderRowView,
               let data = sender.draggingPasteboard.data(forType:Self.pasteboardType),
               let value = try? JSONDecoder().decode(DirectoryOrderPayload.self,from:data),
-              let store, let payload, value.root == store.settings.root, value.root == payload.root,
+              let store, let payload, store.settings.activeProjectRoots.contains(value.root), value.root == payload.root,
               value.path != payload.path, store.orderedDirectories.contains(where:{$0.path == value.path}) else { return nil }
         return value
     }
@@ -180,11 +185,11 @@ final class DirectoryOrderRowView: NSView, NSDraggingSource {
     row.mouseUp(with:event(.leftMouseUp,NSPoint(x:250,y:20)))
     try verify(clicks == 1,"Releasing outside a directory must not select it")
     try verify(row.accessibilityPerformPress() && clicks == 2,"Directory remains accessible as a button")
-    try verify(row.bounds.height == 66 && DirectoryOrderRowView.dropPadding * 2 + 48 == row.bounds.height,"Drop targets must include the entire former 18pt gap")
-    for y in [CGFloat(0),8,24,32] { try verify(!DirectoryOrderRowView.dropAfter(y:y,height:66),"Upper row and gap must accept insertion before") }
-    for y in [CGFloat(34),48,58,66] { try verify(DirectoryOrderRowView.dropAfter(y:y,height:66),"Lower row and gap must accept insertion after") }
-    try verify(row.hitTest(NSPoint(x:100,y:2)) === row && row.hitTest(NSPoint(x:100,y:64)) === row,"Expanded top and bottom margins must receive mouse input")
-    print("PASS: native directory click, movement threshold, cancellation, accessibility, continuous 66pt drop targets including former gaps")
+    try verify(row.bounds.height == 57 && DirectoryOrderRowView.dropPadding * 2 + 48 == row.bounds.height,"Drop targets must include the full 9pt gap while preserving 48pt visible rows")
+    for y in [CGFloat(0),4,16,28] { try verify(!DirectoryOrderRowView.dropAfter(y:y,height:57),"Upper row and gap must accept insertion before") }
+    for y in [CGFloat(29),40,52,57] { try verify(DirectoryOrderRowView.dropAfter(y:y,height:57),"Lower row and gap must accept insertion after") }
+    try verify(row.hitTest(NSPoint(x:100,y:2)) === row && row.hitTest(NSPoint(x:100,y:row.bounds.height-2)) === row,"Expanded top and bottom margins must receive mouse input")
+    print("PASS: native directory click, movement threshold, cancellation, accessibility, continuous 57pt drop targets including the compact gaps")
     let original = store.orderedDirectories.map(\.path)
     let cd = base.appendingPathComponent("CD类项目").path, y26 = base.appendingPathComponent("2026").path, y25 = base.appendingPathComponent("2025").path
     try verify(store.reorderDirectory(DirectoryOrderPayload(root:base.path,path:cd),relativeTo:y25,after:true))

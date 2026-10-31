@@ -6,7 +6,8 @@ import Vision
 import Darwin
 
 struct Project: Identifiable, Codable, Hashable {
-    var id: String { path }; var path: String; var name: String; var keywords: String = ""; var group: String? = nil; var shallow: Bool? = nil; var modifiedAt: Date? = nil
+    var id: String { path }; var path: String; var name: String; var keywords: String = ""; var group: String? = nil; var shallow: Bool? = nil; var modifiedAt: Date? = nil; var directoryPath: String? = nil
+    var scopeID: String { directoryPath ?? group ?? "" }
 }
 struct FileItem: Identifiable, Hashable, Codable {
     var id: String { path }; var path: String; var project: String; var text: String; var size: Int64; var date: Date
@@ -16,7 +17,7 @@ struct FileItem: Identifiable, Hashable, Codable {
     var tint: Color { ["pdf":Color(red:0.76,green:0.30,blue:0.25),"docx":.blue,"doc":.blue,"xlsx":.green,"xls":.green][ext] ?? .secondary }
 }
 struct MoveRecord: Identifiable, Codable { var id = UUID(); var source: String; var destination: String; var date = Date(); var undone = false; var identity: String? = nil; var arrivedAt: Date? = nil; var automatic: Bool? = nil; var evidence: String? = nil; var folder: Bool? = nil }
-struct Settings: Codable { var root = ""; var inbox = ""; var projects: [Project] = []; var moves: [MoveRecord] = []; var autoArchive = true; var automationVersion: Int? = nil; var baselineInbox: String? = nil; var arrivals: [String:Arrival]? = nil; var suppressed: [String]? = nil; var renames: [RenameRecord]? = nil; var categories: [WorkspaceCategory]? = nil; var categoryAssignments: [String:CategoryAssignment]? = nil; var archiveSources: [ArchiveSource]? = nil; var directoryOrders: [String:[String]]? = nil }
+struct Settings: Codable { var root = ""; var projectRoots: [String]? = nil; var inbox = ""; var projects: [Project] = []; var moves: [MoveRecord] = []; var autoArchive = true; var automationVersion: Int? = nil; var baselineInbox: String? = nil; var arrivals: [String:Arrival]? = nil; var suppressed: [String]? = nil; var renames: [RenameRecord]? = nil; var categories: [WorkspaceCategory]? = nil; var namingRules: NamingRuleSettings? = nil; var categoryAssignments: [String:CategoryAssignment]? = nil; var archiveSources: [ArchiveSource]? = nil; var directoryOrders: [String:[String]]? = nil; var sidebarProjectsFraction: Double? = nil }
 struct Suggestion: Identifiable { var id: String { name }; var name: String; var evidence: String }
 
 let accent = Color(red:0.14,green:0.38,blue:0.30)
@@ -94,7 +95,7 @@ func score(_ file: FileItem, project: Project) -> (Int,String) {
 
 @MainActor final class Store: ObservableObject {
     @Published var settings = Settings() {
-        didSet { if oldValue.root != settings.root || oldValue.projects != settings.projects { rebuildFilenameIndex() } }
+        didSet { if oldValue.workspaceIdentity != settings.workspaceIdentity || oldValue.projects != settings.projects { rebuildFilenameIndex() } }
     }
     @Published var files: [FileItem] = [] { didSet { searchMetadataLoaded = true; rebuildFilenameIndex() } }
     @Published var incoming: [FileItem] = []
@@ -102,6 +103,7 @@ func score(_ file: FileItem, project: Project) -> (Int,String) {
     let filenameIndex: FilenameSearchIndex
     private var searchMetadataLoaded = false
     @Published var projectCounts: [String:Int] = [:]
+    @Published var unavailableProjectRoots: [String] = []
     @Published var metadataReady = false
     @Published var globalRefreshRevision = 0
     @Published var fileOperationRevision = 0
@@ -113,7 +115,12 @@ func score(_ file: FileItem, project: Project) -> (Int,String) {
     init(stateURL override: URL? = nil, loadOnLaunch: Bool = true) {
         stateURL = override ?? fm.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Guiyu/settings.json")
         filenameIndex = FilenameSearchIndex(databaseURL:stateURL.deletingLastPathComponent().appendingPathComponent("search-index-v1.sqlite"))
-        if let data = try? Data(contentsOf:stateURL), let saved = try? JSONDecoder().decode(Settings.self,from:data) { settings = saved }
+        if let data = try? Data(contentsOf:stateURL), var saved = try? JSONDecoder().decode(Settings.self,from:data) {
+            if !saved.root.isEmpty { saved.root = canonicalPath(saved.root) }
+            if let roots = saved.projectRoots { saved.projectRoots = roots.map(canonicalPath) }
+            settings = saved
+        }
+        if !fm.fileExists(atPath:stateURL.path) { settings.categories = [] }
         settings.autoArchive = false; settings.automationVersion = 2; save()
         rebuildFilenameIndex()
         if loadOnLaunch { refresh() }
@@ -121,8 +128,8 @@ func score(_ file: FileItem, project: Project) -> (Int,String) {
     func rebuildFilenameIndex() {
         // Do not replace a warm disk cache with the temporary empty file array during startup.
         guard searchMetadataLoaded else { return }
-        guard searchRevision > 0 || !settings.root.isEmpty || !settings.projects.isEmpty || !files.isEmpty else { return }
-        filenameIndex.replace(root:settings.root,projects:settings.projects,files:files)
+        guard searchRevision > 0 || settings.hasProjectRoots || !settings.projects.isEmpty || !files.isEmpty else { return }
+        filenameIndex.replace(root:settings.workspaceIdentity,projects:settings.projects,files:files)
         searchRevision += 1
     }
     func save() { do { try fm.createDirectory(at:stateURL.deletingLastPathComponent(),withIntermediateDirectories:true); try JSONEncoder().encode(settings).write(to:stateURL,options:.atomic) } catch { self.error = error.localizedDescription } }
@@ -131,39 +138,45 @@ func score(_ file: FileItem, project: Project) -> (Int,String) {
         p.message = kind == "root" ? "选择项目总目录，按磁盘上的真实文件夹显示" : "选择点击检查时需要处理的下载或待归档文件夹"
         guard p.runModal() == .OK, let url = p.url else { return }
         let resolved = canonicalPath(url.path)
-        let other = kind == "root" ? settings.inbox : settings.root
-        if !other.isEmpty && (resolved == other || resolved.hasPrefix(other+"/") || other.hasPrefix(resolved+"/")) { error = "项目目录与待归档目录不能重叠，请选择独立的文件夹。"; return }
-        if kind == "root" { settings.root = resolved; settings.projects = []; files = []; cache = [:] } else { settings.inbox = resolved; incoming = [] }
+        let others = kind == "root" ? [settings.inbox] : settings.activeProjectRoots
+        if others.contains(where:{ !$0.isEmpty && (resolved == $0 || resolved.hasPrefix($0+"/") || $0.hasPrefix(resolved+"/")) }) { error = "项目目录与待归档目录不能重叠，请选择独立的文件夹。"; return }
+        if kind == "root" {
+            let oldRoot = settings.root; var roots = settings.activeProjectRoots.filter { $0 != oldRoot && $0 != resolved }; roots.insert(resolved,at:0)
+            if roots.dropFirst().contains(where:{ $0.hasPrefix(resolved+"/") || resolved.hasPrefix($0+"/") }) { error = "项目总目录不能互相嵌套。"; return }
+            settings.root = resolved; settings.projectRoots = roots; settings.projects = []; files = []; cache = [:]
+        } else { settings.inbox = resolved; incoming = [] }
         scanCancellation?.cancel(); busy = false; save(); refresh()
     }
     func refresh(includeInbox: Bool = false, archiveRequested: Bool = false) {
         guard !busy else { return }; busy = true; metadataReady = false
         let token = IndexCancellation(); scanCancellation = token
-        let root = settings.root; let inbox = settings.inbox; let old = settings.projects; let previous = cache
+        let roots = settings.activeProjectRoots; let workspaceID = settings.workspaceIdentity; let inbox = settings.inbox; let old = settings.projects; let previous = cache
         if includeInbox { observeInbox() }
         DispatchQueue.global(qos:.utility).async {
-            let projects: [Project]
-            do { projects = try discoverProjects(root:root,saved:old) }
+            let snapshot: ProjectRootsSnapshot
+            do { snapshot = try discoverProjectRoots(roots,saved:old) }
             catch {
                 DispatchQueue.main.async {
-                    guard !token.isCancelled else { return }; guard self.settings.root == root else { self.busy = false; self.refresh(); return }
+                    guard !token.isCancelled else { return }; guard self.settings.workspaceIdentity == workspaceID else { self.busy = false; self.refresh(); return }
                     self.busy = false; self.message = "无法读取项目目录，请检查磁盘连接与访问权限；已有配置已保留。"
                     self.error = "无法读取项目目录：\(error.localizedDescription)"
                 }; return
             }
+            let projects = snapshot.projects
             // Publish folders before enumerating or parsing any document.
             DispatchQueue.main.async {
-                guard !token.isCancelled else { return }; guard self.settings.root == root else { return }
+                guard !token.isCancelled else { return }; guard self.settings.workspaceIdentity == workspaceID else { return }
+                self.unavailableProjectRoots = snapshot.unavailable
                 self.settings.projects = projects.map { candidate in
                     var p = self.settings.projects.first(where: { $0.path == candidate.path }) ?? candidate
-                    p.group = candidate.group; p.shallow = candidate.shallow; p.modifiedAt = candidate.modifiedAt; return p
+                    p.directoryPath = candidate.directoryPath; p.group = candidate.group; p.shallow = candidate.shallow; p.modifiedAt = candidate.modifiedAt; return p
                 }
                 self.message = "已读取 \(projects.count) 个目录，正在列出文件…"; self.save()
             }
             let files = projects.flatMap { metadataFiles($0.path,project:$0.path,recursive:$0.shallow != true,cache:previous) }.sorted { $0.date > $1.date }
             let incoming = includeInbox ? metadataFiles(inbox,project:"",recursive:false,cache:previous) : []
             DispatchQueue.main.async {
-                guard !token.isCancelled else { return }; guard self.settings.root == root && self.settings.inbox == inbox else { return }
+                guard !token.isCancelled else { return }; guard self.settings.workspaceIdentity == workspaceID && self.settings.inbox == inbox else { return }
                 self.projectCounts = Dictionary(files.map { ($0.project,1) },uniquingKeysWith:+)
                 self.files = files; if includeInbox { self.incoming = incoming }; self.metadataReady = true
                 self.message = "文件列表已就绪 · 未读取文档正文"
@@ -180,7 +193,7 @@ func score(_ file: FileItem, project: Project) -> (Int,String) {
                 if (batch.count >= 25 && Date().timeIntervalSince(lastUpdate) > 0.8) || Date().timeIntervalSince(lastUpdate) > 2 || index == all.count-1 {
                     let update = batch; let progress = index+1; batch = []; lastUpdate = Date()
                     DispatchQueue.main.async {
-                        guard !token.isCancelled else { return }; guard self.settings.root == root && self.settings.inbox == inbox else { return }
+                        guard !token.isCancelled else { return }; guard self.settings.workspaceIdentity == workspaceID && self.settings.inbox == inbox else { return }
                         let lookup = Dictionary(update.map { ($0.path,$0) },uniquingKeysWith: { a,_ in a })
                         for (path,file) in lookup { self.cache[path] = file }
                         self.message = "正在解析归档所需文档（\(progress)/\(all.count)）"
@@ -188,7 +201,7 @@ func score(_ file: FileItem, project: Project) -> (Int,String) {
                 }
             }
             DispatchQueue.main.async {
-                guard !token.isCancelled else { return }; guard self.settings.root == root && self.settings.inbox == inbox else { self.busy = false; self.refresh(); return }
+                guard !token.isCancelled else { return }; guard self.settings.workspaceIdentity == workspaceID && self.settings.inbox == inbox else { self.busy = false; self.refresh(); return }
                 self.cache.merge(Dictionary(indexed.map { ($0.path,$0) },uniquingKeysWith: { a,_ in a }),uniquingKeysWith:{_,b in b})
                 self.files = self.files.map { versionMatched($0,cached:self.cache[$0.path]) }; if includeInbox { self.incoming = self.incoming.map { versionMatched($0,cached:self.cache[$0.path]) } }
                 self.busy = false; self.save()
@@ -327,9 +340,14 @@ struct Preview: NSViewRepresentable {
     precondition(extract(png).contains("ALPHA"))
     try directoryPresentationTest(root:root)
     try namingTest(root:root)
+    try namingRulesTest(root:root)
     try categoryManagementTest(root:root)
+    try categoryRulesTest(root:root)
+    try categoryRuleExchangeTest(root:root)
+    try categoryWorkflowTest(root:root)
     try batchOperationsTest(root:root)
     try quickArchiveTest(root:root)
+    try archiveMatchingTest(root:root)
     try finderServicesTest(root:root)
     try filenameSearchTest(root:root)
     try lightweightTest(root:root)
@@ -337,10 +355,19 @@ struct Preview: NSViewRepresentable {
     try finderShortcutTest(root:root)
     try indexingTest(root:root)
     try directoryOrderingTest(root:root)
+    try sidebarSectionsTest(root:root)
+    try projectRootsTest(root:root)
+    try AppUpdater.selfTest()
     try automationTest(root:root)
     print("PASS: extraction + OCR; explicit-click routing, no unrequested moves, ambiguity, stable downloads, undo suppression, time sorting, persisted records")
 }
 if CommandLine.arguments.contains("--self-test") { do { try MainActor.assumeIsolated { try selfTest() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--project-roots-review") { do { try MainActor.assumeIsolated { try projectRootsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--finder-services-review") { do { try MainActor.assumeIsolated { try finderServicesUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--update-probe") { do { try MainActor.assumeIsolated { try AppUpdater.probeDiagnostic() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--smart-dialogs-review") { do { try MainActor.assumeIsolated { try smartDialogsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--category-flow-review") { do { try MainActor.assumeIsolated { try categoryWorkflowUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--naming-rules-review") { do { try MainActor.assumeIsolated { try namingRulesUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--ui-review") { do { try MainActor.assumeIsolated { try batchUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else { GuiyuApp.main() }
 @MainActor final class GuiyuAppDelegate: NSObject, NSApplicationDelegate {
@@ -351,6 +378,7 @@ else { GuiyuApp.main() }
         NSUpdateDynamicServices()
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.servicesProvider = finderServices
         applyGuiyuApplicationIcon()
         AppUpdater.shared.start()
     }
@@ -362,5 +390,5 @@ else { GuiyuApp.main() }
 }
 struct GuiyuApp: App {
     @NSApplicationDelegateAdaptor(GuiyuAppDelegate.self) var delegate
-    var body: some Scene { WindowGroup("归屿") { ProjectWorkspace(store:delegate.store).preferredColorScheme(.light) }.defaultSize(width:1280,height:820).windowStyle(.hiddenTitleBar).commands { CommandGroup(replacing:.newItem) {}; CommandGroup(after:.appInfo) { UpdateMenu() } } }
+    var body: some Scene { WindowGroup("归屿") { ProjectWorkspace(store:delegate.store).preferredColorScheme(.light) }.defaultSize(width:1280,height:820).windowStyle(.hiddenTitleBar).commands { CommandGroup(replacing:.newItem) {}; CommandGroup(replacing:.appInfo) { Button("关于归屿") { NSApp.orderFrontStandardAboutPanel(options:[.applicationVersion:Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "开发版本",.version:""]) } }; CommandGroup(after:.appInfo) { UpdateMenu() } } }
 }

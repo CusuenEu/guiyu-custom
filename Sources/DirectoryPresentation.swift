@@ -32,8 +32,10 @@ func presentDirectory(_ entries: [BrowserRow], mode: String, query: String, coll
             return [BrowserRow(id:id,title:label,header:true,count:values.count,expanded:!collapsed.contains(id))] + (collapsed.contains(id) ? [] : values)
         }
     }
+    let classifier = CategoryClassifier(categories:categories)
+    let grouped = Dictionary(grouping:entries,by:{ classifier.resolve($0,assignments:assignments)?.id ?? "" })
     return categories.flatMap { category -> [BrowserRow] in
-        let values = newest(entries.filter { resolvedCategory($0,categories:categories,assignments:assignments)?.id == category.id }).map { row -> BrowserRow in var row = row; row.categoryID = category.id; return row }
+        let values = newest(grouped[category.id] ?? []).map { row -> BrowserRow in var row = row; row.categoryID = category.id; return row }
         guard !values.isEmpty else { return [] }
         let id = "category:"+category.id
         return [BrowserRow(id:id,title:category.name,header:true,count:values.count,expanded:!collapsed.contains(id),categoryID:category.id)] + (collapsed.contains(id) ? [] : values)

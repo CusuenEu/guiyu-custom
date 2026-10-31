@@ -125,11 +125,11 @@ final class FilenameSearchIndex: @unchecked Sendable {
         let owners = Dictionary(projects.map { ($0.path,$0) },uniquingKeysWith:{ first,_ in first })
         var next: [String:FilenameDocument] = [:]
         for project in projects where project.shallow != true {
-            next[project.path] = FilenameDocument(id:project.path,owner:project.path,scope:project.group ?? "",name:project.name,kind:0)
+            next[project.path] = FilenameDocument(id:project.path,owner:project.path,scope:project.scopeID,name:project.name,kind:0)
         }
         for file in files {
             guard let owner = owners[file.project] else { continue }
-            next[file.path] = FilenameDocument(id:file.path,owner:file.project,scope:owner.group ?? "",name:file.name,kind:1)
+            next[file.path] = FilenameDocument(id:file.path,owner:file.project,scope:owner.scopeID,name:file.name,kind:1)
         }
         documents = next // Correct in-memory fallback even if the cache is unavailable.
         do {
@@ -205,32 +205,43 @@ struct WorkspaceSearchOutput: Equatable {
     var projectRows: [BrowserRow] = []
     var sourceIDs: Set<String>? = nil
     var fileRows: [BrowserRow] = []
+    var searchEntries: [BrowserRow] = []
+    var unavailableProjects: [String] = []
 }
 
 @MainActor final class WorkspaceSearchController: ObservableObject {
     @Published private(set) var output = WorkspaceSearchOutput()
+    @Published private(set) var isSearching = false
     private var pending: DispatchWorkItem?
     private var cancellation: IndexCancellation?
     private var generation = UUID()
-    func submit(index:FilenameSearchIndex,query:String,scope:String,projects:[Project],files:[FileItem],sourceRows:[BrowserRow],byMonth:Bool,mode:String = "按类别",collapsed:Set<String> = [],categories:[WorkspaceCategory] = WorkspaceCategory.defaults,assignments:[String:CategoryAssignment] = [:]) {
-        pending?.cancel(); cancellation?.cancel()
+    private let thirdLevelCache = ThirdLevelSearchCache()
+    func submit(index:FilenameSearchIndex,query:String,scope:String,projects:[Project],files:[FileItem],sourceRows:[BrowserRow],byMonth:Bool,mode:String = "按类别",collapsed:Set<String> = [],categories:[WorkspaceCategory] = WorkspaceCategory.defaults,assignments:[String:CategoryAssignment] = [:],aggregateThirdLevel:Bool = false,metadataRevision:Int = 0) {
+        pending?.cancel(); cancellation?.cancel(); isSearching = true
         let ticket = UUID(); generation = ticket
         let token = IndexCancellation(); cancellation = token
         let parsed = FilenameQuery(query)
-        let complete: (FilenameMatches) -> Void = { [weak self] matches in
+        let cache = thirdLevelCache
+        let finish: (FilenameMatches,ThirdLevelSearchCache.Snapshot?) -> Void = { [weak self] matches, snapshot in
                 guard !token.isCancelled else { return }
                 var matches = matches
                 // Project names are usable even before the first metadata/index publication.
                 if !parsed.tokens.isEmpty {
-                    for project in projects where project.shallow != true && project.group == scope {
+                    for project in projects where project.shallow != true && project.scopeID == scope {
                         let name = FilenameQuery.normalize(project.name)
                         if parsed.matchesNormalized(name) {
                             matches.projectRanks[project.path] = min(matches.projectRanks[project.path] ?? Int.max,parsed.rank(name))
                         }
                     }
                 }
-                var folders = newestProjects(projects.filter { $0.shallow != true && $0.group == scope },byMonth:byMonth)
-                let directory = projects.first { $0.shallow == true && $0.group == scope }?.path
+                if let snapshot {
+                    for row in snapshot.rows where parsed.matches(row.title) {
+                        let owner = URL(fileURLWithPath:row.id).deletingLastPathComponent().path
+                        matches.projectRanks[owner] = min(matches.projectRanks[owner] ?? Int.max,parsed.rank(FilenameQuery.normalize(row.title))+4)
+                    }
+                }
+                var folders = newestProjects(projects.filter { $0.shallow != true && $0.scopeID == scope },byMonth:byMonth)
+                let directory = projects.first { $0.shallow == true && $0.scopeID == scope }?.path
                 var loose = files.filter { $0.project == directory }.sorted { $0.date > $1.date }
                 let searching = !parsed.tokens.isEmpty
                 if searching {
@@ -246,14 +257,21 @@ struct WorkspaceSearchOutput: Equatable {
                     }.map(\.element)
                 }
                 let rows = folders.map { BrowserRow(id:$0.path,title:$0.name,folder:true) } + loose.map { BrowserRow(id:$0.path,title:$0.name,date:$0.date,file:$0) }
-                let matchingSource = searching ? sourceRows.filter { parsed.matches($0.title) } : sourceRows
+                let entries = snapshot?.rows ?? sourceRows
+                let matchingSource = searching ? entries.filter { parsed.matches($0.title) } : entries
                 let ids = searching ? Set(matchingSource.map(\.id)) : nil
                 let presented = presentDirectory(matchingSource,mode:mode,query:"",collapsed:collapsed,categories:categories,assignments:assignments)
                 guard !token.isCancelled else { return }
                 DispatchQueue.main.async {
                     guard let self, self.generation == ticket, !token.isCancelled else { return }
-                    self.output = WorkspaceSearchOutput(query:query,projectRows:rows,sourceIDs:ids,fileRows:presented)
+                    self.isSearching = false
+                    self.output = WorkspaceSearchOutput(query:query,projectRows:rows,sourceIDs:ids,fileRows:presented,searchEntries:snapshot == nil ? [] : matchingSource,unavailableProjects:snapshot?.unavailable ?? [])
                 }
+        }
+        let complete: (FilenameMatches) -> Void = { matches in
+            if aggregateThirdLevel && !parsed.tokens.isEmpty {
+                cache.load(scope:scope,projects:projects,revision:metadataRevision,token:token) { finish(matches,$0) }
+            } else { finish(matches,nil) }
         }
         let work = DispatchWorkItem {
             guard !token.isCancelled else { return }

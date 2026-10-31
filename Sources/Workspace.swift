@@ -3,7 +3,7 @@ import AppKit
 import QuickLookUI
 
 struct BrowserRow: Identifiable, Equatable {
-    var id: String; var title: String; var date: Date? = nil; var file: FileItem? = nil; var folder = false; var header = false; var count = 0; var expanded = true; var categoryID: String? = nil
+    var id: String; var title: String; var subtitle: String? = nil; var date: Date? = nil; var file: FileItem? = nil; var folder = false; var header = false; var count = 0; var expanded = true; var categoryID: String? = nil
 }
 enum BrowserTableAppearance { case files, projects }
 
@@ -46,7 +46,9 @@ struct BrowserTable: NSViewRepresentable {
         table.allowsMultipleSelection = multipleSelection != nil
         table.onTrash = trash == nil ? nil : { c.trashSelection() }
         let changedDataset = c.dataset != dataset; c.dataset = dataset
-        let signature = rows.map { $0.id+"|"+$0.title+"|"+String($0.date?.timeIntervalSince1970 ?? 0)+"|"+String($0.count)+"|"+String($0.expanded) }
+        let signature = rows.map { row in
+            [row.id,row.title,String(row.date?.timeIntervalSince1970 ?? 0),String(row.count),String(row.expanded),row.subtitle ?? ""].joined(separator:"|")
+        }
         if signature != c.signature { c.signature = signature; c.rows = rows; c.projectHeights.removeAll(); table.reloadData() }
         let ids = multipleSelection?.wrappedValue ?? Set(selection.map { [$0] } ?? [])
         let indexes = IndexSet(c.rows.indices.filter { ids.contains(c.rows[$0].id) && !c.rows[$0].header })
@@ -109,12 +111,14 @@ struct BrowserTable: NSViewRepresentable {
                 title.append(NSAttributedString(string:String(value.count),attributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor(WorkspaceTheme.secondary)]))
                 cell.title.attributedStringValue = title
             } else { cell.title.stringValue = value.title }
+            cell.subtitle.stringValue = value.subtitle ?? ""; cell.subtitle.isHidden = value.subtitle == nil
+            cell.titleCenter.constant = value.subtitle == nil ? 0 : -7
             cell.dateWidth.constant = value.date != nil && !value.header ? 112 : 0
             cell.date.stringValue = value.header ? "" : value.date?.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour().minute()) ?? ""
             let symbol = value.header ? (value.expanded ? "chevron.down" : "chevron.right") : value.folder ? "folder.fill" : value.file?.symbol ?? "doc"
             cell.icon.image = value.folder && !value.header ? WorkspaceTheme.folder : (!value.header ? WorkspaceFileIcons.image(for:value.file) : nil) ?? NSImage(systemSymbolName:symbol,accessibilityDescription:value.header ? "展开或收起" : "文件")
             cell.icon.contentTintColor = value.header ? NSColor(WorkspaceTheme.secondary) : nil
-            cell.toolTip = value.title; return cell
+            cell.toolTip = value.title + (value.subtitle.map { "\n所属项目："+$0 } ?? ""); return cell
         }
         func tableViewSelectionDidChange(_ notification:Notification) {
             guard !updating, let t = notification.object as? NSTableView else { return }
@@ -143,13 +147,13 @@ struct BrowserTable: NSViewRepresentable {
             let row = rows[t.clickedRow]; contextRow = row
             contextRows = t.selectedRowIndexes.contains(t.clickedRow) ? t.selectedRowIndexes.compactMap { rows.indices.contains($0) && !rows[$0].header ? rows[$0] : nil } : [row]
             if parent.quickArchive != nil {
-                let quick = NSMenuItem(title:"快速归类…",action:#selector(quickArchiveClicked),keyEquivalent:""); quick.target = self; menu.addItem(quick); menu.addItem(.separator())
+                let quick = NSMenuItem(title:"智能归档…",action:#selector(quickArchiveClicked),keyEquivalent:""); quick.target = self; menu.addItem(quick); menu.addItem(.separator())
             }
             if contextRows.count > 1, parent.batchRename != nil {
-                let recommended = NSMenuItem(title:"批量推荐命名（\(contextRows.count)项）…",action:#selector(batchRecommendClicked),keyEquivalent:""); recommended.target = self; menu.addItem(recommended)
+                let recommended = NSMenuItem(title:"批量智能命名（\(contextRows.count)项）…",action:#selector(batchRecommendClicked),keyEquivalent:""); recommended.target = self; menu.addItem(recommended)
                 let manual = NSMenuItem(title:"批量更改名称…",action:#selector(batchManualClicked),keyEquivalent:""); manual.target = self; menu.addItem(manual)
             } else {
-            let item = NSMenuItem(title:"推荐命名…",action:#selector(renameClicked),keyEquivalent:""); item.target = self; menu.addItem(item)
+            let item = NSMenuItem(title:"智能命名…",action:#selector(renameClicked),keyEquivalent:""); item.target = self; menu.addItem(item)
             if parent.directRename != nil {
                 let manual = NSMenuItem(title:"更改名称…",action:#selector(directRenameClicked),keyEquivalent:""); manual.target = self; menu.addItem(manual)
             }
@@ -233,51 +237,20 @@ final class BrowserNSTable: NSTableView {
     override func keyDown(with event:NSEvent) { if !performFileShortcut(event) { super.keyDown(with:event) } }
 }
 final class BrowserCell: NSTableCellView {
-    let icon = NSImageView(); let title = NSTextField(labelWithString:""); let date = NSTextField(labelWithString:""); var dateWidth: NSLayoutConstraint!; var titleHeight: NSLayoutConstraint!
-    var iconWidth: NSLayoutConstraint!; var iconHeight: NSLayoutConstraint!
+    let icon = NSImageView(); let title = NSTextField(labelWithString:""); let subtitle = NSTextField(labelWithString:""); let date = NSTextField(labelWithString:""); var dateWidth: NSLayoutConstraint!; var titleHeight: NSLayoutConstraint!
+    var iconWidth: NSLayoutConstraint!; var iconHeight: NSLayoutConstraint!; var titleCenter: NSLayoutConstraint!
     init() {
         super.init(frame:.zero); title.lineBreakMode = .byTruncatingMiddle; date.font = .monospacedDigitSystemFont(ofSize:11,weight:.regular); date.textColor = NSColor(WorkspaceTheme.secondary); date.alignment = .right; icon.imageScaling = .scaleProportionallyUpOrDown
-        for v in [icon,title,date] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+        subtitle.font = .systemFont(ofSize:11); subtitle.textColor = NSColor(WorkspaceTheme.secondary); subtitle.lineBreakMode = .byTruncatingMiddle; subtitle.isHidden = true
+        for v in [icon,title,subtitle,date] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
         dateWidth = date.widthAnchor.constraint(equalToConstant:112)
         titleHeight = title.heightAnchor.constraint(equalToConstant:22)
         iconWidth = icon.widthAnchor.constraint(equalToConstant:22)
         iconHeight = icon.heightAnchor.constraint(equalToConstant:24)
-        NSLayoutConstraint.activate([icon.leadingAnchor.constraint(equalTo:leadingAnchor,constant:16),icon.centerYAnchor.constraint(equalTo:centerYAnchor),iconWidth!,iconHeight!,title.leadingAnchor.constraint(equalTo:icon.trailingAnchor,constant:12),title.centerYAnchor.constraint(equalTo:centerYAnchor),title.trailingAnchor.constraint(equalTo:date.leadingAnchor,constant:-10),titleHeight,date.trailingAnchor.constraint(equalTo:trailingAnchor,constant:-16),date.centerYAnchor.constraint(equalTo:centerYAnchor),dateWidth])
+        titleCenter = title.centerYAnchor.constraint(equalTo:centerYAnchor)
+        NSLayoutConstraint.activate([subtitle.leadingAnchor.constraint(equalTo:title.leadingAnchor),subtitle.trailingAnchor.constraint(equalTo:title.trailingAnchor),subtitle.centerYAnchor.constraint(equalTo:centerYAnchor,constant:13),subtitle.heightAnchor.constraint(equalToConstant:14),icon.leadingAnchor.constraint(equalTo:leadingAnchor,constant:16),icon.centerYAnchor.constraint(equalTo:centerYAnchor),iconWidth!,iconHeight!,title.leadingAnchor.constraint(equalTo:icon.trailingAnchor,constant:12),titleCenter!,title.trailingAnchor.constraint(equalTo:date.leadingAnchor,constant:-10),titleHeight,date.trailingAnchor.constraint(equalTo:trailingAnchor,constant:-16),date.centerYAnchor.constraint(equalTo:centerYAnchor),dateWidth])
     }
     required init?(coder:NSCoder) { fatalError("init(coder:) is not used") }
-}
-
-struct RenameDialog: View {
-    @Environment(\.dismiss) var dismiss; @ObservedObject var store: Store; let target: NamingTarget
-    @State var candidates: [Suggestion] = []; @State var loading = true; @State var base = ""; @State var month = 1; @State var edited = false
-    @State var token = IndexCancellation()
-    var finalName: String { proposedName(base:base,month:month,folder:target.folder,original:target.path) }
-    var onClose: (() -> Void)? = nil
-    private func close() { if let onClose { onClose() } else { dismiss() } }
-    var body: some View {
-        VStack(alignment:.leading,spacing:16) {
-            Label(target.folder ? "推荐文件夹命名" : "推荐文档命名",systemImage:"tag").font(.title2.bold())
-            Text("当前名称："+URL(fileURLWithPath:target.path).lastPathComponent).font(.callout).textSelection(.enabled)
-            Text(target.folder ? "优先招标项目名，其次方案名，再其次单位名＋关键方案名。月份可调整。" : "先读前两页，不足再补读。投标／响应：投标文件-项目名；方案：解决方案-项目名，保留扩展名。").font(.caption).foregroundStyle(.secondary)
-            if loading { HStack { ProgressView().controlSize(.small); Text("正在优先读取前两页，信息不足时补读后文…").foregroundStyle(.secondary) } }
-            if !loading && candidates.isEmpty { Text("没有提取到明确标题，请手动填写候选名称后确认。").foregroundStyle(.secondary) }
-            ScrollView { VStack(spacing:0) { ForEach(candidates) { c in Button { base = c.name; edited = true } label: {
-                HStack(alignment:.top,spacing:10) { Image(systemName:base == c.name ? "largecircle.fill.circle" : "circle").foregroundStyle(accent); VStack(alignment:.leading,spacing:5) { Text(c.name).foregroundStyle(.primary); Text(c.evidence).font(.caption).foregroundStyle(.secondary) }; Spacer() }.padding(12).background(base == c.name ? accent.opacity(0.07) : .clear)
-            }.buttonStyle(.plain); Divider() } } }.frame(maxHeight:candidates.isEmpty ? 0 : 260)
-            HStack {
-                if target.folder { Picker("月份",selection:$month) { ForEach(1...12,id:\.self) { Text("\($0)月").tag($0) } }.frame(width:115) }
-                TextField("填写或修改名称",text:Binding(get:{base},set:{base=$0;edited=true})).textFieldStyle(.roundedBorder)
-            }
-            Text("确认后的名称："+finalName).font(.callout.weight(.medium)).textSelection(.enabled)
-            Text("确认后将同步修改 Finder 中的名称。同名不覆盖，原文件内容保持不变。").font(.caption).foregroundStyle(.secondary)
-            HStack { Button("取消") { close() }; Spacer(); Button("确认重命名") { if store.confirmRename(target,newName:finalName) { close() } }.buttonStyle(.borderedProminent).disabled(base.trimmingCharacters(in:.whitespaces).isEmpty).keyboardShortcut(.defaultAction) }
-        }.padding(26).frame(width:630)
-        .onAppear {
-            month = suggestedMonth(target.path)
-            store.loadSuggestions(target,token:token) { values in candidates = values; loading = false; if !edited && base.isEmpty { base = values.first?.name ?? "" } }
-        }.onDisappear { token.cancel() }
-        .alert("重命名未完成",isPresented:Binding(get:{!store.error.isEmpty},set:{if !$0 { store.error = "" }})) { Button("知道了") { store.error = "" } } message: { Text(store.error) }
-    }
 }
 
 struct ProjectWorkspace: View {
@@ -285,18 +258,24 @@ struct ProjectWorkspace: View {
     @StateObject var store = Store(); @State var year = ""; @State var projectPath: String?; @State var filePath: String?; @State var query = ""; @State var mode = "按类别"
     @State var collapsed = Set<String>(); @State var sourceFolder = ""; @State var sourceRows: [BrowserRow] = []; @State var naming: NamingTarget?; @State var manualNaming: NamingTarget?
     @State var fileSelections = Set<String>(); @State var isDragging = false; @State var batchNaming: BatchNamingRequest?; @State var processedRenameCount = 0
-    @State var showSettings = false; @State var showPreview = false; @State var showPending = false
+    @State var settingsDestination: SettingsSection?
+     @State var showPreview = false; @State var showPending = false
     @State var sourceLoading = false; @State var sourceError = ""; @State var sourceGeneration = UUID()
     @State var projectOrder = "月份倒序"; @State var archiveSourceID: String?; @State var quickArchiveRequest: QuickArchiveRequest?
     @State var searchFocused = false
-    var years: [String] { store.orderedDirectories.map { URL(fileURLWithPath:$0.path).lastPathComponent } }
-    var selectedDirectory: Project? { store.settings.projects.first { $0.shallow == true && $0.group == year } }
-    var project: Project? { store.settings.projects.first { $0.path == projectPath && $0.shallow != true && $0.group == year } }
-    var selectedFile: FileItem? { guard fileSelections.count <= 1 else { return nil }; return store.files.first { $0.path == filePath } ?? sourceRows.first { $0.id == filePath }?.file }
+    @State var sidebarPreviewFraction: Double?; @State var sidebarDragOrigin: CGFloat?
+    @State var searchFolderToOpen: String?
+    var isScopeSearch: Bool { archiveSourceID == nil && !FilenameQuery(query).tokens.isEmpty }
+    var activeSourceRows: [BrowserRow] { isScopeSearch ? search.output.searchEntries : sourceRows }
+    var activeDragScope: String { isScopeSearch ? "search:"+(selectedDirectory?.path ?? year) : sourceFolder }
+    var years: [String] { store.orderedDirectories.map(\.scopeID) }
+    var selectedDirectory: Project? { store.settings.projects.first { $0.shallow == true && $0.scopeID == year } }
+    var project: Project? { store.settings.projects.first { $0.path == projectPath && $0.shallow != true && $0.scopeID == year } }
+    var selectedFile: FileItem? { guard fileSelections.count <= 1 else { return nil }; return store.files.first { $0.path == filePath } ?? activeSourceRows.first { $0.id == filePath }?.file }
     var projectRows: [BrowserRow] { search.output.projectRows }
     var fileRows: [BrowserRow] { search.output.fileRows }
     func refreshSearch() {
-        search.submit(index:store.filenameIndex,query:query,scope:year,projects:store.settings.projects,files:store.files,sourceRows:sourceRows,byMonth:projectOrder == "月份倒序",mode:mode,collapsed:collapsed,categories:store.workspaceCategories,assignments:store.workspaceAssignments)
+        search.submit(index:store.filenameIndex,query:query,scope:year,projects:store.settings.projects,files:store.files,sourceRows:sourceRows,byMonth:projectOrder == "月份倒序",mode:mode,collapsed:collapsed,categories:store.workspaceCategories,assignments:store.workspaceAssignments,aggregateThirdLevel:isScopeSearch,metadataRevision:store.searchRevision+store.fileOperationRevision)
     }
     var body: some View {
         VStack(spacing:0) {
@@ -308,11 +287,12 @@ struct ProjectWorkspace: View {
                     else { projectsPane }
                 }.background(WorkspaceTheme.projectCanvas).frame(minWidth:340,idealWidth:390,maxWidth:.infinity)
                 VStack(spacing:0) {
-                    if archiveSourceID == nil && project != nil { filesPane }
+                    if store.workspaceCategories.isEmpty { CategorySetupPlaceholder { settingsDestination = .categories } }
+                    else if archiveSourceID == nil && (project != nil || isScopeSearch) { filesPane }
                     else { WorkspaceTheme.canvas }
                     Divider()
-                    WorkspaceStatus(progress:store.progress,busy:store.busy,count:project != nil && archiveSourceID == nil ? sourceRows.count : nil)
-                }.frame(minWidth:archiveSourceID == nil && project != nil ? 430 : 0,idealWidth:570,maxWidth:.infinity)
+                    WorkspaceStatus(progress:store.progress,busy:store.busy,count:isScopeSearch ? activeSourceRows.count : (project != nil && archiveSourceID == nil ? sourceRows.count : nil))
+                }.frame(minWidth:store.workspaceCategories.isEmpty || (archiveSourceID == nil && (project != nil || isScopeSearch)) ? 430 : 0,idealWidth:570,maxWidth:.infinity)
             }.background(WorkspaceSplitLayout())
         }.frame(minWidth:1060,minHeight:700).background(WorkspaceTheme.canvas).tint(accent).ignoresSafeArea(.container,edges:.top)
         .onAppear { processedRenameCount = store.settings.renames?.count ?? 0; if !years.contains(year) { year = years.first ?? "" }; refreshSearch() }
@@ -323,6 +303,7 @@ struct ProjectWorkspace: View {
         .onChange(of:store.workspaceCategories) { _ in refreshSearch() }
         .onChange(of:store.workspaceAssignments) { _ in refreshSearch() }
         .onChange(of:projectOrder) { _ in refreshSearch() }
+        .onChange(of:archiveSourceID) { _ in refreshSearch() }
         .onChange(of:store.settings.archiveSources) { _ in if let id = archiveSourceID, !store.availableArchiveSources.contains(where:{$0.id == id}) { archiveSourceID = nil } }
         .onChange(of:store.settings.projects) { _ in
             if !years.contains(year) { year = years.first ?? "" }
@@ -332,7 +313,7 @@ struct ProjectWorkspace: View {
             refreshSearch()
         }
         .onChange(of:year) { _ in projectPath = nil; filePath = nil; fileSelections = []; sourceRows = []; sourceFolder = ""; loadSource(); refreshSearch() }
-        .onChange(of:projectPath) { path in if path != nil { archiveSourceID = nil }; filePath = nil; fileSelections = []; sourceRows = []; sourceFolder = projectPath ?? ""; loadSource() }
+        .onChange(of:projectPath) { path in if path != nil { archiveSourceID = nil }; filePath = nil; fileSelections = []; sourceRows = []; sourceFolder = searchFolderToOpen ?? projectPath ?? ""; searchFolderToOpen = nil; loadSource() }
         .onChange(of:mode) { _ in filePath = nil; fileSelections = []; collapsed = []; refreshSearch() }
         .onChange(of:store.fileOperationRevision) { _ in fileSelections = []; filePath = nil; loadSource() }
         .onChange(of:store.metadataReady) { ready in if ready { loadSource() } }
@@ -349,9 +330,9 @@ struct ProjectWorkspace: View {
         .sheet(item:$naming) { RenameDialog(store:store,target:$0) }
         .sheet(item:$batchNaming) { BatchRenameDialog(store:store,request:$0) }
         .sheet(item:$manualNaming) { DirectRenameDialog(store:store,target:$0) }
-        .sheet(isPresented:$showSettings) { workspaceSettings }
+        .sheet(item:$settingsDestination) { destination in workspaceSettings(destination) }
         .sheet(isPresented:$showPending) { PendingDialog(store:store) }
-        .alert("操作未完成",isPresented:Binding(get:{!store.error.isEmpty && archiveSourceID == nil && naming == nil && manualNaming == nil && batchNaming == nil && quickArchiveRequest == nil && !showSettings},set:{if !$0 { store.error = "" }})) { Button("知道了") { store.error = "" } } message: { Text(store.error) }
+        .alert("操作未完成",isPresented:Binding(get:{!store.error.isEmpty && archiveSourceID == nil && naming == nil && manualNaming == nil && batchNaming == nil && quickArchiveRequest == nil && settingsDestination == nil},set:{if !$0 { store.error = "" }})) { Button("知道了") { store.error = "" } } message: { Text(store.error) }
     }
     var sidebarHeader: some View {
         VStack(alignment:.leading,spacing:20) {
@@ -387,21 +368,74 @@ struct ProjectWorkspace: View {
         store.globalRefreshRevision += 1
         loadSource()
     }
+    var sidebarPreferredProjectHeight: CGFloat {
+        let roots = store.settings.activeProjectRoots
+        let rows = CGFloat(store.orderedDirectories.count)*DirectoryOrderRowView.dropHeight
+        let groupHeadings = roots.count > 1 ? CGFloat(roots.count)*21+CGFloat(max(0,roots.count-1))*12 : 0
+        return 50+max(0,rows-CGFloat(roots.count)*DirectoryOrderRowView.dropPadding*2)+groupHeadings
+    }
     var yearsPane: some View {
         VStack(alignment:.leading,spacing:20) {
             sidebarHeader
-            ScrollView { VStack(alignment:.leading,spacing:18) {
-            Text("项目目录").font(.system(size:12,weight:.semibold)).foregroundStyle(WorkspaceTheme.sidebarMuted).padding(.top,6)
-            VStack(spacing:0) {
-            ForEach(store.orderedDirectories) { directory in
-                let value = URL(fileURLWithPath:directory.path).lastPathComponent
-                DirectoryOrderRow(store:store,directory:directory,selected:year == value && archiveSourceID == nil) {
-                    archiveSourceID = nil; projectPath = nil; year = value
-                }.frame(height:DirectoryOrderRowView.dropHeight)
+            GeometryReader { geometry in
+                let total = geometry.size.height
+                let height = SidebarSectionsLayout.projectHeight(total:total,fraction:sidebarPreviewFraction ?? store.settings.sidebarProjectsFraction,preferred:sidebarPreferredProjectHeight)
+                VStack(spacing:0) {
+                    VStack(alignment:.leading,spacing:18) {
+                        projectDirectoryHeading
+                        ScrollView { projectDirectoryList.padding(.vertical,1) }
+                    }.frame(height:height)
+                    SidebarSectionDivider(fraction:SidebarSectionsLayout.fraction(height:height,total:total),begin:{ sidebarDragOrigin = height },change:{ delta in
+                        let value = SidebarSectionsLayout.projectHeight(total:total,fraction:SidebarSectionsLayout.fraction(height:(sidebarDragOrigin ?? height)+delta,total:total),preferred:sidebarPreferredProjectHeight)
+                        sidebarPreviewFraction = SidebarSectionsLayout.fraction(height:value,total:total)
+                    },finish:{
+                        if let fraction = sidebarPreviewFraction { _ = store.saveSidebarFraction(fraction) }
+                        sidebarPreviewFraction = nil; sidebarDragOrigin = nil
+                    },cancel:{ sidebarPreviewFraction = nil; sidebarDragOrigin = nil },nudge:{ delta in
+                        let value = SidebarSectionsLayout.projectHeight(total:total,fraction:SidebarSectionsLayout.fraction(height:height+delta,total:total),preferred:sidebarPreferredProjectHeight)
+                        _ = store.saveSidebarFraction(SidebarSectionsLayout.fraction(height:value,total:total))
+                    }).frame(height:SidebarSectionsLayout.dividerHeight)
+                    VStack(alignment:.leading,spacing:18) {
+                        archiveSourcesHeading.padding(.top,8)
+                        ScrollView { archiveSourcesList.padding(.vertical,1) }
+                    }.frame(maxHeight:.infinity,alignment:.top)
+                }
             }
-            }.padding(.vertical,-DirectoryOrderRowView.dropPadding)
-            Rectangle().fill(WorkspaceTheme.sidebarMuted.opacity(0.25)).frame(height:1)
-            HStack { Text("可归档目录").font(.system(size:12,weight:.semibold)).foregroundStyle(WorkspaceTheme.sidebarMuted); Spacer(); Button { if let id = store.chooseArchiveSource() { archiveSourceID = id; projectPath = nil } } label: { Image(systemName:"plus") }.buttonStyle(.plain).help("关联文件夹") }
+            Button { settingsDestination = .locations } label: { HStack(spacing:12) { Image(systemName:"gearshape").font(.system(size:19)); Text("设置"); Spacer() }.frame(maxWidth:.infinity,minHeight:44).contentShape(Rectangle()) }.buttonStyle(.plain).padding(.horizontal,12)
+                .background(Color.white.opacity(0.10),in:RoundedRectangle(cornerRadius:10))
+        }.padding(16).foregroundStyle(WorkspaceTheme.sidebarText).background(WorkspaceTheme.sidebar)
+    }
+    var projectDirectoryHeading: some View {
+        HStack {
+                Text("项目目录").font(.system(size:12,weight:.semibold)).foregroundStyle(WorkspaceTheme.sidebarMuted)
+                Spacer()
+                Button { store.chooseProjectRoots() } label: { Image(systemName:"plus").frame(width:24,height:24) }.buttonStyle(.plain).help("关联项目总目录，可添加多个").accessibilityLabel("关联项目总目录")
+            }.padding(.top,6)
+    }
+    var projectDirectoryList: some View {
+        VStack(alignment:.leading,spacing:12) {
+                ForEach(store.settings.activeProjectRoots,id:\.self) { root in
+                    VStack(alignment:.leading,spacing:8) {
+                        if store.settings.activeProjectRoots.count > 1 {
+                            Text(store.rootDisplayName(root)+(store.unavailableProjectRoots.contains(root) ? " · 暂不可访问" : "")).font(.system(size:11,weight:.medium)).foregroundStyle(WorkspaceTheme.sidebarMuted).lineLimit(1).help(root)
+                                .contextMenu { Button("在 Finder 中显示") { NSWorkspace.shared.selectFile(nil,inFileViewerRootedAtPath:root) }; Button("移除关联") { _ = store.removeProjectRoot(root) } }
+                        }
+                        VStack(spacing:0) {
+                            ForEach(store.directories(in:root)) { directory in
+                                DirectoryOrderRow(store:store,directory:directory,selected:year == directory.scopeID && archiveSourceID == nil) {
+                                    archiveSourceID = nil; projectPath = nil; year = directory.scopeID
+                                }.frame(height:DirectoryOrderRowView.dropHeight)
+                            }
+                        }.padding(.vertical,-DirectoryOrderRowView.dropPadding)
+                    }
+                }
+            }
+    }
+    var archiveSourcesHeading: some View {
+        HStack { Text("可归档目录").font(.system(size:12,weight:.semibold)).foregroundStyle(WorkspaceTheme.sidebarMuted); Spacer(); Button { if let id = store.chooseArchiveSource() { archiveSourceID = id; projectPath = nil } } label: { Image(systemName:"plus").frame(width:24,height:24) }.buttonStyle(.plain).help("关联文件夹") }
+    }
+    var archiveSourcesList: some View {
+        VStack(alignment:.leading,spacing:18) {
             ForEach(store.availableArchiveSources) { source in
                 Button { projectPath = nil; archiveSourceID = source.id } label: {
                     HStack(spacing:10) { Image(systemName:source.kind == "recent" ? "clock" : "tray.and.arrow.down").font(.system(size:18)).foregroundStyle(WorkspaceTheme.sidebarText); Text(source.name).lineLimit(1); Spacer() }
@@ -412,16 +446,12 @@ struct ProjectWorkspace: View {
                         .contentShape(Rectangle())
                 }.buttonStyle(.plain).help(source.kind == "recent" ? "系统最近使用的文件" : source.path)
             }
-            } }
-            Spacer(minLength:0)
-            Button { showSettings = true } label: { HStack(spacing:12) { Image(systemName:"gearshape").font(.system(size:19)); Text("设置"); Spacer() }.frame(maxWidth:.infinity,minHeight:44).contentShape(Rectangle()) }.buttonStyle(.plain).padding(.horizontal,12)
-                .background(Color.white.opacity(0.10),in:RoundedRectangle(cornerRadius:10))
-        }.padding(16).foregroundStyle(WorkspaceTheme.sidebarText).background(WorkspaceTheme.sidebar)
+        }
     }
     var projectsPane: some View {
         VStack(alignment:.leading,spacing:0) {
-            if projectRows.isEmpty { VStack(spacing:14) { Spacer(); Image(systemName:"folder").font(.largeTitle).foregroundStyle(accent); Text(store.busy ? "正在读取项目目录…" : (store.settings.root.isEmpty ? "在设置中选择项目总目录，开始浏览" : "当前目录没有匹配的项目或文件")).foregroundStyle(.secondary); if store.settings.root.isEmpty { Button("打开设置") { showSettings = true }.buttonStyle(.borderedProminent); Button("体验示例空间") { store.demo() } }; Spacer() }.frame(maxWidth:.infinity) }
-            else { BrowserTable(rows:projectRows,selection:$projectPath,dataset:year,appearance:.projects,activate:{ row in if row.folder { projectPath = row.id } else if let file = row.file { NSWorkspace.shared.open(file.url) } },rename:{ requestRename($0.id,folder:$0.folder) },directRename:{ requestDirectRename($0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) }) }
+            if projectRows.isEmpty { VStack(spacing:14) { Spacer(); Image(systemName:"folder").font(.largeTitle).foregroundStyle(accent); Text(store.busy ? "正在读取项目目录…" : (!store.settings.hasProjectRoots ? "在设置中选择项目总目录，开始浏览" : "当前目录没有匹配的项目或文件")).foregroundStyle(.secondary); if !store.settings.hasProjectRoots { Button("打开设置") { settingsDestination = .locations }.buttonStyle(.borderedProminent); Button("体验示例空间") { store.demo() } }; Spacer() }.frame(maxWidth:.infinity) }
+            else { BrowserTable(rows:projectRows,selection:$projectPath,dataset:year,appearance:.projects,activate:{ row in if row.folder { query = ""; projectPath = row.id } else if let file = row.file { NSWorkspace.shared.open(file.url) } },rename:{ requestRename($0.id,folder:$0.folder) },directRename:{ requestDirectRename($0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) }) }
         }
     }
     var filesPane: some View {
@@ -438,7 +468,11 @@ struct ProjectWorkspace: View {
                 }
             }.padding(3).background(Color(nsColor:NSColor(white:0.95,alpha:1)),in:RoundedRectangle(cornerRadius:9))
                 .padding(.horizontal,20).frame(height:56)
-            if let p = project, sourceFolder != p.path {
+            if isScopeSearch {
+                HStack { Text("搜索结果 · 全部项目").font(.caption); Spacer(); Text("\(activeSourceRows.count) 项").font(.caption) }.foregroundStyle(WorkspaceTheme.secondary).padding(.horizontal,20).padding(.bottom,10)
+                if !search.output.unavailableProjects.isEmpty { Text("部分项目无法读取，已显示其余结果；请检查访问权限后刷新。").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20).padding(.bottom,8) }
+            }
+            if !isScopeSearch, let p = project, sourceFolder != p.path {
                 HStack { Button { let parent = URL(fileURLWithPath:sourceFolder).deletingLastPathComponent().path; sourceFolder = (parent == p.path || parent.hasPrefix(p.path+"/")) ? parent : p.path; loadSource() } label: { Image(systemName:"chevron.left") }.disabled(sourceFolder == p.path); Text(sourceFolder == p.path ? "项目根目录" : String(sourceFolder.dropFirst(p.path.count+1))).font(.caption).lineLimit(1); Spacer() }.padding(.horizontal,20).padding(.bottom,10)
             }
             if fileSelections.count > 1 { HStack(spacing:10) {
@@ -446,7 +480,7 @@ struct ProjectWorkspace: View {
                     Button("全选") { fileSelections = Set(fileRows.filter { !$0.header }.map(\.id)) }
                     Button("取消选择") { fileSelections = []; filePath = nil }
                     Menu("批量操作") {
-                        Button("批量推荐命名…") { requestBatchNaming(selectedRows,recommended:true) }
+                        Button("批量智能命名…") { requestBatchNaming(selectedRows,recommended:true) }
                         Button("批量更改名称…") { requestBatchNaming(selectedRows,recommended:false) }
                         ForEach(batchCategoryDestinations(selectedRows,categories:store.workspaceCategories,assignments:store.workspaceAssignments)) { category in Button("移动到「"+category.name+"」") { _ = store.assignCategories(selectedRows,to:category.id) } }
                     }.disabled(fileSelections.isEmpty)
@@ -454,23 +488,31 @@ struct ProjectWorkspace: View {
             }.padding(.horizontal,20).padding(.vertical,8) }
             if isDragging {
                 ScrollView(.horizontal,showsIndicators:false) { HStack(spacing:8) { ForEach(store.workspaceCategories) { category in
-                    CategoryDropTarget(category:category,scope:sourceFolder,rows:sourceRows) { rows in _ = store.assignCategories(rows,to:category.id) }.frame(width:max(76,CGFloat(category.name.count)*13+24),height:30)
+                    CategoryDropTarget(category:category,scope:activeDragScope,rows:activeSourceRows) { rows in _ = store.assignCategories(rows,to:category.id) }.frame(width:max(76,CGFloat(category.name.count)*13+24),height:30)
                 } } }.padding(.horizontal,20).padding(.bottom,8)
             }
             Divider()
-            if project == nil { VStack { Spacer(); Text("在中间选择项目，查看其中的资料").foregroundStyle(.secondary); Spacer() }.frame(maxWidth:.infinity) }
-            else if sourceLoading { VStack { Spacer(); ProgressView("正在读取当前目录…"); Spacer() }.frame(maxWidth:.infinity) }
-            else if !sourceError.isEmpty { VStack { Spacer(); Text(sourceError).foregroundStyle(.secondary); Button("重试") { loadSource() }; Spacer() }.padding().frame(maxWidth:.infinity) }
-            else { BrowserTable(rows:fileRows,selection:$filePath,multipleSelection:$fileSelections,batchRename:{ rows,recommended in requestBatchNaming(rows,recommended:recommended) },batchCategoryOptions:{ rows in batchCategoryDestinations(rows,categories:store.workspaceCategories,assignments:store.workspaceAssignments) },moveCategories:{ rows,id in _ = store.assignCategories(rows,to:id) },dragScope:sourceFolder,dragging:{ isDragging = $0 },dataset:(project?.path ?? "")+"|"+mode+"|"+sourceFolder,activate:{ row in if row.folder { if store.settings.projects.contains(where:{$0.path == row.id && $0.shallow != true}) { projectPath = row.id } else { sourceFolder = row.id; filePath = nil; loadSource() } } else if let f = row.file { NSWorkspace.shared.open(f.url) } },rename:{ requestRename($0.id,folder:$0.folder) },directRename:{ requestDirectRename($0) },quickArchive:{ quickArchiveRequest = QuickArchiveRequest(rows:$0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) },categoryOptions:{ categoryDestinations($0,categories:store.workspaceCategories,assignments:store.workspaceAssignments) },moveCategory:{ row,id in _ = store.assignCategory(row,to:id) },toggle:{ row in if collapsed.contains(row.id) { collapsed.remove(row.id) } else { collapsed.insert(row.id) } },previewRequest:$showPreview) }
+            if isScopeSearch && search.isSearching { VStack { Spacer(); ProgressView("正在搜索…"); Spacer() }.frame(maxWidth:.infinity) }
+            else if isScopeSearch && activeSourceRows.isEmpty { VStack { Spacer(); Text("没有匹配的三级文件或文件夹").foregroundStyle(.secondary); Spacer() }.frame(maxWidth:.infinity) }
+            else if project == nil && !isScopeSearch { VStack { Spacer(); Text("在中间选择项目，查看其中的资料").foregroundStyle(.secondary); Spacer() }.frame(maxWidth:.infinity) }
+            else if sourceLoading && !isScopeSearch { VStack { Spacer(); ProgressView("正在读取当前目录…"); Spacer() }.frame(maxWidth:.infinity) }
+            else if !sourceError.isEmpty && !isScopeSearch { VStack { Spacer(); Text(sourceError).foregroundStyle(.secondary); Button("重试") { loadSource() }; Spacer() }.padding().frame(maxWidth:.infinity) }
+            else { BrowserTable(rows:fileRows,selection:$filePath,multipleSelection:$fileSelections,batchRename:{ rows,recommended in requestBatchNaming(rows,recommended:recommended) },batchCategoryOptions:{ rows in batchCategoryDestinations(rows,categories:store.workspaceCategories,assignments:store.workspaceAssignments) },moveCategories:{ rows,id in _ = store.assignCategories(rows,to:id) },dragScope:activeDragScope,dragging:{ isDragging = $0 },dataset:(isScopeSearch ? "search:"+year : (project?.path ?? ""))+"|"+mode+"|"+(isScopeSearch ? query : sourceFolder),activate:{ row in if isScopeSearch && row.folder { openSearchFolder(row) } else if row.folder { if store.settings.projects.contains(where:{$0.path == row.id && $0.shallow != true}) { projectPath = row.id } else { sourceFolder = row.id; filePath = nil; loadSource() } } else if let f = row.file { NSWorkspace.shared.open(f.url) } },rename:{ requestRename($0.id,folder:$0.folder) },directRename:{ requestDirectRename($0) },quickArchive:{ quickArchiveRequest = QuickArchiveRequest(rows:$0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) },categoryOptions:{ categoryDestinations($0,categories:store.workspaceCategories,assignments:store.workspaceAssignments) },moveCategory:{ row,id in _ = store.assignCategory(row,to:id) },toggle:{ row in if collapsed.contains(row.id) { collapsed.remove(row.id) } else { collapsed.insert(row.id) } },previewRequest:$showPreview) }
         }
     }
-    var selectedRows: [BrowserRow] { sourceRows.filter { fileSelections.contains($0.id) } }
+    var selectedRows: [BrowserRow] { activeSourceRows.filter { fileSelections.contains($0.id) } }
     func requestBatchNaming(_ rows: [BrowserRow], recommended: Bool) {
         guard !rows.isEmpty else { return }
         batchNaming = BatchNamingRequest(rows:rows,projectPath:project?.path ?? sourceFolder,recommended:recommended)
     }
-    func requestDirectRename(_ row: BrowserRow) { manualNaming = NamingTarget(path:row.id,folder:row.folder,projectPath:project?.path ?? row.id) }
-    func requestRename(_ path: String, folder: Bool) { naming = NamingTarget(path:path,folder:folder,projectPath:project?.path ?? selectedDirectory?.path ?? path) }
+    func openSearchFolder(_ row:BrowserRow) {
+        guard let owner = projectOwnerPath(row.id,projects:store.settings.projects) else { return }
+        query = ""; filePath = nil; fileSelections = []
+        if projectPath == owner { sourceFolder = row.id; loadSource() }
+        else { searchFolderToOpen = row.id; projectPath = owner }
+    }
+    func requestDirectRename(_ row: BrowserRow) { manualNaming = NamingTarget(path:row.id,folder:row.folder,projectPath:row.file?.project ?? projectOwnerPath(row.id,projects:store.settings.projects) ?? project?.path ?? row.id) }
+    func requestRename(_ path: String, folder: Bool) { naming = NamingTarget(path:path,folder:folder,projectPath:projectOwnerPath(path,projects:store.settings.projects) ?? project?.path ?? selectedDirectory?.path ?? path) }
     func loadSource() {
         let generation = UUID(); sourceGeneration = generation
         guard let p = project else { sourceRows = []; sourceLoading = false; sourceError = ""; return }
@@ -488,11 +530,11 @@ struct ProjectWorkspace: View {
             }
         }
     }
-    var workspaceSettings: some View {
-        WorkspaceSettingsView(store:store,close:{ showSettings = false },openPending:{
-            showSettings = false
+    func workspaceSettings(_ destination:SettingsSection) -> some View {
+        WorkspaceSettingsView(store:store,close:{ settingsDestination = nil },openPending:{
+            settingsDestination = nil
             DispatchQueue.main.asyncAfter(deadline:.now()+0.3) { showPending = true }
-        })
+        },section:destination)
     }
 
 }

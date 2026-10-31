@@ -88,6 +88,8 @@ import GRDB
     try verify(controller.output.query.isEmpty && controller.output.projectRows.map(\.id) == [previous.path],"Clearing search restores the selected scope, not stale results")
     print("PASS: GRDB name-only index, Chinese short/multi-term queries, normalization, literal SQL input, exact ranking, scope/rename/delete/reopen/corrupt-cache/fallback, latest-query publication")
 
+    try thirdLevelSearchTest(root:root)
+
     let benchmark = FilenameSearchIndex(databaseURL:state.appendingPathComponent("benchmark.sqlite"))
     let bp = (0..<100).map { Project(path:"/synthetic/2026/P\($0)",name:"10月 示例项目\($0)",group:"2026") }
     let sample = (0..<10000).map { i in file(bp[i % bp.count],"网络运维服务方案-"+String(format:"%05d",i)+".docx") }

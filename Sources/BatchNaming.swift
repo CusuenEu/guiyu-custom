@@ -34,11 +34,12 @@ struct BatchRenameDialog: View {
     @State private var edits: [BatchNameEdit] = []; @State private var loading = false; @State private var progress = 0
     @State private var prefix = ""; @State private var find = ""; @State private var replacement = ""; @State private var notice = ""
     @State private var token = IndexCancellation()
+    @State private var namingReferenceDate = Date()
     var onClose: (() -> Void)? = nil
     private func close() { if let onClose { onClose() } else { dismiss() } }
     var body: some View {
         VStack(alignment:.leading,spacing:14) {
-            HStack { Text(request.recommended ? "批量推荐命名" : "批量更改名称").font(.title2.bold()); Spacer(); Text("\(edits.filter(\.included).count) / \(edits.count) 项").foregroundStyle(.secondary) }
+            HStack { Text(request.recommended ? "批量智能命名" : "批量更改名称").font(.title2.bold()); Spacer(); Text("\(edits.filter(\.included).count) / \(edits.count) 项").foregroundStyle(.secondary) }
             Text("逐项核对并修改新名称；取消勾选可跳过。确认后同步更改 Finder 中的名称，同名不覆盖。").font(.caption).foregroundStyle(.secondary)
             if loading { HStack { ProgressView().controlSize(.small); Text("正在读取第 \(min(progress+1,edits.count)) / \(edits.count) 项，优先前两页…").font(.caption) } }
             if !request.recommended {
@@ -59,7 +60,7 @@ struct BatchRenameDialog: View {
                                 TextField("新名称（文件须含扩展名）",text:Binding(get:{edit.name},set:{edit.name=$0;edit.userEdited=true})).textFieldStyle(.roundedBorder)
                                 if !edit.candidates.isEmpty {
                                     Menu("其他候选") { ForEach(edit.candidates) { candidate in Button(candidate.name) {
-                                        edit.name = proposedName(base:candidate.name,month:suggestedMonth(edit.id),folder:edit.target.folder,original:edit.id); edit.evidence = candidate.evidence; edit.userEdited = true
+                                        edit.name = store.smartProposedName(base:candidate.name,target:edit.target,now:namingReferenceDate); edit.evidence = candidate.evidence; edit.userEdited = true
                                     } } }.fixedSize()
                                 }
                                 if !edit.evidence.isEmpty { Text(edit.evidence).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
@@ -76,7 +77,8 @@ struct BatchRenameDialog: View {
             }
         }.padding(24).frame(width:760)
         .onAppear {
-            edits = request.rows.map { row in BatchNameEdit(target:NamingTarget(path:row.id,folder:row.folder,projectPath:request.projectPath),name:row.title) }
+            namingReferenceDate = Date()
+            edits = request.rows.map { row in BatchNameEdit(target:NamingTarget(path:row.id,folder:row.folder,projectPath:row.file?.project ?? projectOwnerPath(row.id,projects:store.settings.projects) ?? request.projectPath),name:row.title) }
             if request.recommended { loading = true; loadNext(0) }
         }.onDisappear { token.cancel() }
     }
@@ -89,7 +91,7 @@ struct BatchRenameDialog: View {
             edits[index].candidates = values
             if !edits[index].userEdited {
                 if let first = values.first {
-                    edits[index].name = proposedName(base:first.name,month:suggestedMonth(target.path),folder:target.folder,original:target.path)
+                    edits[index].name = store.smartProposedName(base:first.name,target:target,now:namingReferenceDate)
                     edits[index].evidence = first.evidence
                 } else { edits[index].included = false; edits[index].evidence = "未找到明确名称，已跳过；可填写后勾选。" }
             }
@@ -121,6 +123,7 @@ struct BatchRenameDialog: View {
     try "first".write(to:first,atomically:true,encoding:.utf8); try "second".write(to:second,atomically:true,encoding:.utf8)
     let rows = try directoryEntries(path:dir.path,project:dir.path)
     let store = Store(stateURL:root.appendingPathComponent("BatchState/settings.json"),loadOnLaunch:false)
+    store.settings.categories = WorkspaceCategory.defaults // Existing configured-user fixture.
     let targets = rows.map { NamingTarget(path:$0.id,folder:false,projectPath:dir.path) }
     let conflict = targets.map { BatchNameEdit(target:$0,name:"同名.txt") }
     let rejected = store.confirmBatchRenames(conflict,requireMonth:false)

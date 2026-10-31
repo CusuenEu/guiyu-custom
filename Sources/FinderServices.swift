@@ -11,10 +11,10 @@ func finderServiceURLs(_ pasteboard: NSPasteboard) -> [URL] {
 func finderServiceRows(_ urls: [URL], settings: Settings) throws -> [BrowserRow] {
     guard !urls.isEmpty else { throw namingError("请在 Finder 中选中文件或文件夹后重试。") }
     var seen = Set<String>(); var rows: [BrowserRow] = []
-    let protected = ([settings.root] + settings.projects.filter { $0.shallow == true }.map(\.path)).filter { !$0.isEmpty }.map(canonicalPath)
+    let protected = settings.protectedProjectPaths.filter { !$0.isEmpty }.map(canonicalPath)
     for url in urls {
         guard url.isFileURL else { throw namingError("仅支持本机可访问的文件或文件夹。") }
-        let path = url.standardizedFileURL.path
+        let path = canonicalPath(url.path)
         let values = try url.resourceValues(forKeys:[.isSymbolicLinkKey,.isAliasFileKey,.isPackageKey])
         guard values.isSymbolicLink != true, values.isAliasFile != true, values.isPackage != true, let row = browserEntry(path) else { throw namingError("无法处理「"+url.lastPathComponent+"」：请确认文件存在且可访问；不处理替身、符号链接、应用包或隐藏项。") }
         let resolved = canonicalPath(path)
@@ -44,8 +44,8 @@ func finderServiceRows(_ urls: [URL], settings: Settings) throws -> [BrowserRow]
             }
             let rows = try finderServiceRows(finderServiceURLs(pasteboard),settings:store.settings)
             store.error = ""
-            if archive && store.settings.root.isEmpty {
-                throw namingError("请先在归屿「设置 → 工作空间」关联项目总目录，然后再次使用快速归档。")
+            if archive && !store.settings.hasProjectRoots {
+                throw namingError("请先在归屿「设置 → 工作空间」关联项目总目录，然后再次使用智能归档。")
             }
             let close: () -> Void = { [weak self] in self?.window?.close() }
             let content: AnyView
@@ -57,9 +57,9 @@ func finderServiceRows(_ urls: [URL], settings: Settings) throws -> [BrowserRow]
             } else {
                 content = AnyView(BatchRenameDialog(store:store,request:BatchNamingRequest(rows:rows,projectPath:"",recommended:true),onClose:close))
             }
-            let controller = NSHostingController(rootView:content.preferredColorScheme(.light))
+            let controller = NSHostingController(rootView:content.background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light))
             let panel = NSWindow(contentViewController:controller)
-            panel.title = archive ? "归屿-快速归档" : "归屿-智能命名"
+            panel.title = archive ? "归屿-智能归档" : "归屿-智能命名"
             panel.styleMask = [.titled,.closable]; panel.isReleasedWhenClosed = false
             panel.delegate = self; window = panel
             panel.center(); NSApp.activate(ignoringOtherApps:true); panel.makeKeyAndOrderFront(nil)
@@ -80,7 +80,7 @@ func finderServiceRows(_ urls: [URL], settings: Settings) throws -> [BrowserRow]
     pb.writeObjects([file as NSURL,folder as NSURL])
     let urls = finderServiceURLs(pb)
     let rows = try finderServiceRows(urls,settings:Settings())
-    try verify(rows.count == 2 && rows.contains { canonicalPath($0.id) == canonicalPath(file.path) } && rows.contains { $0.folder },"File URLs preserve Unicode, spaces and URL metacharacters: expected \(file.path); rows \(rows.map(\.id))")
+    try verify(rows.count == 2 && rows.contains { $0.id == file.path } && rows.contains { $0.folder },"File URLs preserve Unicode, spaces and URL metacharacters")
     let deduplicated = try finderServiceRows([file,file],settings:Settings())
     try verify(deduplicated.count == 1,"Duplicate selection is processed once")
     func rejected(_ urls: [URL], _ settings: Settings = Settings()) -> Bool { do { _ = try finderServiceRows(urls,settings:settings); return false } catch { return true } }
@@ -106,4 +106,45 @@ func finderServiceRows(_ urls: [URL], settings: Settings) throws -> [BrowserRow]
     for move in store.settings.moves { store.undo(move,refreshAfter:false) }
     try verify(fm.fileExists(atPath:updated.path) && fm.fileExists(atPath:child.path),"Service-triggered archive remains undoable")
     print("PASS: system-service URL and legacy pasteboards, arbitrary external folders, Unicode paths, selection guards, confirmed rename/archive and undo")
+}
+
+@MainActor func finderServicesUIReview() throws {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let root = fm.temporaryDirectory.appendingPathComponent("guiyu-service-ui-"+UUID().uuidString)
+    try fm.createDirectory(at:root,withIntermediateDirectories:true)
+    defer { try? fm.removeItem(at:root) }
+    let file = root.appendingPathComponent("验收资料.txt"), other = root.appendingPathComponent("第二份资料.txt")
+    let text = "招标文件\n项目名称：南山智慧园区建设项目\n"
+    try text.write(to:file,atomically:true,encoding:.utf8); try text.write(to:other,atomically:true,encoding:.utf8)
+    let project = root.appendingPathComponent("Workspace/2026/10 南山智慧园区建设项目")
+    try fm.createDirectory(at:project,withIntermediateDirectories:true)
+    let store = Store(stateURL:root.appendingPathComponent("State/settings.json"),loadOnLaunch:false)
+    store.settings.root = root.appendingPathComponent("Workspace").path
+    store.settings.projects = [Project(path:project.path,name:project.lastPathComponent,group:"2026")]
+    let provider = FinderServices(store:store)
+    let pb = NSPasteboard.withUniqueName(); defer { pb.releaseGlobally() }
+    let output = URL(fileURLWithPath:fm.currentDirectoryPath).appendingPathComponent("Design/FinderServices-review")
+    try fm.createDirectory(at:output,withIntermediateDirectories:true)
+    func capture(_ title: String, _ filename: String) throws {
+        RunLoop.main.run(until:Date().addingTimeInterval(1))
+        guard let window = NSApp.windows.first(where:{$0.title == title && $0.isVisible}), let view = window.contentView else { throw namingError("系统服务确认窗口未显示："+title) }
+        view.layoutSubtreeIfNeeded()
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in:view.bounds) else { throw namingError("无法渲染服务窗口") }
+        view.cacheDisplay(in:view.bounds,to:bitmap)
+        try bitmap.representation(using:.png,properties:[:])!.write(to:output.appendingPathComponent(filename))
+        window.performClose(nil)
+        RunLoop.main.run(until:Date().addingTimeInterval(0.1))
+    }
+    var failure: NSString?
+    pb.writeObjects([file as NSURL]); provider.smartNaming(pb,userData:nil,error:&failure)
+    try verify(failure == nil,"Single-selection service dispatch succeeds")
+    try capture("归屿-智能命名","smart-naming.png")
+    pb.clearContents(); pb.writeObjects([file as NSURL,other as NSURL]); provider.smartNaming(pb,userData:nil,error:&failure)
+    try verify(failure == nil,"Batch service can open after the previous window closes")
+    try capture("归屿-智能命名","batch-naming.png")
+    provider.quickArchive(pb,userData:nil,error:&failure)
+    try verify(failure == nil,"Quick archive service dispatch succeeds")
+    try capture("归屿-智能归档","quick-archive.png")
+    try verify(fm.fileExists(atPath:file.path) && fm.fileExists(atPath:other.path) && store.settings.moves.isEmpty && (store.settings.renames ?? []).isEmpty,"Closing service dialogs changes no files or operation records")
+    print("PASS: single and batch naming / quick archive service windows render; close and reopen work; cancellation changes no files")
 }

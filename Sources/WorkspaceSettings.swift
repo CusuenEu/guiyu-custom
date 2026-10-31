@@ -1,15 +1,17 @@
 import SwiftUI
 import AppKit
 
-enum SettingsSection: String, CaseIterable {
-    case locations = "文件位置", categories = "文件分类", history = "归档记录"
+enum SettingsSection: String, CaseIterable, Identifiable {
+    var id:String { rawValue }
+    case locations = "文件位置", categories = "文件分类", namingRules = "命名规则", history = "归档记录"
     var symbol: String {
-        switch self { case .locations: return "folder"; case .categories: return "square.grid.2x2"; case .history: return "clock.arrow.circlepath" }
+        switch self { case .locations: return "folder"; case .categories: return "square.grid.2x2"; case .namingRules: return "text.cursor"; case .history: return "clock.arrow.circlepath" }
     }
     var detail: String {
         switch self {
         case .locations: return "把项目和待整理文件，放在顺手的位置。"
         case .categories: return "按你的习惯整理，原文件夹结构保持不变。"
+        case .namingRules: return "分别设置文件夹和文档的智能命名格式。"
         case .history: return "查看文件去向，需要时可以撤销归档。"
         }
     }
@@ -17,6 +19,7 @@ enum SettingsSection: String, CaseIterable {
 
 struct WorkspaceSettingsView: View {
     @ObservedObject var store: Store
+    @ObservedObject var updater: AppUpdater = .shared
     var close: () -> Void
     var openPending: () -> Void
     @State var section: SettingsSection = .locations
@@ -40,6 +43,7 @@ struct WorkspaceSettingsView: View {
                     }
                 }
                 Spacer()
+                SettingsUpdateControls(updater:updater).padding(.horizontal,9)
                 Label("文件留在本机",systemImage:"internaldrive").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary).padding(.horizontal,9)
             }.padding(16).frame(width:174).background(WorkspaceTheme.rail)
             Divider()
@@ -48,14 +52,14 @@ struct WorkspaceSettingsView: View {
                     Text(section.rawValue).font(.system(size:25,weight:.semibold,design:.rounded))
                     Text(section.detail).font(.system(size:13)).foregroundStyle(WorkspaceTheme.secondary)
                 }.padding(.horizontal,28).padding(.top,30).padding(.bottom,24)
-                ScrollView {
-                    VStack(alignment:.leading,spacing:26) {
-                        switch section {
-                        case .locations: locations
-                        case .categories: CategorySettingsView(store:store)
-                        case .history: history
-                        }
-                    }.padding(.horizontal,28).padding(.bottom,24).frame(maxWidth:.infinity,alignment:.leading)
+                if section == .categories {
+                    CategorySettingsView(store:store).padding(.horizontal,28).padding(.bottom,16)
+                } else {
+                    ScrollView {
+                        VStack(alignment:.leading,spacing:26) {
+                            if section == .locations { locations } else if section == .namingRules { NamingRulesSettingsView(store:store) } else { history }
+                        }.padding(.horizontal,28).padding(.bottom,24).frame(maxWidth:.infinity,alignment:.leading)
+                    }
                 }
                 Divider()
                 HStack {
@@ -72,16 +76,19 @@ struct WorkspaceSettingsView: View {
     var locations: some View {
         VStack(alignment:.leading,spacing:24) {
             VStack(alignment:.leading,spacing:12) {
-                Text("项目总目录").font(.system(size:14,weight:.semibold))
-                HStack(spacing:13) {
-                    Image(nsImage:WorkspaceTheme.folder).resizable().frame(width:34,height:32)
-                    VStack(alignment:.leading,spacing:5) {
-                        Text(store.settings.root.isEmpty ? "还没有选择目录" : URL(fileURLWithPath:store.settings.root).lastPathComponent).font(.system(size:14,weight:.medium)).lineLimit(1)
-                        Text(store.settings.root.isEmpty ? "选择存放项目文件夹的位置" : store.settings.root).font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary).lineLimit(2).truncationMode(.middle).textSelection(.enabled).help(store.settings.root)
-                    }.frame(maxWidth:.infinity,alignment:.leading)
-                    Button(store.settings.root.isEmpty ? "选择目录…" : "更换…") { store.choose("root") }.buttonStyle(SoftWorkspaceButton())
-                }.padding(16).background(WorkspaceTheme.rail.opacity(0.65),in:RoundedRectangle(cornerRadius:14))
-                Text("左侧按真实文件夹显示，文件继续保留在 Finder 中。").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary)
+                HStack { Text("项目总目录").font(.system(size:14,weight:.semibold)); Spacer(); Button("关联目录…") { store.chooseProjectRoots() }.buttonStyle(SoftWorkspaceButton()) }
+                ForEach(store.settings.activeProjectRoots,id:\.self) { root in
+                    HStack(spacing:13) {
+                        Image(nsImage:WorkspaceTheme.folder).resizable().frame(width:34,height:32)
+                        VStack(alignment:.leading,spacing:5) {
+                            Text(URL(fileURLWithPath:root).lastPathComponent).font(.system(size:14,weight:.medium)).lineLimit(1)
+                            Text(root).font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+                        }.frame(maxWidth:.infinity,alignment:.leading)
+                        Button { _ = store.removeProjectRoot(root) } label: { Image(systemName:"minus.circle").frame(width:28,height:32) }.buttonStyle(.plain).help("仅移除关联，保留原文件").accessibilityLabel("移除关联“"+URL(fileURLWithPath:root).lastPathComponent+"”")
+                    }.padding(16).background(WorkspaceTheme.rail.opacity(0.65),in:RoundedRectangle(cornerRadius:14))
+                }
+                if !store.settings.hasProjectRoots { Text("关联一个或多个项目总目录，开始浏览。").foregroundStyle(WorkspaceTheme.secondary) }
+                Text("左侧分别展示各总目录下的子文件夹。移除关联不会删除 Finder 中的文件。").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary)
             }
             ArchiveSourceSettingsView(store:store)
             DisclosureGroup("更多目录选项") {
@@ -107,7 +114,7 @@ struct WorkspaceSettingsView: View {
                 VStack(spacing:12) {
                     Image(systemName:"tray").font(.system(size:30,weight:.light)).foregroundStyle(accent)
                     Text("还没有归档记录").font(.system(size:14,weight:.medium))
-                    Text("从下载或最近使用里，右键文件即可快速归类。").font(.system(size:12)).foregroundStyle(WorkspaceTheme.secondary)
+                    Text("从下载或最近使用里，右键文件即可智能归档。").font(.system(size:12)).foregroundStyle(WorkspaceTheme.secondary)
                 }.frame(maxWidth:.infinity).padding(.vertical,50)
             } else {
                 ForEach(Array(store.settings.moves.prefix(30))) { move in

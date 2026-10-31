@@ -1,23 +1,22 @@
 import Foundation
 
 struct WorkspaceCategory: Identifiable, Codable, Equatable {
-    var id: String; var name: String
+    var id: String; var name: String; var rule: CategoryRule? = nil
+    var effectiveRule: CategoryRule { rule ?? CategoryRuleGenerator.generate(name:name,legacyID:id) }
     static var defaults: [WorkspaceCategory] { DocumentCategory.allCases.map { WorkspaceCategory(id:$0.rawValue,name:$0.rawValue) } }
 }
 struct CategoryAssignment: Codable, Equatable {
     var categoryID: String; var identity: String
 }
 func resolvedCategory(_ row: BrowserRow, categories: [WorkspaceCategory], assignments: [String:CategoryAssignment]) -> WorkspaceCategory? {
-    if let assignment = assignments[row.id], let category = categories.first(where:{$0.id == assignment.categoryID}), assignment.identity == fileIdentity(row.id) { return category }
-    let automatic = categoryForEntry(row).rawValue
-    return categories.first(where:{$0.id == automatic}) ?? categories.first(where:{$0.id == DocumentCategory.other.rawValue}) ?? categories.first
+    CategoryClassifier(categories:categories).resolve(row,assignments:assignments)
 }
 func categoryDestinations(_ row: BrowserRow, categories: [WorkspaceCategory], assignments: [String:CategoryAssignment]) -> [WorkspaceCategory] {
     let current = resolvedCategory(row,categories:categories,assignments:assignments)?.id
     return categories.filter { $0.id != current }
 }
 @MainActor extension Store {
-    var workspaceCategories: [WorkspaceCategory] { settings.categories ?? WorkspaceCategory.defaults }
+    var workspaceCategories: [WorkspaceCategory] { (settings.categories ?? WorkspaceCategory.defaults).map { value in var category = value; category.rule = value.effectiveRule; return category } }
     var workspaceAssignments: [String:CategoryAssignment] { settings.categoryAssignments ?? [:] }
     @discardableResult func saveCategory(id: String?, name: String) -> Bool {
         let name = name.trimmingCharacters(in:.whitespacesAndNewlines)
@@ -26,9 +25,15 @@ func categoryDestinations(_ row: BrowserRow, categories: [WorkspaceCategory], as
         guard !categories.contains(where:{$0.id != id && $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame}) else { error = "已有同名分类，请更换名称。"; return false }
         if let id {
             guard let i = categories.firstIndex(where:{$0.id == id}) else { error = "该分类已不存在，请重新选择。"; return false }
+            if categories[i].rule?.origin == .automatic { categories[i].rule = CategoryRuleGenerator.generate(name:name) }
             categories[i].name = name
-        } else { categories.append(WorkspaceCategory(id:UUID().uuidString,name:name)) }
-        settings.categories = categories; save(); return true
+        } else { categories.append(WorkspaceCategory(id:UUID().uuidString,name:name,rule:CategoryRuleGenerator.generate(name:name))) }
+        var updated = settings; updated.categories = categories
+        do {
+            try fm.createDirectory(at:stateURL.deletingLastPathComponent(),withIntermediateDirectories:true)
+            try JSONEncoder().encode(updated).write(to:stateURL,options:.atomic)
+            settings = updated; return true
+        } catch { self.error = "分类未保存："+error.localizedDescription; return false }
     }
     @discardableResult func deleteCategory(_ id: String) -> Bool {
         var categories = workspaceCategories
@@ -62,8 +67,9 @@ func categoryDestinations(_ row: BrowserRow, categories: [WorkspaceCategory], as
     let nested = dir.appendingPathComponent("响应文件夹"); try fm.createDirectory(at:nested,withIntermediateDirectories:true)
     let child = nested.appendingPathComponent("保留层级.txt"); try "child".write(to:child,atomically:true,encoding:.utf8)
     let store = Store(stateURL:dir.appendingPathComponent("state.json"),loadOnLaunch:false)
+    store.settings.categories = WorkspaceCategory.defaults // Existing configured-user fixture.
     let row = BrowserRow(id:file.path,title:file.lastPathComponent)
-    try verify(store.workspaceCategories.count == 4,"Old settings get four default categories")
+    try verify(store.workspaceCategories.count == 4,"Existing configured users retain their categories")
     try verify(!categoryDestinations(row,categories:store.workspaceCategories,assignments:[:]).contains(where:{$0.id == "投标文件"}),"Menu hides actual current category")
     try verify(store.saveCategory(id:nil,name:"交付资料")); let custom = store.workspaceCategories.last!
     try verify(!store.saveCategory(id:nil,name:"交付资料")); store.error = ""

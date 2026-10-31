@@ -101,11 +101,11 @@ struct ArchiveSourcePane: View {
     var body: some View {
         VStack(alignment:.leading,spacing:0) {
             HStack { Text(source.name).font(.system(size:20,weight:.semibold,design:.rounded)); Spacer() }.padding(20)
-            Text(source.kind == "recent" ? "系统最近使用 · 最多显示 500 项" : "右键文件，快速归档到项目").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20).padding(.bottom,12)
+            Text(source.kind == "recent" ? "系统最近使用 · 最多显示 500 项" : "右键文件，智能归档到项目").font(.caption).foregroundStyle(.secondary).padding(.horizontal,20).padding(.bottom,12)
             if source.kind == "folder", folder != source.path {
                 HStack { Button("返回") { folder = URL(fileURLWithPath:folder).deletingLastPathComponent().path; load() }; Text(URL(fileURLWithPath:folder).lastPathComponent).font(.caption).lineLimit(1) }.padding(.horizontal,20).padding(.bottom,10)
             }
-            HStack { Text("已选 \(selections.count) 项").font(.caption).foregroundStyle(.secondary); Spacer(); Button("快速归类…") { quick = QuickArchiveRequest(rows:chosen) }.disabled(chosen.isEmpty) }.padding(.horizontal,20).padding(.bottom,12)
+            HStack { Text("已选 \(selections.count) 项").font(.caption).foregroundStyle(.secondary); Spacer(); Button("智能归档…") { quick = QuickArchiveRequest(rows:chosen) }.disabled(chosen.isEmpty) }.padding(.horizontal,20).padding(.bottom,12)
             Divider()
             if loading { Spacer(); ProgressView("正在读取文件列表…").frame(maxWidth:.infinity); Spacer() }
             else if !error.isEmpty { Spacer(); Text(error).foregroundStyle(.secondary).padding(); Button("重试") { load() }.padding(.horizontal); Spacer() }

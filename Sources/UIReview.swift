@@ -12,6 +12,7 @@ import AppKit
         try text.write(to:dir.appendingPathComponent(name),atomically:true,encoding:.utf8)
     }
     let store = Store(stateURL:root.appendingPathComponent("state.json"),loadOnLaunch:false)
+    store.settings.categories = WorkspaceCategory.defaults // Existing configured-user fixture.
     store.settings.root = root.path; store.settings.projects = [Project(path:dir.deletingLastPathComponent().path,name:"2026",group:"2026",shallow:true),Project(path:dir.path,name:dir.lastPathComponent,group:"2026")]
     for name in ["9月 企业数字化转型诊断","8月 园区网络建设项目"] {
         let path = dir.deletingLastPathComponent().appendingPathComponent(name)
@@ -35,6 +36,10 @@ import AppKit
         if let afterAppear { DispatchQueue.main.asyncAfter(deadline:.now()+0.1,execute:afterAppear) }
         RunLoop.current.run(until:Date().addingTimeInterval(0.7))
         host.layoutSubtreeIfNeeded()
+        if name.hasPrefix("category-") {
+            print("CATEGORY CAPTURE GEOMETRY: \(name), frame=\(host.frame), bounds=\(host.bounds), fitting=\(host.fittingSize), window=\(window.frame)")
+            host.setBoundsOrigin(.zero)
+        }
         func saveRaster() throws {
             guard let rep = host.bitmapImageRepForCachingDisplay(in:host.bounds) else { throw namingError("截图缓冲区不可用") }
             host.cacheDisplay(in:host.bounds,to:rep)
@@ -89,13 +94,24 @@ import AppKit
             try verify(abs(split.arrangedSubviews[1].frame.width-before) > 20,"Native divider must actually change the column width")
             print("PASS: native three-column divider resizes center width from \(before) to \(split.arrangedSubviews[1].frame.width)")
         }
-        if name == "search-multi-term.png" || name == "search-no-results.png" || name == "search-projects-first.png" {
+        if name == "settings-categories-many.png" {
+            func scrolls(_ view:NSView) -> [NSScrollView] {
+                (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap { scrolls($0) }
+            }
+            let lists = scrolls(host)
+            try verify(lists.count == 1,"Category settings must have one list scroller, without an outer nested scroller")
+            guard let list = lists.first, let document = list.documentView else { throw namingError("分类列表未显示") }
+            try verify(list.contentSize.height >= 120,"Category list must use the expanded remaining height: \(list.contentSize.height)")
+            try verify(document.bounds.height > list.contentSize.height,"Additional categories must remain reachable by scrolling")
+            print("PASS: fixed top category editor/search, one list scroller, viewport \(list.contentSize.height)pt with 16 categories")
+        }
+        if name == "search-multi-term.png" || name == "search-no-results.png" || name == "search-projects-first.png" || name == "search-third-level-no-selection.png" {
             func tables(_ view:NSView) -> [NSTableView] {
                 (view as? NSTableView).map { [$0] } ?? view.subviews.flatMap { tables($0) }
             }
             let counts = tables(host).map(\.numberOfRows).sorted()
-            let expected = name == "search-multi-term.png" ? [1,6] : name == "search-projects-first.png" ? [1] : [0]
-            try verify(counts == expected,"Native indexed search must render the expected project and immediate-file rows: \(name) \(counts)")
+            let expected = name == "search-no-results.png" ? [] : [1,6]
+            try verify(counts == expected,"Native indexed search must render the expected project and third-level rows: \(name) \(counts)")
             print("PASS: native indexed search \(name), table row counts \(counts)")
         }
         if !name.hasPrefix("project-row-alignment-") { try saveRaster() }
@@ -124,6 +140,7 @@ import AppKit
     let chosen = forestRows.first { $0.title == "民政厅机关网络运维采购文件.pdf" }!.id
     let workspace = ProjectWorkspace(store:store,year:"2026",projectPath:forestDir.path,filePath:chosen,sourceFolder:forestDir.path,sourceRows:forestRows,fileSelections:[chosen])
     let earlyStore = Store(stateURL:root.appendingPathComponent("early-state/settings.json"),loadOnLaunch:false)
+    earlyStore.settings.categories = WorkspaceCategory.defaults // Existing configured-user fixture.
     earlyStore.settings.root = root.path
     earlyStore.settings.projects = [Project(path:forestDir.deletingLastPathComponent().path,name:"2026",group:"2026",shallow:true)]
     try capture(ProjectWorkspace(store:earlyStore,year:"2026",query:"民政 运维"),size:NSSize(width:1280,height:820),name:"search-projects-first.png",afterAppear:{
@@ -131,6 +148,7 @@ import AppKit
     })
     try capture(workspace,size:NSSize(width:1440,height:900),name:"forest-desktop.png")
     try capture(ProjectWorkspace(store:store,year:"2026",projectPath:forestDir.path,query:"民政 运维",sourceFolder:forestDir.path,sourceRows:forestRows),size:NSSize(width:1280,height:820),name:"search-multi-term.png")
+    try capture(ProjectWorkspace(store:store,year:"2026",query:"民政 运维"),size:NSSize(width:1280,height:820),name:"search-third-level-no-selection.png")
     try capture(ProjectWorkspace(store:store,year:"2026",projectPath:forestDir.path,query:"不存在的搜索结果XYZ",sourceFolder:forestDir.path,sourceRows:forestRows),size:NSSize(width:1280,height:820),name:"search-no-results.png")
     try capture(workspace,size:NSSize(width:1060,height:700),name:"forest-minimum.png")
     try capture(workspace,size:NSSize(width:1728,height:983),name:"forest-wide.png")
@@ -151,8 +169,25 @@ import AppKit
     try capture(ProjectWorkspace(store:store,year:"2026",archiveSourceID:linked.id),size:NSSize(width:1280,height:820),name:"archive-sources-fixture.png")
     let archiveRequest = QuickArchiveRequest(rows:[browserEntry(inbox.appendingPathComponent("RFP需求文件.txt").path)!])
     try capture(QuickArchiveDialog(store:store,request:archiveRequest),size:NSSize(width:720,height:620),name:"quick-archive-fixture.png")
-    try capture(WorkspaceSettingsView(store:store,close:{},openPending:{}),size:NSSize(width:820,height:620),name:"archive-source-settings-fixture.png")
-    try capture(WorkspaceSettingsView(store:store,close:{},openPending:{},section:.categories),size:NSSize(width:820,height:620),name:"settings-categories-final.png")
+    try capture(WorkspaceSettingsView(store:store,updater:AppUpdater.fixture(),close:{},openPending:{}),size:NSSize(width:820,height:620),name:"archive-source-settings-fixture.png")
+    try capture(WorkspaceSettingsView(store:store,updater:AppUpdater.fixture(version:"9.9.9"),close:{},openPending:{},section:.categories),size:NSSize(width:820,height:620),name:"settings-categories-final.png")
+    let manyCategories = Store(stateURL:root.appendingPathComponent("many-categories/settings.json"),loadOnLaunch:false)
+    manyCategories.settings.categories = WorkspaceCategory.defaults + (1...12).map { WorkspaceCategory(id:"custom-\($0)",name:"自定义分类 \($0)") }
+    try capture(WorkspaceSettingsView(store:manyCategories,updater:AppUpdater.fixture(),close:{},openPending:{},section:.categories),size:NSSize(width:820,height:620),name:"settings-categories-many.png")
+    let automaticCategories = Store(stateURL:root.appendingPathComponent("automatic-categories/settings.json"),loadOnLaunch:false)
+    _ = automaticCategories.saveCategory(id:nil,name:"财务票据")
+    _ = automaticCategories.saveCategory(id:nil,name:"售中材料")
+    try capture(WorkspaceSettingsView(store:automaticCategories,updater:AppUpdater.fixture(),close:{},openPending:{},section:.categories),size:NSSize(width:820,height:620),name:"settings-category-rules.png")
+    if let category = automaticCategories.workspaceCategories.first(where:{$0.name == "财务票据"}) {
+        try capture(CategoryRuleEditor(store:automaticCategories,category:category),size:NSSize(width:660,height:570),name:"category-rule-editor.png")
+    }
+    let exchangeStore = Store(stateURL:root.appendingPathComponent("exchange-ui/settings.json"),loadOnLaunch:false)
+    exchangeStore.settings.categories = [WorkspaceCategory(id:"engineering",name:"工程管理"),WorkspaceCategory(id:"contracts",name:"合同管理"),WorkspaceCategory(id:"其他",name:"其他")]
+    let exchangeReply = categoryExchangeFixture(exchangeStore.workspaceCategories)
+    try capture(CategoryRuleAssistant(store:exchangeStore),size:NSSize(width:740,height:650),name:"category-prompt.png")
+    try capture(CategoryRuleAssistant(store:exchangeStore,importing:true,response:exchangeReply),size:NSSize(width:740,height:650),name:"category-reply.png")
+    try capture(CategoryRuleAssistant(store:exchangeStore,importing:true,response:exchangeReply,reviewing:true),size:NSSize(width:740,height:650),name:"category-import-preview.png")
+    try capture(CategoryRuleAssistant(store:exchangeStore,importing:true,response:exchangeReply.replacingOccurrences(of:"分类：工程管理",with:"分类：未知分类"),reviewing:true),size:NSSize(width:740,height:650),name:"category-import-error.png")
     try capture(WorkspaceSettingsView(store:store,close:{},openPending:{},section:.history),size:NSSize(width:820,height:620),name:"settings-history-final.png")
     var recentFinished = false; var recentMessage = ""; var recentCount = 0
     let recent = RecentFilesQuery()

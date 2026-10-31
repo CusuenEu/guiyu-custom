@@ -203,7 +203,7 @@ func remapPath(_ path: String, source: String, destination: String, folder: Bool
 }
 @MainActor extension Store {
     func loadSuggestions(_ target: NamingTarget, token: IndexCancellation, completion: @escaping ([Suggestion]) -> Void) {
-        let root = settings.root
+        let workspaceID = settings.workspaceIdentity
         let candidates: [FileItem]
         if target.folder {
             let indexed = namingFiles.filter { $0.path.hasPrefix(target.path+"/") }
@@ -243,7 +243,7 @@ func remapPath(_ path: String, source: String, destination: String, folder: Bool
             }
             let suggestions = target.folder ? folderSuggestions(files:parsed) : parsed.first.map { fileSuggestions(file:$0,context:context) } ?? []
             DispatchQueue.main.async {
-                guard !token.isCancelled else { return }; guard self.settings.root == root else { completion([]); return }
+                guard !token.isCancelled else { return }; guard self.settings.workspaceIdentity == workspaceID else { completion([]); return }
                 completion(suggestions)
             }
         }
@@ -251,7 +251,7 @@ func remapPath(_ path: String, source: String, destination: String, folder: Bool
     func validateRename(_ target: NamingTarget, newName: String, requireMonth: Bool) throws -> String {
         let source = target.path; let trimmed = newName.trimmingCharacters(in:.whitespacesAndNewlines)
             if target.folder && settings.projects.contains(where: { $0.path == source && $0.shallow == true }) { throw namingError("左侧目录不参与项目命名，请选择其中的具体项目文件夹。") }
-            if target.folder && requireMonth, trimmed.range(of:"^(1[0-2]|[1-9])月\\s*.+$",options:.regularExpression) == nil { throw namingError("文件夹名称必须以 1月 至 12月 开头。") }
+            if target.folder && requireMonth, !validateSmartFolderPrefix(trimmed,target:target) { throw namingError("文件夹名称不符合当前命名规则，请核对前缀。") }
             guard !busy else { throw namingError("当前归档尚未完成，请完成后再确认命名。") }
             guard !trimmed.isEmpty, trimmed != ".", trimmed != "..", !trimmed.contains("/"), !trimmed.contains(":"), !trimmed.contains("\0"), !trimmed.contains("\n") else { throw namingError("名称不能包含斜杠、冒号或换行，请修改后重试。") }
             guard target.identity != nil, target.identity == fileIdentity(source) else { throw namingError("源文件或文件夹已被替换，请关闭窗口重新选择。") }

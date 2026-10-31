@@ -31,7 +31,7 @@ struct TrashedEntry {
         do {
             let targets = rows.filter { !$0.header }.map { NamingTarget(path:$0.id,folder:$0.folder,projectPath:"") }
             guard !targets.isEmpty, Set(targets.map(\.path)).count == targets.count else { return [] }
-            let protected = Set(([settings.root]+settings.projects.filter { $0.shallow == true }.map(\.path)).filter { !$0.isEmpty }.map(canonicalPath))
+            let protected = Set(settings.protectedProjectPaths.filter { !$0.isEmpty }.map(canonicalPath))
             for target in targets {
                 guard !protected.contains(canonicalPath(target.path)) else { throw namingError("项目总目录和左侧导航目录不能在此移到废纸篓，请选择具体项目或文件。") }
                 guard target.identity != nil, target.identity == fileIdentity(target.path) else { throw namingError("部分条目已被移动或替换，请刷新后重新选择。") }
@@ -87,6 +87,7 @@ struct TrashedEntry {
     let file = dir.appendingPathComponent("快捷键临时文件.txt"); try "temporary fixture".write(to:file,atomically:true,encoding:.utf8)
     try "nested fixture".write(to:folder.appendingPathComponent("内部.txt"),atomically:true,encoding:.utf8)
     let store = Store(stateURL:root.appendingPathComponent("ShortcutState/settings.json"),loadOnLaunch:false)
+    store.settings.categories = WorkspaceCategory.defaults // Existing configured-user fixture.
     let rows = try directoryEntries(path:dir.path,project:dir.path)
     let trash = store.moveToTrash(rows)
     defer { for entry in trash where fileIdentity(entry.trashed.path) == entry.identity && !fm.fileExists(atPath:entry.original.path) { try? fm.moveItem(at:entry.trashed,to:entry.original) } }

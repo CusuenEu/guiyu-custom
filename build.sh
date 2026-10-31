@@ -4,7 +4,8 @@ cd "${0:A:h}"
 mkdir -p 'dist/归屿.app/Contents/MacOS' 'dist/归屿.app/Contents/Resources'
 logo_path='Design/SoftWorkspace/GuiyuCompanion.png'
 if [[ -f "$logo_path" ]]; then
-  if [[ -d Design/Guiyu-Icon-v1 && -f dist/AppIcon.icns && ! -f Design/Guiyu-Icon-v1/previous-AppIcon.icns ]]; then
+  if [[ -f dist/AppIcon.icns && ! -f Design/Guiyu-Icon-v1/previous-AppIcon.icns ]]; then
+    mkdir -p Design/Guiyu-Icon-v1
     cp dist/AppIcon.icns Design/Guiyu-Icon-v1/previous-AppIcon.icns
   fi
   iconset_path='dist/GuiyuLogo.iconset'
@@ -18,6 +19,7 @@ if [[ -f "$logo_path" ]]; then
   cp "$logo_path" 'dist/归屿.app/Contents/Resources/GuiyuLogo.png'
 fi
 cp Design/SoftWorkspace/GuiyuCompanion.png 'dist/归屿.app/Contents/Resources/GuiyuCompanion.png'
+ditto Resources/CategoryGuides 'dist/归屿.app/Contents/Resources/CategoryGuides'
 swift build -c release --product Guiyu --jobs 4
 binary_path=$(swift build -c release --show-bin-path)
 cp "$binary_path/Guiyu" 'dist/归屿.app/Contents/MacOS/Guiyu'
@@ -29,7 +31,7 @@ if [[ -d "$binary_path/GRDB_GRDB.bundle" ]]; then
 fi
 cp -f .build/checkouts/GRDB.swift/LICENSE 'dist/归屿.app/Contents/Resources/GRDB-LICENSE.txt' 
 cat > 'dist/归屿.app/Contents/Info.plist' <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Guiyu</string><key>CFBundleIdentifier</key><string>local.guiyu.workspace</string><key>CFBundleName</key><string>归屿</string><key>CFBundleDisplayName</key><string>归屿</string><key>CFBundleShortVersionString</key><string>0.5.0</string><key>CFBundleVersion</key><string>12</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleInfoDictionaryVersion</key><string>6.0</string><key>LSMinimumSystemVersion</key><string>13.0</string><key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string></dict></plist>
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Guiyu</string><key>CFBundleIdentifier</key><string>local.guiyu.workspace</string><key>CFBundleName</key><string>归屿</string><key>CFBundleDisplayName</key><string>归屿</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleInfoDictionaryVersion</key><string>6.0</string><key>LSMinimumSystemVersion</key><string>13.0</string><key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string></dict></plist>
 PLIST
 /usr/libexec/PlistBuddy -c 'Merge Resources/FinderServices.plist' 'dist/归屿.app/Contents/Info.plist'
 if [[ -f dist/AppIcon.icns ]]; then
@@ -38,19 +40,24 @@ cp dist/AppIcon.icns 'dist/归屿.app/Contents/Resources/AppIcon.icns'
 fi
 python3 - <<'UPDATE_PLIST'
 import plistlib
+import json
+import subprocess
 from pathlib import Path
 p = Path('dist/归屿.app/Contents/Info.plist')
 data = plistlib.loads(p.read_bytes())
+version = json.loads(subprocess.check_output(['python3','scripts/version.py']))
+data.update(CFBundleShortVersionString=version['display'], CFBundleVersion=version['build'], GuiyuReleaseTag=version['tag'], GuiyuReleaseAsset=version['asset'])
 key = Path('Release/update-public-key.txt').read_text().strip()
 import base64
 assert len(base64.b64decode(key,validate=True)) == 32
 # Forks must use their own feed and signing key before distributing updates.
 data.update(SUFeedURL='https://github.com/tiduse1988/guiyu/releases/latest/download/appcast.xml',
-    SUPublicEDKey=key, SUEnableAutomaticChecks=True, SUAutomaticallyUpdate=True,
+    SUPublicEDKey=key, SUEnableAutomaticChecks=True, SUAutomaticallyUpdate=False,
     SUVerifyUpdateBeforeExtraction=True, SURequireSignedFeed=True,
     SUEnableSystemProfiling=False, SUScheduledCheckInterval=86400)
 p.write_bytes(plistlib.dumps(data))
 UPDATE_PLIST
+python3 scripts/test_version.py
 codesign --force --deep --sign - 'dist/归屿.app'
 codesign --verify --deep --strict 'dist/归屿.app' 
 'dist/归屿.app/Contents/MacOS/Guiyu' --self-test

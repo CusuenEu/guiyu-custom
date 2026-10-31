@@ -13,3 +13,9 @@ video/
 *.p12
 *.p8
 Release/archives/
+
+# Local design context and validation logs
+.impeccable/
+__pycache__/
+
+Design/Guiyu-Icon-v1/

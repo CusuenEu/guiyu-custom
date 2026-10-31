@@ -8,17 +8,17 @@
     <key>NSSendFileTypes</key><array><string>public.item</string></array>
     <key>NSSendTypes</key><array><string>public.file-url</string><string>NSFilenamesPboardType</string></array>
     <key>NSRequiredContext</key><dict/>
-    <key>NSRestricted</key><true/>
+    <key>NSRestricted</key><false/>
     <key>NSServiceDescription</key><string>读取所选文件或文件夹，确认后在原位置智能命名。</string>
 </dict>
 <dict>
-    <key>NSMenuItem</key><dict><key>default</key><string>归屿-快速归档</string></dict>
+    <key>NSMenuItem</key><dict><key>default</key><string>归屿-智能归档</string></dict>
     <key>NSMessage</key><string>quickArchive</string>
     <key>NSPortName</key><string>归屿</string>
     <key>NSSendFileTypes</key><array><string>public.item</string></array>
     <key>NSSendTypes</key><array><string>public.file-url</string><string>NSFilenamesPboardType</string></array>
     <key>NSRequiredContext</key><dict/>
-    <key>NSRestricted</key><true/>
+    <key>NSRestricted</key><false/>
     <key>NSServiceDescription</key><string>将所选文件或文件夹归档到选定项目，确认后移动。</string>
 </dict>
 </array></dict></plist>

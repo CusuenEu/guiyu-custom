@@ -10,10 +10,10 @@ Fork 必须替换公钥、`build.sh` 内的 SUFeedURL、打包脚本中的发布
 
 ## 每次发布
 
-1. 修改 `build.sh` 的显示版本与单调递增的 CFBundleVersion，并更新 README、编写发行说明。
+1. 发布新版本前运行 `python3 scripts/version.py --next`（可用 `--date YYYYMMDD` 显式指定北京时间日期），然后更新 README、编写发行说明。`Release/version.json` 是唯一版本来源；同日递增序号、换日回到01，重新构建不会自动增加序号。显示版本例如 `20261031(01)`，内部数字构建号例如 `20261031.1`，GitHub 标签为 `v20261031-01`。
 2. 运行 `./build.sh`，自测及签名验证通过后再继续。只发布在目标架构 Mac 上构建的对应安装包；当前脚本的官方发行目标为 arm64。
 3. 运行 `./scripts/prepare-release.sh`。这会打包、生成并签名更新清单、验证清单签名和生成 SHA256 校验值。需要本机钥匙串中的发布私钥。
-4. 提交公开源码并推送 main，确认源码与构建一致。使用 `gh release create v版本 --draft --title '归屿 版本' --notes-file 发行说明文件` 创建草稿；上传 `Release/archives/v版本/` 下 ZIP、appcast.xml、SHA256SUMS.txt；核对后执行 `gh release edit v版本 --draft=false --latest`。
+4. 提交公开源码并推送 main，确认源码与构建一致。使用 `gh release create v20261031-01 --draft --title '归屿 20261031(01)' --notes-file 发行说明文件` 创建草稿；上传 `Release/archives/v20261031-01/` 下 ZIP、appcast.xml、SHA256SUMS.txt；核对后执行 `gh release edit v20261031-01 --draft=false --latest`。
 5. 从公开发布地址重新下载并检查哈希、签名。使用上一版的隔离测试副本验证检查更新和安装；不要在使用者仍有文件操作窗口时强制结束应用。
 
 正式版检查地址为 `https://github.com/tiduse1988/guiyu/releases/latest/download/appcast.xml`。每个正式 Release 必须包含同名 appcast.xml，不能单独把其他实验 Release 标记 latest。签名清单生成后不得手工修改；任何变化均需重新签名。更新时无需用户 GitHub 账号。

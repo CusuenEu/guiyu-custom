@@ -18,28 +18,32 @@ func namingPageText(count: Int, cancelled: () -> Bool, page: (Int) -> String, en
 private final class NamingWordReader: NSObject, XMLParserDelegate {
     var text = ""; var pages = 1; var paragraphs = 0; var inText = false; var paragraph = ""
     var hasPageMarkers = false
+    var openingOnly = false
     let cancelled: () -> Bool; let enough: (String) -> Bool
     init(cancelled: @escaping () -> Bool, enough: @escaping (String) -> Bool) { self.cancelled = cancelled; self.enough = enough }
     func boundary(_ parser: XMLParser) {
         // Break occurs before the next page: never consume page 3 if pages 1–2 suffice.
-        if pages >= 2 && enough(text + "\n" + paragraph) { text += "\n" + paragraph; paragraph = ""; parser.abortParsing(); return }
+        if pages >= 2 && (openingOnly || enough(text + "\n" + paragraph)) { text += "\n" + paragraph; paragraph = ""; parser.abortParsing(); return }
         pages += 1; paragraph += "\n\u{000C}\n"
     }
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes: [String:String]) {
-        if cancelled() || text.count > 100000 { parser.abortParsing(); return }
+        if cancelled() || text.count > (openingOnly ? 12000 : 100000) { parser.abortParsing(); return }
         if elementName == "w:t" { inText = true }
         if elementName == "w:tab" { paragraph += " " }
         if elementName == "w:lastRenderedPageBreak" || (elementName == "w:br" && attributes["w:type"] == "page") { boundary(parser) }
         if elementName == "w:br" && attributes["w:type"] != "page" { paragraph += "\n" }
         if elementName == "w:pageBreakBefore" && attributes["w:val"] != "0" && attributes["w:val"] != "false" { boundary(parser) }
     }
-    func parser(_ parser: XMLParser, foundCharacters string: String) { if inText { paragraph += string } }
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if inText { paragraph += string }
+        if openingOnly && text.count+paragraph.count >= 12000 { parser.abortParsing() }
+    }
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
         if elementName == "w:t" { inText = false }
         if elementName == "w:p" {
             text += "\n" + paragraph; paragraph = ""; paragraphs += 1
             // Unpaginated Word has no reliable physical pages. Use a bounded opening excerpt.
-            if !hasPageMarkers && (paragraphs >= 60 || text.count >= 6000) && enough(text) { parser.abortParsing() }
+            if !hasPageMarkers && (paragraphs >= 60 || text.count >= 6000) && (openingOnly || enough(text)) { parser.abortParsing() }
         }
     }
 }
@@ -111,4 +115,70 @@ func namingReadingTest(root: URL) throws {
     try verify(!wordRead(cover).contains("后文其他"),"Word page breaks preserve cover-first extraction")
     try verify(wordRead(later).contains("第三页") && !wordRead(later).contains("后面不必"),"Word missing identity falls back to later page")
     print("PASS: naming reads pages 1–2 first, stops on identity, falls back to later pages, PDFKit and Word page boundaries, cancellation")
+}
+
+// Quick archive has a strict two-page budget; naming's progressive reading is unchanged.
+func archiveFirstPages(count: Int, token: IndexCancellation, page: (Int) -> String) -> String {
+    var values: [String] = []
+    for index in 0..<min(count,2) {
+        guard !token.isCancelled else { break }
+        values.append(String(page(index).prefix(6000)))
+    }
+    return values.joined(separator:"\n\u{000C}\n")
+}
+func extractArchiveOpening(_ file: FileItem, token: IndexCancellation) -> String {
+    guard !token.isCancelled else { return "" }
+    if file.ext == "pdf", let pdf = PDFDocument(url:file.url) {
+        return archiveFirstPages(count:pdf.pageCount,token:token) { i in
+            guard let page = pdf.page(at:i) else { return "" }
+            let text = page.string ?? ""
+            if text.trimmingCharacters(in:.whitespacesAndNewlines).count >= 15 { return text }
+            guard !token.isCancelled else { return "" }
+            let image = page.thumbnail(of:NSSize(width:1400,height:1800),for:.mediaBox)
+            guard let cg = image.cgImage(forProposedRect:nil,context:nil,hints:nil) else { return text }
+            return text+"\n"+ocr(cg)
+        }
+    }
+    if file.ext == "docx" {
+        let xml = run("/usr/bin/unzip",["-p",file.path,"word/document.xml"])
+        guard !xml.isEmpty, !token.isCancelled else { return "" }
+        let reader = NamingWordReader(cancelled:{token.isCancelled},enough:{_ in false})
+        reader.openingOnly = true
+        reader.hasPageMarkers = xml.contains("lastRenderedPageBreak") || xml.range(of:"w:type=[\"']page[\"']|w:pageBreakBefore",options:.regularExpression) != nil
+        let parser = XMLParser(data:Data(xml.utf8)); parser.delegate = reader; parser.shouldResolveExternalEntities = false
+        _ = parser.parse()
+        return String((reader.text+"\n"+reader.paragraph).prefix(reader.hasPageMarkers ? 12000 : 6000))
+    }
+    let text: String
+    if ["txt","md","csv"].contains(file.ext) {
+        guard let handle = try? FileHandle(forReadingFrom:file.url) else { return "" }
+        defer { try? handle.close() }
+        guard let bytes = try? handle.read(upToCount:32768) else { return "" }
+        if bytes.starts(with:[0xff,0xfe]) { text = String(data:bytes,encoding:.utf16LittleEndian) ?? "" }
+        else if bytes.starts(with:[0xfe,0xff]) { text = String(data:bytes,encoding:.utf16BigEndian) ?? "" }
+        else { text = String(decoding:bytes,as:UTF8.self) }
+    } else {
+        // Images have one page; legacy Office conversion exposes an opening text excerpt.
+        text = extract(file.url)
+    }
+    guard !token.isCancelled else { return "" }
+    let pages = text.components(separatedBy:"\u{000C}")
+    if pages.count > 1 { return archiveFirstPages(count:pages.count,token:token) { pages[$0] } }
+    return String(text.prefix(6000))
+}
+func archiveOpeningText(_ row: BrowserRow, known: [FileItem], token: IndexCancellation) -> String {
+    if !row.folder { return row.file.map { extractArchiveOpening($0,token:token) } ?? "" }
+    var files = known.filter { $0.path.hasPrefix(row.id+"/") }
+    if files.isEmpty, let enumerator = fm.enumerator(at:URL(fileURLWithPath:row.id),includingPropertiesForKeys:[.isRegularFileKey,.isSymbolicLinkKey],options:[.skipsHiddenFiles,.skipsPackageDescendants]) {
+        // Inspect a small source-folder sample, never enumerate project libraries for a match.
+        var visited = 0
+        while let url = enumerator.nextObject() as? URL, visited < 200, files.count < 16, !token.isCancelled {
+            visited += 1
+            if supported.contains(url.pathExtension.lowercased()), let file = browserEntry(url.path)?.file { files.append(file) }
+        }
+    }
+    return representativeFiles(files,limit:2).map { file in
+        guard !token.isCancelled else { return "" }
+        return extractArchiveOpening(file,token:token)
+    }.joined(separator:"\n")
 }
