@@ -1,0 +1,51 @@
+name: Windows preview validation
+on:
+  workflow_dispatch:
+  push:
+    paths: ['Windows/**', '.github/workflows/windows.yml']
+  pull_request:
+    paths: ['Windows/**', '.github/workflows/windows.yml']
+jobs:
+  core:
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        node-arch: [x86, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          architecture: ${{ matrix.node-arch }}
+          cache: npm
+          cache-dependency-path: Windows/package-lock.json
+      - run: npm ci --omit=optional --ignore-scripts
+        working-directory: Windows
+      - run: npm test
+        working-directory: Windows
+      - name: Parse Windows integration scripts
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          foreach($script in Get-ChildItem Windows/scripts/*.ps1){
+            [System.Management.Automation.Language.Parser]::ParseFile($script.FullName,[ref]$tokens,[ref]$errors) | Out-Null
+            if($errors.Count){ $errors | Format-List; exit 1 }
+          }
+  package:
+    runs-on: windows-2022
+    needs: core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Windows/package-lock.json
+      - run: npm ci --omit=optional --ignore-scripts
+        working-directory: Windows
+      - run: npm run package
+        working-directory: Windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Guiyu-Windows-preview
+          path: Windows/out/*.zip
