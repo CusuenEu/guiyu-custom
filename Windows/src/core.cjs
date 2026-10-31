@@ -105,13 +105,27 @@ function runPS(script, env = {}, timeout = 90000, signal) {
 async function moveExclusive(src, dst) {
   if (await exists(dst)) throw Error("目标同名，未覆盖：" + path.basename(dst));
   if (process.platform === "win32") {
-    await runPS(
-      `$ErrorActionPreference='Stop'; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class GuiyuMove { [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool MoveFileW(string a,string b); }'; if(-not [GuiyuMove]::MoveFileW($env:GUIYU_SRC,$env:GUIYU_DST)){throw (New-Object ComponentModel.Win32Exception([Runtime.InteropServices.Marshal]::GetLastWin32Error()))}`,
-      {
-        GUIYU_SRC: path.toNamespacedPath(src),
-        GUIYU_DST: path.toNamespacedPath(dst),
-      },
-    );
+    try {
+      await runPS(
+        `$ErrorActionPreference='Stop'; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class GuiyuMove { [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool MoveFileW(string a,string b); }'; if(-not [GuiyuMove]::MoveFileW($env:GUIYU_SRC,$env:GUIYU_DST)){$code=[Runtime.InteropServices.Marshal]::GetLastWin32Error(); [Console]::Error.WriteLine('GUIYU_MOVE_ERROR:'+$code); exit 1}`,
+        { GUIYU_SRC: path.toNamespacedPath(src), GUIYU_DST: path.toNamespacedPath(dst) },
+      );
+    } catch (error) {
+      const code = Number(error.message.match(/GUIYU_MOVE_ERROR:(\d+)/)?.[1]);
+      const reason = {
+        2: "原文件不存在，请刷新后重试。",
+        3: "文件所在目录不存在，请刷新后重试。",
+        5: "没有权限或文件正被占用，请检查目录权限并关闭占用文件的程序。",
+        32: "文件正在被其他程序使用，请关闭占用该文件的程序后重试。",
+        33: "文件已被其他程序锁定，请关闭占用该文件的程序后重试。",
+        80: "目标名称已存在，未覆盖。",
+        183: "目标名称已存在，未覆盖。",
+        123: "文件名或路径无效，请检查名称。",
+        206: "文件名或路径过长，请缩短名称后重试。",
+      }[code];
+      if (code) throw Error(reason || `Windows 未能移动文件（错误代码 ${code}）。`);
+      throw error;
+    }
   } else {
     const s = await fs.lstat(src);
     if (s.isDirectory()) {

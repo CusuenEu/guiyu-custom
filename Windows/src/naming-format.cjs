@@ -27,6 +27,12 @@
       .replace(/[/\\:：*?"<>|\x00-\x1f\x7f]/g, "-")
       .replace(/^[.\s]+|[.\s]+$/g, "");
   }
+  function cleanRecognizedText(value) {
+    return String(value ?? "")
+      .replace(/\s+/gu, "")
+      .replace(/[<>:"/\\|?*？。：\x00-\x1f\x7f]/g, "")
+      .replace(/^[.]+|[.]+$/g, "");
+  }
   function editedName(value, ext = "", sanitize = false) {
     const raw = literalStem(value.trim(), ext);
     const stem = sanitize ? cleanTitle(raw) : raw.trim();
@@ -77,6 +83,7 @@
     literalStem,
     editedName,
     cleanTitle,
+    cleanRecognizedText,
     candidateEditor,
     candidateBatch,
     validatePrefix,

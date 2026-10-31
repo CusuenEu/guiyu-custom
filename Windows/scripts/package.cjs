@@ -18,7 +18,7 @@ const fs = require("node:fs/promises"),
       electronVersion: version,
       overwrite: true,
       prune: true,
-      asar: true,
+      asar: { unpackDir: "node_modules" },
       appVersion: release.packageVersion,
       buildVersion: release.packageVersion + ".0",
       icon: path.join(root, "assets/AppIcon.ico"),
@@ -67,6 +67,11 @@ const fs = require("node:fs/promises"),
       } else
         execFileSync("/usr/bin/ditto", ["-c", "-k", "--keepParent", dir, zip]);
       console.log(zip);
+      if (process.platform === "win32") {
+        const installer = path.join(out, `${release.assetPrefix}-test-Windows-${arch}-setup.exe`);
+        await require("./installer.cjs").createInstaller(dir, installer);
+        console.log(installer);
+      }
     }
   }
 })().catch((e) => {

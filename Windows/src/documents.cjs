@@ -89,15 +89,14 @@ async function extract(e, pages = 2) {
     process.platform === "win32" &&
     [".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"].includes(ext)
   ) {
-    const script = await fs.readFile(
-      path.join(__dirname, "../scripts/read-document.ps1"),
-      "utf8",
-    );
-    return runPS(
-      script,
-      { GUIYU_DOCUMENT: e.path, GUIYU_PAGES: String(pages) },
-      120000,
-    );
+    const { recognize } = require("./offline-ocr.cjs");
+    if (ext !== ".pdf") return recognize(e.path);
+    const text = [];
+    for (let page = 0; page < pages; page++) {
+      try { text.push(await recognize(e.path, page)); }
+      catch (err) { if (page === 0) throw err; break; }
+    }
+    return text.join("\n");
   }
   if (process.platform === "win32" && [".doc", ".rtf"].includes(ext)) {
     return runPS(
@@ -111,7 +110,17 @@ const titlePolicy = require("./title-policy.cjs");
 function titles(text) {
   return titlePolicy.titleSuggestions(titlePolicy.textPages(text));
 }
-async function pdfOpening(e, signal, ocrPage) {
+function ocrLines(result) {
+  if (typeof result === "string") return titlePolicy.textPages(result)[0]?.lines || [];
+  const lines = titlePolicy.textPages(result.text || "")[0]?.lines || [];
+  const titleParts = (result.titleText || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (titleParts.length > 0 && titleParts.length <= 3) {
+    const title = titleParts.reduce((joined, part) => joined + (/\p{ASCII}$/u.test(joined) && /^\p{ASCII}/u.test(part) ? " " : "") + part, "").replace(/(?<=\p{Script=Han})\s+(?=\p{Script=Han})/gu, "");
+    if (titlePolicy.looksLikeTitle(title)) lines.unshift({ text: title, ocrVisualTitle: true });
+  }
+  return lines;
+}
+async function pdfOpening(e, signal, ocrPage, warnings) {
   signal?.throwIfAborted();
   if (!pdfModule) {
     const matrix = await import("@thednp/dommatrix");
@@ -142,14 +151,11 @@ async function pdfOpening(e, signal, ocrPage) {
         let text = "";
         try {
           if(ocrPage) text = await ocrPage({file:e.path,page:i-1,signal});
-          else {
-            const script=await fs.readFile(path.join(__dirname,"../scripts/read-document.ps1"),"utf8");
-            text=await runPS(script,{GUIYU_DOCUMENT:e.path,GUIYU_PAGES:"1",GUIYU_START_PAGE:String(i-1)},120000,signal);
-          }
-        } catch(error) { signal?.throwIfAborted(); /* An unavailable OCR page must not suppress page 2. */ }
+          else text = await require("./offline-ocr.cjs").recognize(e.path, i - 1, signal, { layout: true });
+        } catch(error) { signal?.throwIfAborted(); warnings?.push(`${e.name} 第${i}页识别失败：${error.message}`); }
         pages.push({
           index: i - 1,
-          lines: titlePolicy.textPages(text)[0]?.lines || [],
+          lines: ocrLines(text),
         });
         page.cleanup();
         continue;
@@ -206,7 +212,7 @@ async function pdfOpening(e, signal, ocrPage) {
   }
   return pages;
 }
-async function recognizeTitles(e, signal) {
+async function recognizeTitles(e, signal, warnings) {
   signal?.throwIfAborted();
   if (e.size > 100 * 1024 * 1024)
     throw Error("文档超过100MB，请手工填写名称。");
@@ -215,7 +221,7 @@ async function recognizeTitles(e, signal) {
     return titlePolicy.spreadsheetTitles(e.path, e.name, signal);
   if (ext === ".xls") return [];
   if (ext === ".pdf")
-    return titlePolicy.titleSuggestions(await pdfOpening(e, signal), e.name);
+    return titlePolicy.titleSuggestions(await pdfOpening(e, signal, undefined, warnings), e.name);
   if (ext === ".docx") {
     const opening = await titlePolicy.wordOpening(e.path, signal);
     return titlePolicy
@@ -270,7 +276,7 @@ async function recognizeTitles(e, signal) {
   }
   if ([".png", ".jpg", ".jpeg", ".tiff", ".tif", ".bmp"].includes(ext))
     return titlePolicy.titleSuggestions(
-      titlePolicy.textPages(await extract(e, 1)),
+      [{ index: 0, lines: ocrLines(await require("./offline-ocr.cjs").recognize(e.path, 0, signal, { layout: true })) }],
       e.name,
     );
   return [];
@@ -310,7 +316,7 @@ async function naming(e, settings, referenceDate = Date.now(), signal) {
     warnings = [];
   for (const doc of docs) {
     try {
-      candidates.push(...(await recognizeTitles(doc, signal)));
+      candidates.push(...(await recognizeTitles(doc, signal, warnings)));
     } catch (err) {
       signal?.throwIfAborted();
       warnings.push(doc.name + "：" + err.message);

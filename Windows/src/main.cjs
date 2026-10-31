@@ -316,6 +316,21 @@ async function dispatch(method, arg = {}) {
         namingCancellation = null;
       }
     }
+    case "namingPreview":
+    case "namingRecognizeRegion": {
+      const e = arg.entry;
+      if (!e || typeof e.path !== "string") throw Error("文件信息无效。");
+      await store.guard(e.path);
+      await verify(e);
+      const controller = new AbortController();
+      namingCancellation = controller;
+      try {
+        const preview = require("./naming-preview.cjs");
+        return method === "namingPreview" ? await preview.namingPreview(e, arg.page, controller.signal) : await preview.recognizeRegion(e, arg.page, arg.region, controller.signal);
+      } finally {
+        if (namingCancellation === controller) namingCancellation = null;
+      }
+    }
     case "archiveSuggest": {
       let texts = arg.items.map((e) => e.name).join(" "),
         projects = store.snapshot.projects.filter((p) => p.folder);

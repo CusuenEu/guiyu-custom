@@ -1,7 +1,7 @@
 {
   "name": "guiyu-windows",
   "productName": "归屿",
-  "version": "2026.1031.4",
+  "version": "2026.1031.5",
   "private": true,
   "description": "归屿 Windows 本地项目文件工作空间",
   "license": "MIT",
@@ -14,9 +14,12 @@
   },
   "dependencies": {
     "@thednp/dommatrix": "3.1.2",
+    "@tesseract.js-data/chi_sim": "1.0.0",
+    "@tesseract.js-data/eng": "1.0.0",
     "fflate": "0.8.3",
     "pdfjs-dist": "6.4.299",
-    "saxes": "6.0.0"
+    "saxes": "6.0.0",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

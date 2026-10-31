@@ -27,6 +27,7 @@ let data,
   project = null,
   source = null,
   sourceFolder = null,
+  sourcePreviewCurrent = "",
   sourceChildren = [],
   sourceLoading = false,
   sourceFocus = "projects",
@@ -176,7 +177,7 @@ function render() {
   if (source && sourceFolder) {
     files = [...sourceChildren].sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name, "zh"));
     sourceChildren = files;
-    renderBreadcrumbs(sourceFolder.path);
+    renderBreadcrumbs(sourceFolder.path, "#subnav", sourceFolder.name, sourcePreviewCurrent);
   } else if (query && !source) {
     files = data.snapshot.files.filter(
       (e) => e.directory === dir && match(e.name, query),
@@ -311,8 +312,12 @@ async function load() {
   if (gen !== generation) return;
   rows = next;
   if (source && sourceFolder) {
-    try { sourceChildren = await api("list", { path: current }); }
-    catch (e) { sourceFolder = null; current = ""; sourceChildren = []; toast(e.message, true); }
+    try {
+      if (source.kind === "recent" && sourcePreviewCurrent !== sourceFolder.path)
+        await api("list", { path: sourceFolder.path });
+      sourceChildren = await api("list", { path: sourcePreviewCurrent });
+    }
+    catch (e) { sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; toast(e.message, true); }
   }
   if (gen !== generation) return;
   selected.clear();
@@ -385,7 +390,7 @@ $("#directories").onclick = (e) => {
   if (!b) return;
   dir = b.dataset.dir;
   source = null;
-  sourceFolder = null; sourceChildren = []; sourceLoading = false; sourceGeneration++;
+  sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; sourceLoading = false; sourceGeneration++;
   project = null;
   current = "";
   rows = [];
@@ -398,7 +403,7 @@ $("#sources").onclick = (e) => {
   if (!b) return;
   action(async () => {
     source = data.settings.sources.find((s) => s.id === b.dataset.source);
-    sourceFolder = null; sourceChildren = []; sourceLoading = false; sourceFocus = "projects"; sourceGeneration++;
+    sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; sourceLoading = false; sourceFocus = "projects"; sourceGeneration++;
     project = null;
     current = source.kind==='folder' ? source.path : "";
     rail();
@@ -420,7 +425,22 @@ $("#projects").onclick = (e) => {
     if (sourceFocus !== "projects") { selected.clear(); sourceFocus = "projects"; }
     visibleRows = [...rows].filter((x) => !query || match(x.name, query)).sort((a, b) => (query ? relevance(a) - relevance(b) : 0) || b.mtime-a.mtime || a.name.localeCompare(b.name,"zh"));
     select(item, e);
-
+    if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.detail <= 1) {
+      const gen = ++sourceGeneration;
+      sourceFolder = item.folder ? item : null;
+      sourcePreviewCurrent = item.folder ? item.path : "";
+      sourceChildren = [];
+      sourceLoading = item.folder;
+      render();
+      if (item.folder) sourceLoad = sourceLoad.then(async () => {
+        if (gen !== sourceGeneration) return;
+        const children = await api("list", { path: item.path });
+        if (gen !== sourceGeneration) return;
+        sourceChildren = children; sourceLoading = false; render();
+      }).catch((err) => {
+        if (gen === sourceGeneration) { sourceFolder = null; sourcePreviewCurrent = ""; sourceLoading = false; render(); toast(err.message, true); }
+      });
+    }
   }
   else if (item.folder) {
     const gen = ++generation;
@@ -442,7 +462,7 @@ $("#projects").onclick = (e) => {
 $("#projects").ondblclick = (e) => {
   const p=e.target.closest('[data-project]')?.dataset.project;
   if(!p)return;const item=(source?rows:data.snapshot.projects).find(x=>x.path===p);
-  action(async()=>{if(source?.kind==='folder' && item?.folder){sourceGeneration++;current=p;sourceFocus='projects';await load();}else await api('open',{path:p});});
+  action(async()=>{if(source?.kind==='folder' && item?.folder){sourceGeneration++;sourceFolder=null;sourcePreviewCurrent='';sourceChildren=[];sourceLoading=false;current=p;sourceFocus='projects';await sourceLoad;await load();}else { await sourceLoad; await api('open',{path:p}); }});
 };
 $("#files").onclick = (e) => {
   const b = e.target.closest("[data-file]"),
@@ -468,7 +488,7 @@ $("#files").ondblclick = (e) => {
         const gen = ++sourceGeneration;
         const children = await api("list", { path: item.path });
         if (gen !== sourceGeneration || !source || !sourceFolder) return;
-        current = item.path;
+        sourcePreviewCurrent = item.path;
         sourceChildren = children;
         selected.clear(); sourceFocus = "files"; render();
         return;
@@ -483,8 +503,8 @@ $("#files").ondblclick = (e) => {
     } else await api("open", { path: p });
   });
 };
-function renderBreadcrumbs(root, bar = "#subnav", title = "项目根目录") {
-  const parts = GuiyuNavigation.breadcrumbs(root, current, title);
+function renderBreadcrumbs(root, bar = "#subnav", title = "项目根目录", location = current) {
+  const parts = GuiyuNavigation.breadcrumbs(root, location, title);
   if (parts.length < 2) return;
   const rootIcon = '<svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6V4.5h6l2 2h7v10h-15Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
   $(bar).innerHTML = `<button id="up" aria-label="上一级" title="上一级：${esc(parts.at(-2).name)}"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><path d="m12 4-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button><nav class="breadcrumbs" aria-label="文件夹路径"><ol>${parts.map((part, i) => `<li><button class="breadcrumb" data-breadcrumb="${i}" title="${esc(parts.slice(0, i+1).map(p=>p.name).join(' / '))}"${i === parts.length - 1 ? ' aria-current="location" disabled' : ''}>${i === 0 ? rootIcon : ''}<span class="breadcrumb-label">${esc(part.name)}</span></button></li>`).join("")}</ol></nav><button id="path-menu" aria-label="选择路径层级" title="选择任意上级目录"><svg width="16" height="16" viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="16" cy="10" r="1.5" fill="currentColor"/></svg></button>`;
@@ -496,8 +516,9 @@ function breadcrumbClick(e) {
   const fromSource = bar === "#source-subnav";
   const button = e.target.closest("#up, #path-menu, [data-breadcrumb]");
   if (!button) return;
-  const root = fromSource ? source?.path : project?.path;
-  const parts = GuiyuNavigation.breadcrumbs(root, current, fromSource ? source.name : "项目根目录");
+  const preview = !fromSource && !!source && !!sourceFolder;
+  const root = fromSource ? source?.path : preview ? sourceFolder.path : project?.path;
+  const parts = GuiyuNavigation.breadcrumbs(root, preview ? sourcePreviewCurrent : current, fromSource ? source.name : preview ? sourceFolder.name : "项目根目录");
   if (button.id === "path-menu") {
     const rect = button.getBoundingClientRect();
     menu({ preventDefault() {}, clientX: rect.left, clientY: rect.bottom }, parts.map((part, i) => ({
@@ -511,18 +532,24 @@ function breadcrumbClick(e) {
   if (!target || index === parts.length - 1) return;
   action(async () => {
     const sourceID = source?.id, owner = root;
-    const gen = fromSource ? ++sourceGeneration : ++generation;
+    const gen = fromSource || preview ? ++sourceGeneration : ++generation;
     await api('closePreview');
     const children = fromSource && target===source.path ? await api('source',{id:source.id}) : await api("list", { path: target });
     if (fromSource) {
       if (gen !== sourceGeneration || source?.id !== sourceID || source?.path !== owner) return;
       rows = children;
+      sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; sourceLoading = false;
       sourceFocus = "projects";
+    } else if (preview) {
+      if (gen !== sourceGeneration || source?.id !== sourceID || sourceFolder?.path !== owner) return;
+      sourceChildren = children;
+      sourcePreviewCurrent = target;
+      sourceFocus = "files";
     } else {
       if (gen !== generation || source || project?.path !== owner) return;
       rows = children;
     }
-    current = target;
+    if (!preview) current = target;
     selected.clear();
     anchor = null;
     render();
@@ -691,8 +718,23 @@ function actions(confirm) {
 function smartHeader(title, symbol) {
   return `<div class="smart-header"><span class="smart-header-icon" aria-hidden="true">${symbol}</span><h2>${title}</h2></div>`;
 }
+function namingLoadingDialog(entry) {
+  return `<div class="dialog-body smart-dialog naming-preview-dialog" aria-busy="true">${smartHeader("智能命名", "✎")}
+    <div class="naming-workspace">
+      <section class="preview-panel">
+        <div class="preview-panel-heading"><h3>文件预览</h3><span class="muted preview-filename" title="${esc(entry.name)}">${esc(entry.name)}</span></div>
+        <div class="preview-pages" role="tablist" aria-label="预览页码"><button disabled role="tab" aria-selected="true">第 1 页</button><button disabled role="tab" aria-selected="false">第 2 页</button></div>
+        <div class="document-preview"><div class="naming-loading" role="status"><span class="naming-spinner" aria-hidden="true"></span><span>正在准备文件预览…</span></div></div>
+        <div class="preview-hint muted">识别完成后可在页面上框选文字。</div>
+      </section>
+      <section class="naming-side">
+        <div class="recognized-panel"><h3>识别文字</h3><textarea aria-label="识别文字" placeholder="在左侧框选要识别的文字" disabled></textarea><div class="recognized-actions"><span class="muted">正在准备，请稍候</span><button type="button" disabled>使用识别文字</button></div></div>
+        <div class="recommend-panel"><h3>推荐名称</h3><div class="scroll candidate-list"><div class="naming-loading" role="status"><span class="naming-spinner" aria-hidden="true"></span><span>正在生成推荐名称…</span></div></div><div class="name-editor"><label for="loading-name">最终文件名</label><div class="naming-line"><input id="loading-name" placeholder="识别完成后可编辑" disabled></div></div></div>
+      </section>
+    </div>${actions("确认重命名")}</div>`;
+}
 async function namingDialog(items, smart) {
-  modal(`<div class="dialog-body" style="height:460px"><h2>${smart ? "智能命名" : "更改名称"}</h2><p class="muted">正在准备${items.length}个条目…</p>${actions("确认重命名")}</div>`);
+  modal(smart && items.length === 1 ? namingLoadingDialog(items[0]) : `<div class="dialog-body" style="height:460px"><h2>${smart ? "智能命名" : "更改名称"}</h2><p class="muted">正在准备${items.length}个条目…</p>${actions("确认重命名")}</div>`);
   $("#confirm").disabled = true;
   const pending = $("#modal-content").firstElementChild;
   let suggestions;
@@ -706,16 +748,18 @@ async function namingDialog(items, smart) {
   const batch = items.length > 1;
   const editor = (r, c) => GuiyuNaming.candidateEditor(r, c);
   const batchEditor = (r, c) => GuiyuNaming.candidateBatch(r, c);
-  let body = `<div class="dialog-body ${smart && !batch ? "smart-dialog" : batch ? "batch-dialog" : "direct-dialog"}" style="height:${batch ? 600 : 460}px">${smart && !batch ? smartHeader("智能命名", "✎") : `<h2>${batch ? "批量" : ""}${smart ? "智能命名" : "更改名称"}</h2>`}`;
+  let body = `<div class="dialog-body ${smart && !batch ? "smart-dialog naming-preview-dialog" : batch ? "batch-dialog" : "direct-dialog"}" ${smart && !batch ? "" : `style="height:${batch ? 600 : 460}px"`}>${smart && !batch ? smartHeader("智能命名", "✎") : `<h2>${batch ? "批量" : ""}${smart ? "智能命名" : "更改名称"}</h2>`}`;
   if (!batch) {
     const r = suggestions[0], e = r.entry;
     const stem = smart ? editor(r, r.candidates[0]) : GuiyuNaming.literalStem(e.name, r.ext);
     const prefix = smart && !r.fallback && r.format === "month"
       ? `<input class="month" id="name-prefix" aria-label="月份" type="number" min="1" max="12" value="${parseInt(r.prefix)}"><span>月</span>`
       : smart && !r.fallback && r.format === "monthDay" ? `<span id="fixed-prefix">${esc(r.prefix)}</span>` : "";
-    body += `<div class="original-name"><span class="muted">原名称</span><div>${esc(e.name)}</div></div><div class="name-editor"><label for="name-stem">${smart ? "修改名称" : "新名称"}</label><div class="naming-line">${prefix}<input id="name-stem" aria-label="识别的名称" value="${esc(stem)}"><span>${esc(r.ext)}</span></div></div>`;
-    body += smart ? `<h3>推荐名称</h3><div class="scroll candidate-list">${r.candidates.map((c, i) => `<button class="candidate ${i === 0 ? "chosen" : ""}" aria-pressed="${i === 0}" data-candidate="${i}" title="${esc(c.evidence)}"><span aria-hidden="true" class="choice-mark"></span>${esc(editor(r, c))}</button>`).join("") || '<p class="muted">未找到明确标题，已保留原名，可直接修改。</p>'}</div>`
-      : `<p class="muted">更改后：<span id="direct-preview">${esc(stem + r.ext)}</span></p><p class="muted">确认后同步更改本机名称，保留扩展名，同名不覆盖。</p>`;
+    if (smart) {
+      body += `<div class="naming-workspace"><section class="preview-panel"><div class="preview-panel-heading"><h3>文件预览</h3><span class="muted preview-filename" title="${esc(e.name)}">${esc(e.name)}</span></div><div class="preview-pages" role="tablist" aria-label="预览页码"><button data-preview-page="0" role="tab" aria-selected="true">第 1 页</button><button data-preview-page="1" role="tab" aria-selected="false">第 2 页</button></div><div id="document-preview" class="document-preview" aria-label="文件页面预览"><p class="muted">正在准备页面预览…</p></div><div class="preview-hint muted" id="preview-hint">在页面上拖动选取文字，也可以在右侧修改识别结果。</div></section><section class="naming-side"><div class="recognized-panel"><h3>识别文字</h3><textarea id="recognized-text" aria-label="识别文字" placeholder="页面文字正在识别…"></textarea><div class="recognized-actions"><span id="selection-hint" class="muted">选取需要用于命名的文字</span><button id="use-text" type="button">使用选中文字</button></div></div><div class="recommend-panel"><h3>推荐名称</h3><div class="scroll candidate-list">${r.candidates.map((c, i) => `<button class="candidate ${i === 0 ? "chosen" : ""}" aria-pressed="${i === 0}" data-candidate="${i}" title="${esc(c.evidence)}"><span aria-hidden="true" class="choice-mark"></span><span>${esc(editor(r, c))}<small>${esc(c.evidence || "文档标题")}</small></span></button>`).join("") || '<p class="muted">未找到明确标题，可从页面选字或手动输入。</p>'}</div><div class="name-editor"><label for="name-stem">最终文件名</label><div class="naming-line">${prefix}<input id="name-stem" aria-label="最终文件名" value="${esc(stem)}"><span>${esc(r.ext)}</span></div></div></div></section></div>`;
+    } else {
+      body += `<div class="original-name"><span class="muted">原名称</span><div>${esc(e.name)}</div></div><div class="name-editor"><label for="name-stem">新名称</label><div class="naming-line">${prefix}<input id="name-stem" aria-label="识别的名称" value="${esc(stem)}"><span>${esc(r.ext)}</span></div></div><p class="muted">更改后：<span id="direct-preview">${esc(stem + r.ext)}</span></p><p class="muted">确认后同步更改本机名称，保留扩展名，同名不覆盖。</p>`;
+    }
     if (r.warnings?.length) body += `<div class="muted">部分文档未能提取，您可以手工填写；详情见提示。<span title="${esc(r.warnings.join("\n"))}">ⓘ</span></div>`;
   } else {
     body += `<p class="muted batch-description">逐项核对并修改新名称；取消勾选可跳过。确认后同步更改本机名称，同名不覆盖。 <span id="batch-count">${suggestions.filter(r=>!smart||!r.fallback).length} / ${suggestions.length} 项</span></p>`;
@@ -744,6 +788,109 @@ async function namingDialog(items, smart) {
     $("#name-stem").value = editor(suggestions[0], suggestions[0].candidates[+button.dataset.candidate]);
     updateEditor();
   });
+  if (smart && !batch) {
+    const panel = $(".naming-preview-dialog"), pages = new Map();
+    let pageIndex = 0, requestId = 0, dragging = null, recognizing = false;
+    const textarea = $("#recognized-text"), preview = $("#document-preview");
+    const tabs = $$('[data-preview-page]');
+    textarea.value = "";
+    textarea.placeholder = "在左侧页面拖动框选需要识别的文字";
+    $("#use-text").textContent = "使用识别文字";
+    $("#selection-hint").textContent = "框选后可在这里修改识别结果";
+    const drawPage = (p) => {
+      if (!p.supported) {
+        preview.innerHTML = `<p class="preview-message muted">${esc(p.message)}</p>`;
+        tabs.forEach(t => t.disabled = true); textarea.placeholder = "当前文件暂不支持页面文字预览";
+        return;
+      }
+      tabs.forEach((t, i) => { t.disabled = i >= p.pageCount; t.setAttribute("aria-selected", String(i === pageIndex)); });
+      textarea.value = p.text || "";
+      preview.innerHTML = `<div class="preview-page region-select-page"><img alt="第 ${pageIndex + 1} 页" draggable="false" src="data:image/png;base64,${p.image}"><div class="region-box" hidden></div></div>`;
+      if (p.region) paintBox(p.region);
+      $("#preview-hint").textContent = "在页面上拖动框选文字，松开后自动识别。";
+    };
+    function paintBox(region) {
+      const box = preview.querySelector(".region-box");
+      if (!box) return;
+      box.hidden = false;
+      Object.assign(box.style, { left: (region.x * 100) + "%", top: (region.y * 100) + "%", width: (region.w * 100) + "%", height: (region.h * 100) + "%" });
+    }
+    function point(event, page) {
+      const r = page.getBoundingClientRect();
+      return { x: Math.max(0, Math.min(1, (event.clientX - r.left) / r.width)), y: Math.max(0, Math.min(1, (event.clientY - r.top) / r.height)) };
+    }
+    function rectangle(a, b) { return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }; }
+    async function showPage(index) {
+      if (pages.has(pageIndex) && pages.get(pageIndex).supported) pages.get(pageIndex).text = textarea.value;
+      pageIndex = index; $("#selection-hint").textContent = "框选后可在这里修改识别结果";
+      if (pages.has(index)) { drawPage(pages.get(index)); return; }
+      const id = ++requestId;
+      tabs.forEach(t => t.disabled = true);
+      preview.innerHTML = '<p class="preview-message muted">正在本地加载页面…</p>';
+      try {
+        const result = await api("namingPreview", { entry: suggestions[0].entry, page: index });
+        if (!panel.isConnected || id !== requestId) return;
+        pages.set(index, result); drawPage(result);
+      } catch (e) {
+        if (!panel.isConnected || id !== requestId) return;
+        preview.innerHTML = `<p class="preview-message muted">${esc(e.message)}</p>`;
+        $("#preview-hint").textContent = "您仍可以手动输入文件名。";
+        tabs.forEach((t, i) => { t.disabled = i === index; });
+      }
+    }
+    tabs.forEach(t => t.onclick = () => showPage(+t.dataset.previewPage));
+    preview.onpointerdown = event => {
+      const page = event.target.closest(".region-select-page");
+      if (!page || recognizing || event.button !== 0) return;
+      event.preventDefault();
+      dragging = { page, start: point(event, page), pointer: event.pointerId };
+      page.setPointerCapture(event.pointerId);
+      paintBox(rectangle(dragging.start, dragging.start));
+    };
+    preview.onpointermove = event => {
+      if (!dragging || dragging.pointer !== event.pointerId) return;
+      paintBox(rectangle(dragging.start, point(event, dragging.page)));
+    };
+    preview.onpointercancel = () => { dragging = null; };
+    preview.onpointerup = async event => {
+      if (!dragging || dragging.pointer !== event.pointerId) return;
+      const region = rectangle(dragging.start, point(event, dragging.page));
+      dragging = null;
+      if (region.w < 0.01 || region.h < 0.005) { preview.querySelector(".region-box").hidden = true; $("#selection-hint").textContent = "框选范围太小，请重新框选。"; return; }
+      pages.get(pageIndex).region = region;
+      textarea.value = "";
+      textarea.placeholder = "正在识别框选区域…";
+      $("#selection-hint").textContent = "正在本地识别框选区域…";
+      recognizing = true;
+      tabs.forEach(t => t.disabled = true);
+      const id = ++requestId;
+      try {
+        const result = await api("namingRecognizeRegion", { entry: suggestions[0].entry, page: pageIndex, region });
+        if (!panel.isConnected || id !== requestId) return;
+        const cleaned = GuiyuNaming.cleanRecognizedText(result);
+        textarea.value = cleaned;
+        pages.get(pageIndex).text = cleaned;
+        textarea.placeholder = "未识别到文字，可重新框选或手动输入";
+        $("#selection-hint").textContent = cleaned ? "已识别框选区域，可修改后用于命名" : "未识别到文字，请重新框选或手动输入";
+      } catch (e) {
+        if (!panel.isConnected || id !== requestId) return;
+        textarea.placeholder = "识别失败，可重新框选或手动输入";
+        $("#selection-hint").textContent = e.message;
+      } finally {
+        recognizing = false;
+        if (panel.isConnected && id === requestId) tabs.forEach((t, i) => { t.disabled = i >= pages.get(pageIndex).pageCount; });
+      }
+    };
+    textarea.oninput = () => { $("#selection-hint").textContent = "可修改文字，点击按钮用于命名"; };
+    $("#use-text").onclick = () => {
+      const selection = textarea.value.slice(textarea.selectionStart, textarea.selectionEnd).trim();
+      const text = selection || textarea.value.trim();
+      if (!text) { $("#selection-hint").textContent = "请先框选或输入文字。"; return; }
+      $("#name-stem").value = GuiyuNaming.cleanRecognizedText(text);
+      updateEditor();
+    };
+    showPage(0);
+  }
   $$('[data-alternate]').forEach((select) => select.onchange = () => {
     if (select.value !== '') { const i = +select.dataset.alternate;
       $(`[data-name="${i}"]`).value = batchEditor(suggestions[i], suggestions[i].candidates[+select.value]); updateEditor(); }
@@ -764,6 +911,7 @@ async function namingDialog(items, smart) {
   updateEditor();
   confirm.onclick = async () => {
     if (!canSubmit()) return;
+    if (smart && !batch) window.guiyu?.cancelNaming?.();
     confirm.disabled = true;
     try {
       if(smart && !batch && suggestions[0].fallback && $("#name-stem").value===GuiyuNaming.literalStem(suggestions[0].entry.name,suggestions[0].ext)){ $("#modal").close(); return; }
@@ -784,11 +932,12 @@ async function namingDialog(items, smart) {
         const target = p.entry.path.slice(0, p.entry.path.length - p.entry.name.length) + p.name;
         if (project?.path === p.entry.path) project = result.snapshot.projects.find((x) => x.path === target) || null;
         if (current === p.entry.path || current.startsWith(p.entry.path + '\\') || current.startsWith(p.entry.path + '/')) current = target + current.slice(p.entry.path.length);
+        if (sourcePreviewCurrent === p.entry.path || sourcePreviewCurrent.startsWith(p.entry.path + '\\') || sourcePreviewCurrent.startsWith(p.entry.path + '/')) sourcePreviewCurrent = target + sourcePreviewCurrent.slice(p.entry.path.length);
         if (sourceFolder?.path === p.entry.path) sourceFolder = { ...sourceFolder, path: target, name: p.name };
       }
       apply(result); await load(); toast(`已重命名 ${result.result} 项`);
     } catch (e) {
-      errorIn(e); if (/已完成/.test(e.message)) confirm.dataset.partial = 'true';
+      errorIn(e); if (/已完成\s*[1-9]\d*\s*项/.test(e.message)) confirm.dataset.partial = 'true';
     } finally { if (confirm.dataset.partial !== 'true') confirm.disabled = !canSubmit(); }
   };
 }

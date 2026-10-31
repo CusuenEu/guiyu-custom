@@ -87,6 +87,11 @@ test("eight folder/document formats preserve extension, preserve full title word
       assert(!c.proposedName.startsWith(" "));
     }
 });
+test("selected OCR text removes spaces, line breaks and invalid filename punctuation", () => {
+  assert.equal(formatter.cleanRecognizedText(" 风险 审查\n报告？。: / * < > |\t2026 年 "), "风险审查报告2026年");
+  assert.equal(formatter.cleanRecognizedText("  版本 1.2 \r\n最终版  "), "版本1.2最终版");
+  assert.equal(formatter.cleanRecognizedText(" ?。* "), "");
+});
 test("current labels, changed rules, extracted title and identity-checked manual assignments determine suggestions", () => {
   const e = { path: "a", name: "PDF合并.txt", folder: false, identity: "id" };
   const s = {

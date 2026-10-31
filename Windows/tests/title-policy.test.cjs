@@ -95,6 +95,21 @@ test("cover explicit title precedes project field; wrapped prominent title is co
     "云业务安全服务实施方案",
   );
 });
+test("scanned document title wins over referenced filename and quoted section", async (t) => {
+  const dir = await folder(t), file = path.join(dir, "scan.pdf");
+  await fs.writeFile(file, pdf([""]));
+  const pages = await pdfOpening({ path: file, name: "scan.pdf" }, undefined, async () => ({
+    text: "文件名称：采购响应文件.pdf\n关于云系统安全的\n原文对照：采购文件要求表",
+    titleText: "关于云系统安全的\n审查意见书",
+  }));
+  const results = policy.titleSuggestions(pages, "scan.pdf");
+  assert.equal(results[0].name, "关于云系统安全的审查意见书");
+  assert(!results.some(x => x.name.includes("采购响应文件.pdf") || x.name.startsWith("原文对照")));
+  const english = await pdfOpening({ path: file, name: "scan.pdf" }, undefined, async () => ({
+    text: "Document Name: another.pdf", titleText: "Quarterly\nSecurity Report",
+  }));
+  assert.equal(policy.titleSuggestions(english, "scan.pdf")[0].name, "Quarterly Security Report");
+});
 test("title sanitation preserves meaningful words, numeric/category prefixes and book-title punctuation", () => {
   assert.equal(policy.cleanTitle("  云业务\n安全承诺书  "), "云业务安全承诺书");
   assert.equal(

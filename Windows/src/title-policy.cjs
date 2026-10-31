@@ -50,7 +50,7 @@ function usableTitle(raw) {
     length <= 160 &&
     !generic.has(s) &&
     !/^[0-9年月日\s./_-]+$/.test(s) &&
-    !/^(?:第[一二三四五六七八九十0-9]+[章节条]|项目编号|采购编号|招标编号|法定代表人|编制单位|编制日期|联系人|联系电话|根据|本项目|本文件|本承诺书|本方案)|^(?:单位名称|采购人|供应商|投标人|日期|地址|邮编)[：:]/.test(
+    !/^(?:第[一二三四五六七八九十0-9]+[章节条]|[一二三四五六七八九十]+\s*[、.]|原文对照|项目编号|采购编号|招标编号|法定代表人|编制单位|编制日期|联系人|联系电话|根据|本项目|本文件|本承诺书|本方案)|^(?:单位名称|采购人|供应商|投标人|日期|地址|邮编)[：:]/.test(
       s,
     )
   );
@@ -58,7 +58,7 @@ function usableTitle(raw) {
 function looksLikeTitle(s) {
   if (!usableTitle(s) || [...s].length < 4 || /[。；，]/.test(s)) return false;
   if (
-    /(?:方案|报告|计划|规划|清单|明细|汇总|统计|报价|预算|合同|协议|通知|公告|函|承诺书|说明书|手册|规范|标准|要求|指南|记录|试卷|论文|设计|分析|总结|纪要|申请书|申请表|台账|表|建议书|项目|工程|大事记)$/.test(
+    /(?:方案|报告|计划|规划|清单|明细|汇总|统计|报价|预算|合同|协议|通知|公告|函|承诺书|意见书|说明书|手册|规范|标准|要求|指南|记录|试卷|论文|设计|分析|总结|纪要|申请书|申请表|台账|表|建议书|项目|工程|大事记|发票)$/.test(
       s,
     )
   )
@@ -126,7 +126,7 @@ function titleSuggestions(pages, source = "") {
         explicit = true;
         let value = m ? raw.slice(m[0].length) : "";
         if (!value) value = lines[index + 1]?.text || "";
-        if (usableTitle(value))
+        if (usableTitle(value) && !/\.(?:pdf|docx?|xlsx?|pptx?|png|jpe?g|tiff?)\s*$/i.test(value))
           ranked.push({
             name: cleanTitle(value),
             evidence: label + "明确标题 · " + source,
@@ -145,7 +145,7 @@ function titleSuggestions(pages, source = "") {
           name: cleanTitle(text),
           evidence: label + "标题 · " + source,
           score:
-            page.index * 100 + (line.prominent ? 5 : 10) + Math.min(index, 8),
+            page.index * 100 + (line.ocrVisualTitle ? -10 : line.prominent ? 5 : 10) + Math.min(index, 8),
         });
       if (line.joinsNext && !metadata) {
         let joined = text,

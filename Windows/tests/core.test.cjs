@@ -98,6 +98,24 @@ test("rename preserves extension, rejects stale/replaced and collision; batch pr
     "new content",
   );
 });
+test("locked Windows file reports a readable reason and is not renamed", { skip: process.platform !== "win32" }, async (t) => {
+  const { spawn } = require("node:child_process");
+  const f = await fixture(t), file = path.join(f.project, "locked.pdf");
+  await fs.writeFile(file, "sample");
+  const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "$f=[IO.File]::Open($env:GUIYU_TEST_LOCK,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read); [Console]::Out.WriteLine('READY'); [Console]::Out.Flush(); [Console]::In.ReadLine() | Out-Null; $f.Dispose()"], { env: { ...process.env, GUIYU_TEST_LOCK: file }, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+  t.after(() => { if (child.exitCode === null) child.kill(); });
+  await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.stdout.once("data", resolve);
+    child.once("exit", code => reject(Error("锁定测试进程提前退出：" + code)));
+  });
+  await assert.rejects(f.store.rename([{ entry: await entry(file), name: "renamed.pdf" }]), /已完成 0 项.*正在被其他程序使用/);
+  assert.equal(await fs.readFile(file, "utf8"), "sample");
+  child.stdin.end("done\n");
+  await new Promise(resolve => child.once("exit", resolve));
+  await f.store.rename([{ entry: await entry(file), name: "renamed.pdf" }]);
+  assert.equal(await fs.readFile(path.join(f.project, "renamed.pdf"), "utf8"), "sample");
+});
 test("archive numbers collisions, preserves category, supports guarded undo", async (t) => {
   const f = await fixture(t);
   await fs.writeFile(path.join(f.inbox, "a.txt"), "incoming");

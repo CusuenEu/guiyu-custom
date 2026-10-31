@@ -36,7 +36,7 @@
 - PDF/图片使用独立预览窗；Office显示提取文本，双击仍用本机默认软件编辑。尚无与macOS Quick Look完全相同的Office排版预览。图片格式受系统解码器限制。
 - Windows“最近使用”来自系统Recent快捷方式，最多500项，不等同于Finder Spotlight范围。
 - 目前名称检索使用本地内存元数据，未迁移macOS的SQLite索引；大型目录的搜索响应仍需压力测试。
-- 归档推荐和标题识别均使用本地规则；复杂排版、扫描OCR和特殊Excel结构仍需核对。Windows文件夹命名最多采样4层、1000项元数据，再按5/3/2/2上限挑选代表文档，与Mac全库元数据加载方式存在差异。
+- 归档推荐和标题识别均使用本地规则；图片和扫描 PDF 使用内置的中文、英文 OCR，复杂排版和特殊 Excel 结构仍需核对。Windows文件夹命名最多采样4层、1000项元数据，再按5/3/2/2上限挑选代表文档，与Mac全库元数据加载方式存在差异。
 - 检查更新仅查询GitHub Windows包，后续手动下载替换；尚未实现与Sparkle等价的签名自动安装流程。
 - 尚未做Windows代码签名；源码提交不等于发布安装包。
 - 32位框架固定Electron 43.8.6；后续框架版本不再提供x86，需持续维护兼容分支。
@@ -54,8 +54,10 @@ npm start
 npm run package
 ```
 
-打包输出 `out/Guiyu-20261031-04-test-Windows-ia32.zip` 和 `out/Guiyu-20261031-04-test-Windows-x64.zip`。生产依赖不含平台原生模块，PDF文字提取不依赖native canvas。`npm run preview` 仅启动内存示例界面，不访问用户项目。
+Windows 打包输出 32 位和 64 位 ZIP 以及对应的 `-setup.exe` 安装程序。生成安装程序需要 NSIS 3；设置环境变量 `GUIYU_MAKENSIS` 指向 `makensis.exe`，或使用 electron-builder 缓存中的 NSIS 3.0.4.1。生产依赖不含平台原生模块，PDF文字提取不依赖native canvas。`npm run preview` 仅启动内存示例界面，不访问用户项目。
 
-许可证：MIT；Electron、PDF.js、fflate、DOMMatrix及其他依赖保留各自许可证。交付包内附框架LICENSE和依赖许可证。
+OCR 使用随包携带的 Tesseract.js 7.0.0 与简体中文、英文模型，不需要联网或另行安装 OCR。文本 PDF 优先提取原有文字，扫描页会进行识别；扫描 PDF 最多读取前两页，超过 30 MB 的扫描 PDF 需手动命名。识别结果不一定准确，使用前请核对。
 
-版本由仓库根目录 `Release/version.json` 统一决定，`node scripts/version.cjs` 可同步到Windows版本镜像及package元数据；打包时也会同步。独立源码包没有仓库根目录时使用随包的 `version.json`。
+许可证：MIT；Electron、PDF.js、Tesseract.js、fflate、DOMMatrix及其他依赖保留各自许可证。交付包内附框架 LICENSE 和依赖许可证。
+
+Windows 版本独立由 `Windows/version.json` 决定；`node scripts/version.cjs` 会同步 package 元数据，打包时也会同步。Mac 版本继续使用自身的版本配置。
