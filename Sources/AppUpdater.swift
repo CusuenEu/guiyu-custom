@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import Sparkle
 
 // Sparkle verifies the feed and archive and owns installation. A probe never installs.
@@ -31,29 +32,30 @@ import Sparkle
     }
     func start() {
         guard commands == nil, !started else { return }
-        guard Bundle.main.object(forInfoDictionaryKey:"SUFeedURL") != nil,
-              Bundle.main.object(forInfoDictionaryKey:"SUPublicEDKey") != nil else {
-            status = "此版本尚未配置更新服务"; return
-        }
-        // Migrate the old automatic-install preference: updates now require the user's click.
-        controller.updater.automaticallyDownloadsUpdates = false
-        do { try controller.updater.start(); started = true }
-        catch { status = "更新服务未能启动，请稍后重试" }
+        // 定制版：不启动官方 Sparkle 通道（防误覆盖七色标签/AI 定制），更新经定制发布页分发。
+        started = true; canCheck = true
+        status = "定制版：点「检查更新」前往发布页"
     }
     func performAction() {
         guard actionEnabled else { return }
-        if availableVersion != nil {
-            isUpdating = true; status = "请在更新窗口中确认安装"
-            if let commands { commands.install() } else { controller.checkForUpdates(nil) }
-        } else { check() }
+        if let commands {
+            if availableVersion != nil {
+                isUpdating = true; status = "请在更新窗口中确认安装"; commands.install()
+            } else { check() }
+        } else {
+            if let url = URL(string: "https://github.com/CusuenEu/guiyu-custom/releases") {
+                NSWorkspace.shared.open(url)
+            }
+            status = "已打开定制版发布页：下载 zip 拖入「应用程序」即完成更新"
+        }
     }
     func check() {
         guard actionEnabled else { return }
-        if commands == nil && controller.updater.sessionInProgress {
-            status = "已有更新任务，请查看更新窗口"; controller.checkForUpdates(nil); return
+        if let commands {
+            isChecking = true; status = "正在检查更新…"; commands.probe()
+        } else {
+            performAction()
         }
-        isChecking = true; status = "正在检查更新…"
-        if let commands { commands.probe() } else { controller.updater.checkForUpdateInformation() }
     }
     var automaticChecks: Bool {
         get { controller.updater.automaticallyChecksForUpdates }

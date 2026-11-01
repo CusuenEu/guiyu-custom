@@ -47,14 +47,10 @@ p = Path('dist/归屿.app/Contents/Info.plist')
 data = plistlib.loads(p.read_bytes())
 version = json.loads(subprocess.check_output(['python3','scripts/version.py']))
 data.update(CFBundleShortVersionString=version['display'], CFBundleVersion=version['build'], GuiyuReleaseTag=version['tag'], GuiyuReleaseAsset=version['asset'])
-key = Path('Release/update-public-key.txt').read_text().strip()
 import base64
-assert len(base64.b64decode(key,validate=True)) == 32
-# Forks must use their own feed and signing key before distributing updates.
-data.update(SUFeedURL='https://github.com/tiduse1988/guiyu/releases/latest/download/appcast.xml',
-    SUPublicEDKey=key, SUEnableAutomaticChecks=True, SUAutomaticallyUpdate=False,
-    SUVerifyUpdateBeforeExtraction=True, SURequireSignedFeed=True,
-    SUEnableSystemProfiling=False, SUScheduledCheckInterval=86400)
+# 定制版不接官方更新通道（RELEASING.md：fork 必须替换/停用官方 SUFeedURL，防误覆盖定制功能）。
+# 更新由定制发布页分发：https://github.com/CusuenEu/guiyu-custom/releases
+data.update(SUEnableAutomaticChecks=False, SUAutomaticallyUpdate=False)
 p.write_bytes(plistlib.dumps(data))
 UPDATE_PLIST
 python3 scripts/test_version.py
