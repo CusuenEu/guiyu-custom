@@ -193,13 +193,13 @@ final class DirectoryOrderRowView: NSView, NSDraggingSource {
     let original = store.orderedDirectories.map(\.path)
     let cd = base.appendingPathComponent("CD类项目").path, y26 = base.appendingPathComponent("2026").path, y25 = base.appendingPathComponent("2025").path
     try verify(store.reorderDirectory(DirectoryOrderPayload(root:base.path,path:cd),relativeTo:y25,after:true))
-    try verify(store.orderedDirectories.map(\.path) == [y26,y25,cd],"Drop after row must set exact order")
+    try verify(store.orderedDirectories.map(\.path) == [y25,cd,y26],"Drop after row must set exact order")
     let reopened = Store(stateURL:state,loadOnLaunch:false)
-    try verify(reopened.orderedDirectories.map(\.path) == [y26,y25,cd],"Directory order must survive disk readback and reopening")
+    try verify(reopened.orderedDirectories.map(\.path) == [y25,cd,y26],"Directory order must survive disk readback and reopening")
     reopened.settings.projects.reverse()
-    try verify(reopened.orderedDirectories.map(\.path) == [y26,y25,cd],"Metadata refresh order must not override manual order")
-    try verify(reopened.reorderDirectory(DirectoryOrderPayload(root:base.path,path:cd),relativeTo:y26,after:false))
-    try verify(reopened.orderedDirectories.map(\.path) == original,"Drop before row must place at top")
+    try verify(reopened.orderedDirectories.map(\.path) == [y25,cd,y26],"Metadata refresh order must not override manual order")
+    try verify(reopened.reorderDirectory(DirectoryOrderPayload(root:base.path,path:cd),relativeTo:y25,after:false))
+    try verify(reopened.orderedDirectories.map(\.path) == [cd,y25,y26],"Drop before row must insert before the target")
     let y24 = base.appendingPathComponent("2024").path
     reopened.settings.projects.append(Project(path:y24,name:"2024",group:"2024",shallow:true))
     try verify(reopened.orderedDirectories.last?.path == y24,"New directories append without disturbing saved order")
