@@ -25,9 +25,11 @@ import AppKit
     func check(_ condition:Bool,_ message:String) throws { try verify(condition,message) }
     func settle(_ seconds:Double = 0.15) { RunLoop.current.run(until:Date().addingTimeInterval(seconds)) }
     func mount<V:View>(_ view:V, height:CGFloat) -> NSWindow {
+        let fileNaming = (view as? RenameDialog).map{!$0.target.folder} ?? false
+        let size = fileNaming ? NSSize(width:1000,height:660) : NSSize(width:700,height:height)
         let host = NSHostingView(rootView:view.preferredColorScheme(.light))
-        host.frame = NSRect(x:0,y:0,width:700,height:height)
-        let window = NSWindow(contentRect:NSRect(x:-5000,y:-5000,width:700,height:height),styleMask:.borderless,backing:.buffered,defer:false)
+        host.frame = NSRect(origin:.zero,size:size)
+        let window = NSWindow(contentRect:NSRect(origin:NSPoint(x:-5000,y:-5000),size:size),styleMask:.borderless,backing:.buffered,defer:false)
         window.contentView = host; window.orderBack(nil); settle(0.4)
         return window
     }

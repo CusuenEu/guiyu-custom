@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import PDFKit
+import Vision
 
 func namingTitleWhitespace(_ value:String) -> String {
     var text = value.replacingOccurrences(of:"(?<=[\\p{Han}])\\s*\\r?\\n\\s*(?=[\\p{Han}])",with:"",options:.regularExpression)
@@ -26,7 +27,7 @@ func usableNamingTitle(_ raw:String) -> Bool {
     let value = cleanNamingTitle(raw)
     return value.count >= 2 && value.count <= 160 && !namingGenericLabels.contains(value) &&
         value.range(of:"^[0-9年月日\\s./_-]+$",options:.regularExpression) == nil &&
-        value.range(of:"^(?:第[一二三四五六七八九十0-9]+[章节条]|项目编号|采购编号|招标编号|法定代表人|编制单位|编制日期|联系人|联系电话|根据|本项目|本文件|本承诺书|本方案)|^(?:单位名称|采购人|供应商|投标人|日期|地址|邮编)[：:]",options:.regularExpression) == nil
+        value.range(of:"^(?:第[一二三四五六七八九十0-9]+[章节条]|项目编号|采购编号|招标编号|法定代表人|编制单位|编制日期|联系人|联系电话|根据|本项目|本文件|本承诺书|本方案|被审查文件|审查对象|引用文件|参考文献)|^(?:单位名称|采购人|供应商|投标人|日期|地址|邮编)[：:]",options:.regularExpression) == nil
 }
 func looksLikeNamingTitle(_ value:String) -> Bool {
     guard usableNamingTitle(value), value.count >= 4, !value.contains("。"), !value.contains("；"), !value.contains("，") else { return false }
@@ -84,6 +85,27 @@ func textNamingPages(_ text:String) -> [NamingTitlePage] {
         NamingTitlePage(index:index,lines:page.components(separatedBy:.newlines).map { $0.trimmingCharacters(in:.whitespacesAndNewlines) }.filter{!$0.isEmpty}.prefix(40).map { NamingTitleLine(text:$0) })
     }
 }
+func namingOCRTitleLines(_ image:CGImage,token:IndexCancellation) -> [NamingTitleLine] {
+    guard !token.isCancelled else { return [] }
+    let request = VNRecognizeTextRequest();request.recognitionLanguages = ["zh-Hans","en-US"];request.recognitionLevel = .accurate;request.usesLanguageCorrection = true
+    do { try VNImageRequestHandler(cgImage:image,options:[:]).perform([request]) } catch { return [] }
+    guard !token.isCancelled else { return [] }
+    let observations = Array((request.results ?? []).sorted {
+        abs($0.boundingBox.midY-$1.boundingBox.midY) > 0.012 ? $0.boundingBox.midY > $1.boundingBox.midY : $0.boundingBox.minX < $1.boundingBox.minX
+    }.prefix(40))
+    let heights = observations.map{$0.boundingBox.height}.sorted(), maximum = heights.max() ?? 0
+    let median = heights.isEmpty ? 0 : heights[heights.count/2]
+    var lines = observations.map { item in
+        NamingTitleLine(text:item.topCandidates(1).first?.string ?? "",prominent:item.boundingBox.height >= maximum*0.85 && maximum >= max(0.018,median*1.2))
+    }
+    if lines.count > 1 {
+        for index in 0..<(lines.count-1) where lines[index].prominent && lines[index+1].prominent {
+            let a = observations[index].boundingBox,b = observations[index+1].boundingBox
+            lines[index].joinsNext = abs(a.midX-b.midX) < 0.1 && abs(a.midY-b.midY) < max(a.height,b.height)*2.8
+        }
+    }
+    return lines
+}
 func recognizeNamingTitles(_ file:FileItem,token:IndexCancellation) -> [Suggestion] {
     guard !token.isCancelled else { return [] }
     if file.ext == "xlsx" { return spreadsheetNamingTitles(file,token:token) }
@@ -95,6 +117,7 @@ func recognizeNamingTitles(_ file:FileItem,token:IndexCancellation) -> [Suggesti
         }
     }
     if file.ext == "pdf", let pdf = PDFDocument(url:file.url) {
+        guard !pdf.isLocked else { return [] }
         var pages:[NamingTitlePage] = []
         for index in 0..<min(pdf.pageCount,2) {
             guard !token.isCancelled, let page = pdf.page(at:index) else { break }
@@ -102,7 +125,7 @@ func recognizeNamingTitles(_ file:FileItem,token:IndexCancellation) -> [Suggesti
             if text.trimmingCharacters(in:.whitespacesAndNewlines).count < 15 {
                 let image = page.thumbnail(of:NSSize(width:1400,height:1800),for:.mediaBox)
                 if let cg = image.cgImage(forProposedRect:nil,context:nil,hints:nil) {
-                    let lines = textNamingPages(ocr(cg)).first?.lines ?? []
+                    let lines = namingOCRTitleLines(cg,token:token)
                     pages.append(NamingTitlePage(index:index,lines:lines))
                 }
                 continue
@@ -133,6 +156,9 @@ func recognizeNamingTitles(_ file:FileItem,token:IndexCancellation) -> [Suggesti
             pages.append(NamingTitlePage(index:index,lines:lines.isEmpty ? (textNamingPages(text).first?.lines ?? []) : lines))
         }
         return namingTitleSuggestions(pages:pages,source:file.name)
+    }
+    if ["png","jpg","jpeg","heic","tiff","tif"].contains(file.ext),let page = try? loadNamingPreview(NamingTarget(path:file.path,folder:false,projectPath:file.project),token:token).first {
+        return namingTitleSuggestions(pages:[NamingTitlePage(index:0,lines:namingOCRTitleLines(page.image,token:token))],source:file.name)
     }
     return namingTitleSuggestions(pages:textNamingPages(extractForNaming(file,token:token)),source:file.name)
 }

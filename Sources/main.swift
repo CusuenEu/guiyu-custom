@@ -342,6 +342,7 @@ struct Preview: NSViewRepresentable {
     try directoryBreadcrumbTest(root:root)
     try namingTest(root:root)
     try namingPolicyTest(root:root)
+    try namingRegionTests(root:root)
     try namingRulesTest(root:root)
     try categoryManagementTest(root:root)
     try categoryRulesTest(root:root)
@@ -372,6 +373,7 @@ else if CommandLine.arguments.contains("--update-probe") { do { try MainActor.as
 else if CommandLine.arguments.contains("--smart-dialogs-review") { do { try MainActor.assumeIsolated { try smartDialogsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--category-flow-review") { do { try MainActor.assumeIsolated { try categoryWorkflowUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--naming-rules-review") { do { try MainActor.assumeIsolated { try namingRulesUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--naming-region-review") { do { try MainActor.assumeIsolated { try namingRegionUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--archive-source-layout-review") { do { try MainActor.assumeIsolated { try archiveSourceLayoutReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--category-disclosure-review") { do { try MainActor.assumeIsolated { try categoryDisclosureReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--ui-review") { do { try MainActor.assumeIsolated { try batchUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }

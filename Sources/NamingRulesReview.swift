@@ -107,6 +107,8 @@ import AppKit
     let out = URL(fileURLWithPath:fm.currentDirectoryPath).appendingPathComponent(".impeccable/review/naming-rules")
     try fm.createDirectory(at:out,withIntermediateDirectories:true)
     func capture<V:View>(_ view:V,_ width:CGFloat,_ height:CGFloat,_ name:String) throws {
+        let fileNaming = (view as? RenameDialog).map{!$0.target.folder} ?? false
+        let width = fileNaming ? 1000 : width, height = fileNaming ? 660 : height
         let host = NSHostingView(rootView:view.background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light));host.frame = NSRect(x:0,y:0,width:width,height:height)
         let window = NSWindow(contentRect:NSRect(x:-5000,y:-5000,width:width,height:height),styleMask:.borderless,backing:.buffered,defer:false)
         window.contentView = host;window.orderBack(nil)
