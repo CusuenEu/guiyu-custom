@@ -10,6 +10,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Build and self-tests
         run: ./build.sh
       - name: Verify signature
@@ -25,14 +27,33 @@ jobs:
           path: |
             dist/guiyu-custom-macOS-arm64.zip
             dist/SHA256SUMS.txt
+      - name: Generate changelog
+        run: |
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          {
+            echo "# 归屿定制版 更新日志"
+            echo ""
+            echo "构建时间：$(date -u '+%F %H:%M') UTC · 提交：${GITHUB_SHA::7}"
+            echo ""
+            if [ -n "$PREV" ]; then
+              echo "## 相对上一版（${PREV}）的变更"
+              git log --pretty=format:'- %s (%h)' "${PREV}..HEAD"
+            else
+              echo "## 本次构建包含的提交"
+              git log --pretty=format:'- %s (%h)' -20
+            fi
+            echo ""
+            echo ""
+            echo "---"
+            echo "基于 tiduse1988/guiyu（原作者 tiduse1988，MIT License）。安装：解压 zip 后把 归屿.app 拖入「应用程序」，首次打开在 系统设置→隐私与安全性→仍要打开。"
+          } > dist/changelog.md
       - name: Publish stable release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="custom-$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}"
-          NOTES="基于 tiduse1988/guiyu（原作者 tiduse1988，MIT License）的定制构建。定制内容：七色Finder标签自动写入（合并模式）；AI生成规则直连 MiMo/Kimi；过滤群晖系统目录；停用官方更新通道。上游提交：${GITHUB_SHA}。安装：解压后把 归屿.app 拖入「应用程序」，首次打开在 系统设置→隐私与安全性→仍要打开。"
           gh release create "$TAG" \
-            dist/guiyu-custom-macOS-arm64.zip dist/SHA256SUMS.txt \
+            dist/guiyu-custom-macOS-arm64.zip dist/SHA256SUMS.txt dist/changelog.md \
             --latest \
             --title "归屿定制版 ${TAG#custom-}" \
-            --notes "$NOTES"
+            --notes-file dist/changelog.md
