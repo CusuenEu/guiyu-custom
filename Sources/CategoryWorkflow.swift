@@ -36,6 +36,23 @@ import AppKit
             }
         }
     }
+    private var lastAutoImported = ""
+    /// 切回应用时自动读剪贴板：若内容是规则回复则直接录入（手动粘贴兜底）
+    func autoImportIfClipboardChanged(store:Store) {
+        guard let text = NSPasteboard.general.string(forType:.string), !text.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else { return }
+        guard text != lastAutoImported else { return }
+        guard (try? CategoryRuleExchange.parse(text,categories:store.workspaceCategories)) != nil else { return }
+        lastAutoImported = text
+        operation = .importReply
+        importText(text,store:store)
+        if !failed { message = "已自动读取剪贴板回复并录入规则" }
+    }
+    /// 复制提示词并跳转所选 AI 网页：网页里粘贴发送，复制回复后回到归屿自动录入
+    func startWebGeneration(name:String, urlString:String, store:Store) {
+        copyPrompt(store:store, pasteboard:.general, openWebsite:{})
+        if let url = URL(string:urlString) { NSWorkspace.shared.open(url) }
+        if !failed { message = "提示词已复制，去" + name + "粘贴发送；复制回复后回到归屿即自动录入" }
+    }
     private func importText(_ text:String, store:Store) {
         do {
             let imports = try CategoryRuleExchange.parse(text,categories:store.workspaceCategories)
@@ -66,26 +83,39 @@ struct CategoryWorkflowView: View {
             }
             HStack(spacing:9) {
                 number("1")
-                Button(workflow.aiBusy ? "AI 生成中…" : "AI 生成规则") { workflow.aiGenerate(store:store) }.buttonStyle(SmartDialogActionStyle(primary:true)).disabled(CategoryRuleExchange.targets(store.workspaceCategories).isEmpty || workflow.aiBusy).accessibilityIdentifier("ai-generate-rules")
-                Text("直连小米 MiMo / Kimi，一步生成并录入").font(.system(size:11)).foregroundStyle(.secondary)
-                if workflow.operation == .ai { feedback }
+                Menu {
+                    Button("豆包") { workflow.startWebGeneration(name:"豆包", urlString:"https://www.doubao.com/chat/", store:store) }
+                    Button("Kimi") { workflow.startWebGeneration(name:"Kimi", urlString:"https://www.kimi.com/", store:store) }
+                    Button("DeepSeek") { workflow.startWebGeneration(name:"DeepSeek", urlString:"https://chat.deepseek.com/", store:store) }
+                    Button("ChatGPT") { workflow.startWebGeneration(name:"ChatGPT", urlString:"https://chatgpt.com/", store:store) }
+                    Divider()
+                    Button("只复制提示词（发给任意 AI）") { workflow.copyPrompt(store:store, openWebsite:{}) }
+                    if AIService.loadConfig() != nil && !workflow.aiBusy {
+                        Button("AI 直连一步生成（已配置密钥）") { workflow.aiGenerate(store:store) }
+                    }
+                } label: {
+                    Label(workflow.aiBusy ? "AI 生成中…" : "选择 AI 生成规则", systemImage:"sparkles")
+                }.fixedSize().disabled(CategoryRuleExchange.targets(store.workspaceCategories).isEmpty || workflow.aiBusy).accessibilityIdentifier("ai-generate-rules")
+                Text("选好后提示词自动复制并跳转网页").font(.system(size:11)).foregroundStyle(.secondary)
+                if workflow.operation == .ai || workflow.operation == .copy { feedback }
                 Spacer(minLength:0)
             }
             HStack(spacing:9) {
                 number("2")
-                Text("未配置 AI 时备用：复制提示词发给任意 AI 助手，复制回复。").font(.system(size:12))
-                Button("复制提示词") { workflow.copyPrompt(store:store) }.buttonStyle(SoftWorkspaceButton()).disabled(CategoryRuleExchange.targets(store.workspaceCategories).isEmpty).accessibilityIdentifier("copy-category-prompt")
-                Button(action:openDoubaoWebsite) { Label("豆包官网",systemImage:"arrow.up.right").font(.system(size:12)).foregroundStyle(accent) }.buttonStyle(.plain)
-                if workflow.operation == .copy { feedback }
+                Text("到网页里粘贴发送提示词（已自动复制），然后复制 AI 的完整回复").font(.system(size:12))
                 Spacer(minLength:0)
             }.frame(minHeight:24)
             HStack(spacing:9) {
                 number("3")
                 Button("录入回复") { workflow.importReply(store:store) }.buttonStyle(SoftWorkspaceButton()).disabled(CategoryRuleExchange.targets(store.workspaceCategories).isEmpty).accessibilityIdentifier("import-category-reply")
+                Text("复制回复后回到归屿自动录入；未生效点此手动").font(.system(size:11)).foregroundStyle(.secondary)
                 if workflow.operation == .importReply { feedback }
                 Spacer(minLength:0)
             }
         }.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(WorkspaceTheme.projectCanvas,in:RoundedRectangle(cornerRadius:10))
+        .onReceive(NotificationCenter.default.publisher(for:NSApplication.didBecomeActiveNotification)) { _ in
+            workflow.autoImportIfClipboardChanged(store:store)
+        }
     }
 }
 
