@@ -17,13 +17,13 @@ jobs:
       - name: Package installer
         run: |
           cd dist
-          ditto -c -k --keepParent 归屿.app 归屿-定制版-macOS-arm64.zip
-          shasum -a 256 归屿-定制版-macOS-arm64.zip > SHA256SUMS.txt
+          ditto -c -k --keepParent 归屿.app guiyu-custom-macOS-arm64.zip
+          shasum -a 256 guiyu-custom-macOS-arm64.zip > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: guiyu-custom-macos
           path: |
-            dist/归屿-定制版-macOS-arm64.zip
+            dist/guiyu-custom-macOS-arm64.zip
             dist/SHA256SUMS.txt
       - name: Publish stable release
         env:
@@ -32,7 +32,7 @@ jobs:
           TAG="custom-$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}"
           NOTES="基于 tiduse1988/guiyu（原作者 tiduse1988，MIT License）的定制构建。定制内容：七色Finder标签自动写入（合并模式）；AI生成规则直连 MiMo/Kimi；过滤群晖系统目录；停用官方更新通道。上游提交：${GITHUB_SHA}。安装：解压后把 归屿.app 拖入「应用程序」，首次打开在 系统设置→隐私与安全性→仍要打开。"
           gh release create "$TAG" \
-            dist/归屿-定制版-macOS-arm64.zip dist/SHA256SUMS.txt \
+            dist/guiyu-custom-macOS-arm64.zip dist/SHA256SUMS.txt \
             --latest \
             --title "归屿定制版 ${TAG#custom-}" \
             --notes "$NOTES"
