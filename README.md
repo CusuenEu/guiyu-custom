@@ -1,3 +1,11 @@
+> ## 定制版说明（本仓库）
+> 本仓库是 [tiduse1988/guiyu](https://github.com/tiduse1988/guiyu) 的定制分支。**原作者：tiduse1988**，许可证同上游（MIT），版权归原作者所有。
+> 定制内容（仅个人使用层增强，不改动上游核心逻辑）：
+> ① 归档/改名确认后自动写入 Finder 七色标签（合并写入，不覆盖用户已有标签）
+> ② 「AI 生成规则」直连小米 MiMo / Kimi（OpenAI 兼容接口）
+> ③ 过滤群晖系统目录（#recycle/@eaDir）；停用官方更新通道，更新由本仓库 [Releases](https://github.com/CusuenEu/guiyu-custom/releases) 自动发布
+> 每次绿色构建自动产出安装包并发布到 Releases，可直接下载使用。
+
 # 归屿 20261101(01) · 让每份文件都有归处
 
 **一款面向项目制工作的轻量本地文件管理工具。**
