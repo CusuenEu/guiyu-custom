@@ -6,7 +6,7 @@ struct DirectoryOrderPayload: Codable { let root: String; let path: String }
 
 @MainActor extension Store {
     var orderedDirectories: [Project] {
-        let available = settings.projects.filter { $0.shallow == true }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedDescending }
+        let available = settings.projects.filter { $0.shallow == true }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         let byPath = Dictionary(available.map { ($0.path,$0) },uniquingKeysWith:{ a,_ in a })
         var seen = Set<String>(); var result: [Project] = []
         for root in settings.activeProjectRoots {
@@ -211,6 +211,6 @@ final class DirectoryOrderRowView: NSView, NSDraggingSource {
     let markerText = try String(contentsOf:marker)
     try verify(reopened.orderedDirectories == previous && markerText == "untouched","Rejected drops must not alter state or disk files")
     reopened.settings.root = "/another-root"
-    try verify(reopened.orderedDirectories.map(\.path) == reopened.settings.projects.sorted { $0.name.localizedStandardCompare($1.name) == .orderedDescending }.map(\.path),"Custom order is scoped to selected root")
+    try verify(reopened.orderedDirectories.map(\.path) == reopened.settings.projects.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }.map(\.path),"Custom order is scoped to selected root")
     print("PASS: sidebar drop before/after, atomic persisted readback, refresh/root isolation, new/missing directories, foreign payload rejection; Finder files unchanged")
 }
