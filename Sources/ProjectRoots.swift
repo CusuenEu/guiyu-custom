@@ -10,8 +10,12 @@ extension Settings {
     var hasProjectRoots: Bool { !activeProjectRoots.isEmpty }
     var protectedProjectPaths: [String] { activeProjectRoots + projects.filter { $0.shallow == true }.map(\.path) }
     func ownsProjectDestination(_ path: String) -> Bool {
-        let destination = canonicalPath(path)
-        return activeProjectRoots.contains { destination.hasPrefix(canonicalPath($0)+"/") }
+        let destination = canonicalPath(path).precomposedStringWithCanonicalMapping
+        return activeProjectRoots.contains { root in
+            var base = canonicalPath(root).precomposedStringWithCanonicalMapping
+            while base.hasSuffix("/") { base = String(base.dropLast()) }
+            return destination.hasPrefix(base + "/")
+        }
     }
 }
 struct ProjectRootsSnapshot {

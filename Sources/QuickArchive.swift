@@ -59,7 +59,8 @@ func projectArchiveChoices(input: String, projects: [Project], references: [File
             guard !busy, settings.projects.contains(where:{$0.path == project.path && $0.shallow != true}), settings.hasProjectRoots else { throw namingError("项目已变化或仍在读取，请刷新后重试。") }
             let destinationRoot = canonicalPath(project.path)
             var isDirectory: ObjCBool = false
-            guard fm.fileExists(atPath:destinationRoot,isDirectory:&isDirectory), isDirectory.boolValue, settings.ownsProjectDestination(destinationRoot) else { throw namingError("目标项目文件夹不存在或不在项目总目录中。") }
+            guard fm.fileExists(atPath:destinationRoot,isDirectory:&isDirectory), isDirectory.boolValue else { throw namingError("目标文件夹不存在（NAS 未挂载或路径已变）：" + destinationRoot) }
+            guard settings.ownsProjectDestination(destinationRoot) else { throw namingError("目标不在当前项目总目录内（检查 设置→文件位置）：" + destinationRoot) }
             var reserved = Set<String>(); var plans: [(NamingTarget,URL)] = []; var sources = Set<String>()
             for target in request.targets {
                 guard sources.insert(target.path).inserted, target.identity != nil, target.identity == fileIdentity(target.path), (try? URL(fileURLWithPath:target.path).resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) == target.modified else { throw namingError("部分源文件已更新或被替换，请重新选择；本次尚未移动。") }
