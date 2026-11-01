@@ -7,11 +7,11 @@ func discoverProjects(root: String, saved: [Project]) throws -> [Project] {
     var result: [Project] = []
     // Root folders are physical navigation directories, regardless of their names.
     // Each direct subfolder is a project; no synthetic year or ungrouped buckets.
-    for child in children where (try? child.resourceValues(forKeys:[.isDirectoryKey]).isDirectory) == true {
+    for child in children where (try? child.resourceValues(forKeys:[.isDirectoryKey]).isDirectory) == true && !child.lastPathComponent.hasPrefix("#") && !child.lastPathComponent.hasPrefix("@") {
         var directory = saved.first { $0.path == child.path } ?? Project(path:child.path,name:child.lastPathComponent)
         directory.shallow = true; directory.group = child.lastPathComponent; result.append(directory)
         let nested = try fm.contentsOfDirectory(at:child,includingPropertiesForKeys:[.isDirectoryKey],options:.skipsHiddenFiles)
-        for folder in nested where (try? folder.resourceValues(forKeys:[.isDirectoryKey]).isDirectory) == true {
+        for folder in nested where (try? folder.resourceValues(forKeys:[.isDirectoryKey]).isDirectory) == true && !folder.lastPathComponent.hasPrefix("#") && !folder.lastPathComponent.hasPrefix("@") {
             var project = saved.first { $0.path == folder.path } ?? Project(path:folder.path,name:folder.lastPathComponent)
             project.group = child.lastPathComponent; project.shallow = false; result.append(project)
         }
