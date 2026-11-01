@@ -68,6 +68,9 @@ struct QuickArchiveDialog: View {
             }.padding(.horizontal,26).padding(.top,20).padding(.bottom,18)
             Divider().overlay(WorkspaceTheme.line)
             HStack {
+                if store.busy && destination != nil {
+                    Text("正在读取文件，完成后可确认归档…").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary)
+                }
                 Spacer()
                 Button("取消") { close() }.buttonStyle(SmartDialogActionStyle()).keyboardShortcut(.cancelAction)
                 Button("确认归档",action:confirm).buttonStyle(SmartDialogActionStyle(primary:true)).disabled(destination == nil || store.busy || requiresReselection).keyboardShortcut(.defaultAction)
