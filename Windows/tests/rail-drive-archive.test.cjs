@@ -60,3 +60,25 @@ test("archive recommendations reject screenshot false positives, generic words a
   assert(rank([{name:"智慧工地建设项目"}], ["智慧工地建设项目技术方案.pdf"])[0].score >= 75);
   assert.equal(rank([{name:names[1]}], ["DICT-852-202308-0001验收报告.pdf"])[0].score, 100);
 });
+test("an in-flight refresh never restores an old selection over newer directory navigation", async () => {
+  const source = await fs.readFile(path.join(__dirname, "../src/ui.cjs"), "utf8");
+  const refreshSource = source.slice(source.indexOf("async function refresh()"), source.indexOf("function selectedItems()"));
+  for (const pendingStage of ["refresh", "list"]) {
+    let finish;
+    const calls = [];
+    const context = vm.createContext({ generation: 0, project: { path: "old" }, current: "old", dir: "old-dir", source: null,
+      directoryRows: null, directoryPath: "", data: { snapshot: {} },
+      api: method => method === pendingStage ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ snapshot: {} }),
+      apply: value => calls.push("apply"), projectEntries: () => [{ path: "old" }], load: () => calls.push("load") });
+    vm.runInContext(refreshSource, context);
+    const pending = vm.runInContext("refresh()", context);
+    await new Promise(resolve => setImmediate(resolve));
+    context.generation++; context.project = { path: "new-selection" }; context.current = "new-selection"; context.dir = "new-dir";
+    finish(pendingStage === "list" ? [] : { snapshot: {} });
+    await pending;
+    assert.equal(context.project.path, "new-selection");
+    assert.equal(context.current, "new-selection");
+    assert(!calls.includes("load"));
+    if (pendingStage === "refresh") assert.deepEqual(calls, []);
+  }
+});

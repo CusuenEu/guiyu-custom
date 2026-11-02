@@ -350,12 +350,20 @@ async function load() {
   render();
 }
 async function refresh() {
+  const gen = ++generation;
   let p = project?.path,
     c = current;
   const d = await api("refresh");
+  // A user navigation made while metadata refresh was pending wins over the
+  // old selection captured above. Never reset the newly selected project.
+  if (gen !== generation) return;
   directoryRows = null; directoryPath = "";
   apply(d);
-  if (!source && dir) { directoryRows = await api("list", { path: dir }); directoryPath = dir; }
+  if (!source && dir) {
+    const requested = dir, children = await api("list", { path: requested });
+    if (gen !== generation) return;
+    directoryRows = children; directoryPath = requested;
+  }
   project = projectEntries(d.snapshot).find((e) => e.path === p) || null;
   current = project || source ? c : "";
   await load();
