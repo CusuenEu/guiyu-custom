@@ -9,6 +9,7 @@ const direct = path.join(downloads, "下载文件夹"), linkedSource = path.join
 const desktop = path.join(temp, "桌面实际位置"), desktopAlias = path.join(temp, "桌面重定向"), desktopFolder = path.join(desktop, "桌面文件夹");
 const externalOpens = [];
 const copiedSelections = [];
+const iconSamples = [["图标演示.PPTX","powerpoint"],["网页说明.HTML","html"],["设备平面图.dwg","cad"],["技术路线.xmind","mindmap"],["现场照片.JPG","image"],["演示录像.mp4","video"],["施工进度.mpp","project"],["文档版式.ofd","ofd"],["未识别格式.zzz","unknown"]];
 shell.openPath = async p => { externalOpens.push(p); return ""; };
 const handle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, handler) => handle(channel, (event, method, args) => {
@@ -21,6 +22,7 @@ async function prepare() {
   app.setPath("desktop", desktopAlias);
   await fs.writeFile(path.join(desktopFolder, "桌面文档.txt"), "desktop");
   await fs.writeFile(path.join(first, "甲文档.txt"), "first");
+  for(const [name] of iconSamples) await fs.writeFile(path.join(first,name),"isolated icon fixture");
   await fs.writeFile(path.join(root, "根目录散放文档.txt"), "root document");
   await fs.mkdir(path.join(first, "附件")); await fs.writeFile(path.join(first, "附件/内部.txt"), "nested");
   await fs.writeFile(path.join(second, "乙文档.txt"), "second");
@@ -63,6 +65,11 @@ async function check(win) {
   assert(await evalUI("document.querySelector('#projects').textContent.includes('为空')"));
   await click(row("dir", year));
   await click(row("project", first)); await wait(content("甲文档.txt"));
+  for(const [name,type] of iconSamples) {
+    const selector=row("file",path.join(first,name))+' img[data-file-type='+JSON.stringify(type)+']';
+    await wait(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});return !!e&&e.complete&&e.naturalWidth>0})()`);
+  }
+  console.log("PASS file icons: actual packaged HTML, PPT, CAD, mind map, image, video, Project, OFD and unknown SVG assets load in the real renderer");
   assert(await evalUI(`document.querySelector(${JSON.stringify(row("project", first))}).getAttribute('aria-selected')==='true'`));
   // Unconfigured categories must never hide an already selected folder's files.
   assert(!await evalUI("!!document.querySelector('#empty-categories')"));

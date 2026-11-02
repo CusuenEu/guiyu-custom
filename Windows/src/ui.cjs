@@ -18,10 +18,13 @@ const match = (s, q) =>
     .every((t) => norm(s).includes(t));
 const basename = (p) => p.split(/[\\/]/).filter(Boolean).at(-1) || p;
 const folder = '<span class="folder-icon" aria-hidden="true"></span>';
-const icon = (e) =>
-  e.folder
-    ? folder
-    : `<span aria-hidden="true" class="doc-icon ${/\.docx?$/i.test(e.name) ? "word" : /\.xlsx?$/i.test(e.name) ? "excel" : /\.pdf$/i.test(e.name) ? "pdf" : ""}">${/\.docx?$/i.test(e.name) ? "W" : /\.xlsx?$/i.test(e.name) ? "X" : /\.pdf$/i.test(e.name) ? "⌁" : "≡"}</span>`;
+const icon = (e) => {
+  const type = GuiyuFileIcons.identify(e.name || e.path, { isDirectory: Boolean(e.folder) });
+  return type
+    ? `<img aria-hidden="true" alt="" class="file-type-icon" data-file-type="${type.id}" src="../assets/file-icons/${type.id}.svg" width="28" height="28" draggable="false">`
+    : folder;
+};
+
 let data,
   dir = "",
   project = null,
@@ -1044,7 +1047,7 @@ async function namingDialog(items, smart) {
 }
 async function archiveDialog(items) {
   modal(
-    `<div class="dialog-body smart-dialog archive-dialog" style="height:620px">${smartHeader("智能归档", "⇩")}<div class="file-summary"><span class="summary-icon" aria-hidden="true">▤</span><span>${esc(items[0]?.name || "")}${items.length > 1 ? ` 等 ${items.length} 项` : ""}<small>${items.length} 项待归档</small></span></div><input id="archive-query" placeholder="搜索项目名、单位词或关键词" aria-label="搜索归档项目"><div class="scroll" id="archive-projects">正在查找推荐项目…</div>${actions("确认归档")}</div>`,
+    `<div class="dialog-body smart-dialog archive-dialog" style="height:620px">${smartHeader("智能归档", "⇩")}<div class="file-summary">${icon(items[0] || { name: "" })}<span>${esc(items[0]?.name || "")}${items.length > 1 ? ` 等 ${items.length} 项` : ""}<small>${items.length} 项待归档</small></span></div><input id="archive-query" placeholder="搜索项目名、单位词或关键词" aria-label="搜索归档项目"><div class="scroll" id="archive-projects">正在查找推荐项目…</div>${actions("确认归档")}</div>`,
   );
   $("#confirm").disabled = true;
   let results;

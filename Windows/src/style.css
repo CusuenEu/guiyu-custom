@@ -415,25 +415,14 @@ header {
   border-bottom: 0;
   border-radius: 4px 4px 0 0;
 }
-.doc-icon {
-  width: 26px;
-  height: 29.71px;
-  border-radius: 4px;
-  background: #688d7b;
-  color: #fff;
-  font: bold 16.71px sans-serif;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-.doc-icon.word {
-  background: #0879ed;
-}
-.doc-icon.excel {
-  background: #149447;
-}
-.doc-icon.pdf {
-  background: #ff4444;
+.file-type-icon {
+  display: block;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  flex: 0 0 28px;
+  user-select: none;
+  pointer-events: none;
 }
 #files-pane {
   display: flex;
