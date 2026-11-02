@@ -419,7 +419,7 @@ struct ProjectWorkspace: View {
         }.padding(.horizontal,14).frame(height:56).background(WorkspaceTheme.projectCanvas)
     }
     func refreshWorkspace() {
-        guard !store.busy else { return }
+        if store.busy { store.message = "正在读取文件，请稍候再刷新"; return }
         store.refresh()
         store.globalRefreshRevision += 1
         loadSource()

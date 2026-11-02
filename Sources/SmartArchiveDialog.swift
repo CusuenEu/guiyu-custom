@@ -96,7 +96,11 @@ struct QuickArchiveDialog: View {
         }.buttonStyle(.plain).help([project.path,evidence].compactMap{$0}.joined(separator:"\n")).accessibilityAddTraits(selected == project.path ? .isSelected : [])
     }
     func confirm() {
-        guard let project = destination, !store.busy, !requiresReselection else { return }
+        guard let project = destination, !requiresReselection else {
+            if destination == nil { failure = "请先在列表中选择一个目标项目。" }
+            return
+        }
+        if store.busy { store.scanCancellation?.cancel(); store.busy = false }
         token.cancel()
         let result = store.confirmQuickArchive(request,to:project)
         if result.failure == nil { close() }
