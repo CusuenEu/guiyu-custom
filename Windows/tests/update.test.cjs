@@ -147,7 +147,7 @@ test("main-process IPC dispatch uses the Windows updater and its matching downlo
 
 function updateUI(invoke) {
   const button = { textContent: "检查更新" }, status = { setAttribute() {} };
-  const source = fs.readFileSync(path.join(__dirname, "../src/ui.cjs"), "utf8");
+  const source = fs.readFileSync(path.join(__dirname, "../src/ui.cjs"), "utf8").replace(/\r\n/g, "\n");
   const start = source.indexOf('  const updateButton = $("#check-update")');
   const end = source.indexOf("\n}\nfunction categoryList", start);
   assert(start >= 0 && end > start);
