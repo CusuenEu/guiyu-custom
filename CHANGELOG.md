@@ -1,0 +1,79 @@
+# 更新日志
+
+[返回首页](README.md) · [全部发行记录](https://github.com/tiduse1988/guiyu/releases) · [开发提交](https://github.com/tiduse1988/guiyu/commits/main/)
+
+这里只汇总已公开发行版本的主要变化；每版完整说明、安装包及校验文件见对应发行页。Mac 与 Windows 独立更新，源码提交不等于安装包发布。
+
+## Mac
+
+### 20261102(01)
+
+- 新增“确认并归档”和 ⌘C 文件复制。
+- 提供 DMG 拖入安装，修复归档误推荐及更新安装退出问题。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/v20261102-01)
+
+### 20261101(01)
+
+- 智能命名新增 PDF／图片双栏预览、框选识别、缩放与旋转。
+- 识别文字可编辑、选用部分内容，本机完成 OCR。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/v20261101-01)
+
+### 20261031(04)
+
+- 命名默认仅使用完整标题；读取前两页，新增 Excel 表头候选。
+- 新增可点击项目内路径、窗口尺寸记忆，并精简来源列表。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/v20261031-04)
+
+### 20261031(02)
+
+- 新增命名格式设置、分类规则导入及操作图解。
+- 完善多目录、三级名称搜索及确认归档流程。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/v20261031-02)
+
+### 0.5.0
+
+- 首个 GitHub 公开发行版，MIT 开源。
+- 提供三栏文件管理、本地名称索引及内置更新。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/v0.5.0)
+
+## Windows
+
+### 20261102(04)
+
+- 修复资源管理器右键智能命名／归档将启动参数误当路径的问题。
+- 完善应用已运行时的文件交接，兼容中文、空格及特殊字符路径。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-04)
+
+### 20261102(03)
+
+- 统一目录选择和多选行为，双击文件夹在应用内浏览。
+- 修复空目录入口、未设置分类的浏览及来源关联。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-03)
+
+### 20261102(02)
+
+- 单个及批量智能命名新增“确认并归档”。
+- 命名成功后打开归档窗口，再次确认后才移动。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-02)
+
+### 20261102(01)
+
+- 安装包新增桌面图标和文件／文件夹右键入口。
+- 默认来源提供下载和桌面，支持文件复制及独立版本更新检查。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-01)
+
+### 20261031(05) · 测试版
+
+- 提供 32 位、64 位测试版安装包。
+- 支持本地 PDF 和图片文字识别。
+
+[完整发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261031-05)
