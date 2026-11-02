@@ -29,6 +29,7 @@ async function run() {
       const deadline = Date.now()+150000;
       let status;
       while (Date.now()<deadline) {
+        if (exitCode !== undefined && exitCode !== 0) throw Error(`Update process exited before handoff: ${exitCode}`);
         for(const name of (await fs.readdir(temp)).filter(n=>n.startsWith("Guiyu-update-"))) {
           const dir=path.join(temp,name);
           try { helperPid=JSON.parse((await fs.readFile(path.join(dir,'ready.json'),'utf8')).replace(/^\uFEFF/,'')).pid; } catch {}

@@ -61,15 +61,20 @@ function createInstallerUpdater({ fetch, app, progress = () => {}, launch = laun
   };
 }
 async function launchHelper(helper, manifest, readyFile) {
+  const logFile = path.join(path.dirname(manifest), "helper.log"), log = await fs.open(logFile, "a");
+  let error, stopped = false, exitCode;
   const child = spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper, "-Manifest", manifest],
-    { detached: true, windowsHide: true, stdio: "ignore" });
-  let error, stopped = false;
+    { detached: true, windowsHide: true, stdio: ["ignore", log.fd, log.fd] });
   child.once("error", e => { error = e; });
-  child.once("exit", () => { stopped = true; });
+  child.once("exit", code => { stopped = true; exitCode = code; });
+  await log.close();
   for (let i = 0; i < 300; i++) {
     try { const ready = JSON.parse((await fs.readFile(readyFile, "utf8")).replace(/^\uFEFF/, "")); if (ready.pid === child.pid) { child.unref(); return; } }
     catch {}
-    if (error || stopped) throw Error("无法启动更新安装程序，归屿仍保持运行，请重试。");
+    if (error || stopped) {
+      const detail = error?.message || (await fs.readFile(logFile, "utf8").catch(() => "")).trim().slice(-1200);
+      throw Error(`无法启动更新安装程序（${exitCode ?? "启动失败"}），归屿仍保持运行：${detail}`);
+    }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   child.kill();

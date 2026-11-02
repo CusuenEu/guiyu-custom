@@ -35,3 +35,15 @@ test("automatic updater hands off only the matching architecture and exact selec
     openExternal:()=>{throw Error('Unexpected browser download')},install:async p=>{calls.push(p);return{automatic:true}}});
   assert.equal((await updater.check()).automatic,true); assert.equal((await updater.download()).automatic,true); assert.equal(calls[0].url,update.url);assert.equal(calls[0].packageVersion,'2026.1102.6');
 });
+test("the real Windows PowerShell helper verifies the package and acknowledges readiness before exit", {skip:process.platform!=="win32"||process.env.CI!=="true"}, async t=>{
+  const f=await fixture(t,{launch:undefined});
+  let helperPid;
+  try {
+    const result=await f.install(update); assert.equal(result.automatic,true);
+    const name=(await fs.readdir(f.dir)).find(n=>n.startsWith('Guiyu-update-'));
+    const ready=JSON.parse((await fs.readFile(path.join(f.dir,name,'ready.json'),'utf8')).replace(/^\uFEFF/,''));
+    helperPid=ready.pid; assert(helperPid>0); await f.exited;
+  } finally {
+    if(helperPid) try{require('node:child_process').execFileSync('taskkill',['/PID',String(helperPid),'/T','/F'],{stdio:'ignore'});}catch{}
+  }
+});
