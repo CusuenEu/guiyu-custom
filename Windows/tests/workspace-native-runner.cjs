@@ -21,6 +21,7 @@ async function prepare() {
   app.setPath("desktop", desktopAlias);
   await fs.writeFile(path.join(desktopFolder, "桌面文档.txt"), "desktop");
   await fs.writeFile(path.join(first, "甲文档.txt"), "first");
+  await fs.writeFile(path.join(root, "根目录散放文档.txt"), "root document");
   await fs.mkdir(path.join(first, "附件")); await fs.writeFile(path.join(first, "附件/内部.txt"), "nested");
   await fs.writeFile(path.join(second, "乙文档.txt"), "second");
   await fs.writeFile(path.join(direct, "下载文档.txt"), "download");
@@ -38,6 +39,25 @@ async function check(win) {
   const wait = (condition, timeout = 15000) => evalUI(`new Promise((resolve,reject)=>{const until=Date.now()+${timeout};const poll=()=>{if(${condition})return resolve(true);if(Date.now()>until)return reject(Error('UI wait timed out: '+${JSON.stringify(condition)}));setTimeout(poll,20)};poll()})`);
   const content = name => `document.querySelector('#files').textContent.includes(${JSON.stringify(name)})`;
   await wait("document.querySelectorAll('[data-dir]').length>0");
+  const rootFile = path.join(root, "根目录散放文档.txt");
+  assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("rail-file",rootFile))})`), "Linked location must list its immediate files in the left rail");
+  const drag = (from, to, after) => evalUI(`(()=>{
+    const a=document.querySelector(${JSON.stringify(from)}),b=document.querySelector(${JSON.stringify(to)}), transfer=new DataTransfer();
+    if(!a||!b)throw Error('Missing drag row');
+    a.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+    const target=a.dataset.orderKind==='root'?b.closest('[data-root-group]'):b,rect=target.getBoundingClientRect();
+    b.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer,clientY:rect.top+rect.height*${after?0.8:0.2}}));
+    if(!target.classList.contains(${JSON.stringify(after?'insert-after':'insert-before')}))throw Error('Missing visible insertion line before drop');
+    b.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientY:rect.top+rect.height*${after?0.8:0.2}}));
+    a.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));
+  })()`);
+  await drag(row('dir',root),row('dir',empty),true);
+  await wait(`document.querySelector('[data-root-group]').dataset.rootGroup===${JSON.stringify(empty)}`);
+  await drag(row('rail-file',rootFile),row('dir',year),false);
+  await wait(`document.querySelector(${JSON.stringify(row('root-group',root))}).querySelector('[data-order-kind="entry"]').dataset.orderPath===${JSON.stringify(rootFile)}`);
+  await click('#refresh');
+  await wait(`document.querySelector('[data-root-group]').dataset.rootGroup===${JSON.stringify(empty)}`);
+  assert(await evalUI(`document.querySelector(${JSON.stringify(row('root-group',root))}).querySelector('[data-order-kind="entry"]').dataset.orderPath===${JSON.stringify(rootFile)}`), "Mixed file/folder order must persist after refresh");
   assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("dir", empty))})`), "Empty association must be visible");
   await click(row("dir", empty));
   assert(await evalUI("document.querySelector('#projects').textContent.includes('为空')"));
@@ -112,6 +132,15 @@ async function check(win) {
     });
     await wait(type === "--smart-name" ? "!!document.querySelector('#name-stem')" : "!!document.querySelector('#archive-query')", 45000);
     assert(await evalUI("document.querySelector('#modal').textContent.includes('右键 中文 & $1 文件夹')"));
+    if(type==='--smart-archive') {
+      assert(await evalUI("document.querySelector('#archive-projects').textContent.includes('暂无可靠推荐')"));
+      await evalUI("document.querySelector('#archive-query').value='甲项目';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
+      await wait(`!!document.querySelector(${JSON.stringify(row('target',first))})`);
+      await click(row('target',first));
+      assert(await evalUI("!document.querySelector('#confirm').disabled"));
+      await evalUI("document.querySelector('#archive-query').value='';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
+      assert(await evalUI("document.querySelector('#confirm').disabled&&document.querySelector('#archive-projects').textContent.includes('暂无可靠推荐')"));
+    }
     await evalUI("document.querySelector('#modal [data-cancel]').click()");
     await wait("!document.querySelector('#modal').open");
     assert.equal(await fs.readFile(originalFile, "utf8"), "unchanged");
@@ -119,6 +148,7 @@ async function check(win) {
   assert.deepEqual(externalOpens, [], "Folder interactions must never launch Explorer");
   console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, overlapping sources, redirected Desktop, rename/archive-cancel selection, empty association and refresh");
   console.log("PASS Explorer: real second-instance smart naming/archive with Chromium switches and Chinese/space/special-character paths");
+  console.log("PASS rail/archive: immediate files, root and mixed child order, insertion lines before release, persisted refresh, empty recommendations and independent manual search");
 }
 let tested = false;
 app.on("browser-window-created", (event, win) => {

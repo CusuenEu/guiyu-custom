@@ -16,7 +16,7 @@ const key = (p) =>
     ? path.resolve(p).toLowerCase()
     : path.resolve(p);
 const inside = (p, root) =>
-  key(p) === key(root) || key(p).startsWith(key(root) + path.sep);
+  key(p) === key(root) || key(p).startsWith(key(root).endsWith(path.sep) ? key(root) : key(root) + path.sep);
 const overlap = (a, b) => inside(a, b) || inside(b, a);
 async function exists(p) {
   try {
@@ -458,17 +458,20 @@ class Store {
     for (const root of this.settings.roots) {
       try {
         const rootEntries = await list(root);
-        snapshot.rootEntries.push(...rootEntries.map(e => ({ ...e, directory: root })));
-        const dirs = rootEntries.filter((e) => e.folder);
         const order = this.settings.directoryOrders[root] || [];
-        dirs.sort(
+        rootEntries.sort(
           (a, b) =>
             (order.indexOf(a.path) < 0 ? 9999 : order.indexOf(a.path)) -
               (order.indexOf(b.path) < 0 ? 9999 : order.indexOf(b.path)) ||
             a.name.localeCompare(b.name, "zh"),
         );
+        snapshot.rootEntries.push(...rootEntries.map(e => ({ ...e, directory: root })));
+        const dirs = rootEntries.filter((e) => e.folder);
         for (const dir of dirs) {
           snapshot.directories.push({ ...dir, root });
+          // A linked drive is a shallow view, not an eager scan of every project
+          // on the disk. Its selected folders are read through browse/list.
+          if (root === path.parse(root).root) continue;
           try {
             const projects = await list(dir.path);
             snapshot.rootFiles.push(...projects.map(e => ({ ...e,
@@ -537,7 +540,6 @@ class Store {
       if (!(await entry(p)).folder) throw Error("请选择文件夹。");
       if (next.roots.some((r) => key(r) === key(p))) continue;
       if (
-        p === path.parse(p).root ||
         next.roots.some((r) => overlap(r, p))
       )
         throw Error("项目总目录不能相互嵌套。");

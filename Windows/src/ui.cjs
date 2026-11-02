@@ -47,6 +47,7 @@ let data,
   dragDir = null,
   working = false;
 let apiQueue = Promise.resolve();
+let directoryRows = null, directoryPath = "", railFile = "";
 const api = (method, arg) => {
   if (!window.guiyu) throw Error("请从归屿应用启动。");
   const request = apiQueue.then(() => window.guiyu.invoke(method, arg));
@@ -98,20 +99,19 @@ function apply(d) {
   render();
 }
 function rail() {
-  let roots = data.settings.roots,
-    dirs = data.snapshot.directories;
+  const roots = data.settings.roots;
   $("#directories").innerHTML =
     roots
       .map(
         (root) =>
-          `<button data-dir="${esc(root)}" class="root-entry ${!source && dir === root ? "active" : ""}" title="${esc(root)}">${folder}<span>${esc(basename(root) || root)}</span></button>` +
-          dirs
-            .filter((d) => d.root === root)
+          `<section class="root-group" data-root-group="${esc(root)}"><button data-dir="${esc(root)}" data-order-path="${esc(root)}" data-order-root="${esc(root)}" data-order-kind="root" draggable="true" class="root-entry ${!source && dir === root && !railFile ? "active" : ""}" title="${esc(root)} · 拖动调整关联位置顺序">${folder}<span>${esc(basename(root) || root)}</span></button><div class="rail-children">` +
+          (data.snapshot.rootEntries || [])
+            .filter((d) => d.directory === root)
             .map(
               (d) =>
-                `<button data-dir="${esc(d.path)}" draggable="true" class="nested-dir ${!source && dir === d.path ? "active" : ""}" title="${esc(d.path)}">${folder}<span>${esc(d.name)}</span></button>`,
+                `<button ${d.folder ? `data-dir="${esc(d.path)}"` : `data-rail-file="${esc(d.path)}"`} data-order-path="${esc(d.path)}" data-order-root="${esc(root)}" data-order-kind="entry" draggable="true" class="nested-dir ${!source && (dir === d.path || railFile === d.path) ? "active" : ""}" title="${esc(d.path)} · 拖动调整顺序">${icon(d)}<span>${esc(d.name)}</span></button>`,
             )
-            .join(""),
+            .join("") + (data.snapshot.unavailable.includes(root) ? '<p class="root-label">暂时无法读取，请检查磁盘或权限</p>' : !(data.snapshot.rootEntries || []).some(e => e.directory === root) ? '<p class="root-label">此关联位置为空</p>' : '') + '</div></section>',
       )
       .join("") || '<div class="root-label">关联项目总目录开始使用</div>';
   $("#sources").innerHTML = data.settings.sources
@@ -137,6 +137,7 @@ function relevance(e) {
 let visibleRows = [], middleRows = [], fileRows = [];
 let folderLoading = false, folderError = "";
 function projectEntries(snapshot = data.snapshot) {
+  if (directoryPath === dir && directoryRows && snapshot === data.snapshot) return directoryRows;
   return [...(snapshot.rootEntries || []), ...snapshot.projects].filter(p => p.directory === dir);
 }
 function fileIndex() { return [...data.snapshot.files, ...(data.snapshot.rootFiles || [])]; }
@@ -352,7 +353,9 @@ async function refresh() {
   let p = project?.path,
     c = current;
   const d = await api("refresh");
+  directoryRows = null; directoryPath = "";
   apply(d);
+  if (!source && dir) { directoryRows = await api("list", { path: dir }); directoryPath = dir; }
   project = projectEntries(d.snapshot).find((e) => e.path === p) || null;
   current = project || source ? c : "";
   await load();
@@ -416,11 +419,14 @@ $("#clear-query").onclick = () => {
   selected.clear();
   render();
 };
-$("#directories").onclick = (e) => {
-  const b = e.target.closest("[data-dir]");
+$("#directories").onclick = async (e) => {
+  const b = e.target.closest("[data-dir], [data-rail-file]");
   if (!b) return;
-  dir = b.dataset.dir;
-  generation++; selectionPane = "projects"; anchor = null; folderError = ""; folderLoading = false;
+  railFile = b.dataset.railFile || "";
+  dir = b.dataset.dir || b.dataset.orderRoot;
+  const gen = ++generation;
+  directoryRows = null; directoryPath = "";
+  selectionPane = "projects"; anchor = null; folderError = ""; folderLoading = false;
   source = null;
   sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; previewLoading = false; sourceGeneration++;
   project = null;
@@ -429,6 +435,21 @@ $("#directories").onclick = (e) => {
   selected.clear();
   rail();
   render();
+  try {
+    const children = await api("list", { path: dir });
+    if (gen !== generation) return;
+    // Normal linked folders already have an indexed direct-child snapshot.
+    // Only use a transient list for lazy drive folders absent from that index.
+    const indexed = [...data.snapshot.rootEntries, ...data.snapshot.projects].filter(p => p.directory === dir);
+    directoryRows = indexed.length || data.settings.roots.includes(dir) ? null : children;
+    directoryPath = directoryRows ? dir : "";
+    if (railFile) selected.add(railFile);
+    render();
+  } catch (error) { if (gen === generation) toast(error.message, true); }
+};
+$("#directories").ondblclick = e => {
+  const file = e.target.closest("[data-rail-file]")?.dataset.railFile;
+  if (file) action(() => api("open", { path: file }));
 };
 $("#sources").onclick = (e) => {
   const b = e.target.closest("[data-source]");
@@ -1031,14 +1052,14 @@ async function archiveDialog(items) {
     target = null;
     $("#confirm").disabled = true;
     let q = $("#archive-query").value;
-    const filtered = results.projects.filter((p) => match(p.name, q));
+    const filtered = results.projects.filter(p => q.trim() ? match(p.name, q) : p.score >= 75);
     $("#archive-projects").innerHTML =
       filtered
         .map(
           (p, i) =>
             `${i === 0 ? `<h3>${q ? "搜索结果" : p.score > 0 ? "匹配项目" : "全部项目"}</h3>` : !q && p.score === 0 && filtered[i - 1]?.score > 0 ? "<h3>其他项目</h3>" : ""}<button class="archive-choice" aria-pressed="false" data-target="${esc(p.path)}" title="${esc(p.evidence)}">${folder}<span class="name-wrap"><span class="name">${esc(p.name)}</span><small>${esc(basename(p.directory))}</small></span><span class="choice-mark" aria-hidden="true"></span></button>`,
         )
-        .join("") || '<p class="muted">没有匹配的项目</p>';
+        .join("") || `<p class="muted">${q.trim() ? "没有搜索到符合名称的项目，请调整关键词。" : "暂无可靠推荐，请输入项目名或关键词自行搜索。"}</p>`;
     if (results.warnings.length)
       $("#dialog-error").textContent = results.warnings.join("\n");
   }
@@ -1075,7 +1096,7 @@ function drawSettings() {
   let s = data.settings,
     content = "";
   if (section === "文件位置") {
-    content = `<h3>项目总目录 <button id="settings-add-root">关联目录…</button></h3>${s.roots.map((r, i) => `<div class="setting-row">${folder}<span class="label">${esc(basename(r))}<small title="${esc(r)}">${esc(r)}</small></span><button data-remove-root="${i}" aria-label="移除关联 ${esc(basename(r))}">−</button></div>`).join("") || '<p class="muted">关联一个或多个项目总目录，开始浏览。</p>'}<p class="muted">左侧展示各总目录下的子文件夹。移除关联会保留原文件。</p><h3>可归档目录 <button id="settings-add-source">关联文件夹…</button></h3>${s.sources.map((r, i) => `<div class="setting-row"><span class="label">${esc(r.name)}<small>${esc(r.path || "关联文件夹")}</small></span><button data-remove-source="${i}">移除关联</button></div>`).join("")}<p><button id="restore-sources">恢复默认入口</button></p><h3>资源管理器快捷入口</h3><p class="muted">右键文件或文件夹可直接使用智能命名、智能归档。移动应用目录后请重新安装入口。</p><button id="install-menu">安装右键入口</button> <button id="remove-menu">移除右键入口</button>`;
+    content = `<h3>项目总目录 <button id="settings-add-root">关联目录…</button></h3>${s.roots.map((r, i) => `<div class="setting-row">${folder}<span class="label">${esc(basename(r))}<small title="${esc(r)}">${esc(r)}</small></span><button data-remove-root="${i}" aria-label="移除关联 ${esc(basename(r))}">−</button></div>`).join("") || '<p class="muted">关联一个或多个项目总目录，开始浏览。</p>'}<p class="muted">可关联整个磁盘或文件夹；左侧显示其中的直接文件和文件夹。拖动分组或条目，横线出现后松手排序。移除关联保留原文件。</p><h3>可归档目录 <button id="settings-add-source">关联文件夹…</button></h3>${s.sources.map((r, i) => `<div class="setting-row"><span class="label">${esc(r.name)}<small>${esc(r.path || "关联文件夹")}</small></span><button data-remove-source="${i}">移除关联</button></div>`).join("")}<p><button id="restore-sources">恢复默认入口</button></p><h3>资源管理器快捷入口</h3><p class="muted">右键文件或文件夹可直接使用智能命名、智能归档。移动应用目录后请重新安装入口。</p><button id="install-menu">安装右键入口</button> <button id="remove-menu">移除右键入口</button>`;
   } else if (section === "文件分类") {
     content = `<form id="add-category" class="setting-form"><input id="category-name" placeholder="新分类名称" aria-label="分类名称" maxlength="40" required><button class="primary">添加分类</button></form><div class="workflow"><h3>分类设置后，请务必按一下操作。 <button id="guides" aria-label="查看操作图解">ⓘ</button></h3><div class="workflow-step"><span class="step-number">1</span><button id="copy-prompt" class="workflow-primary">复制提示词，去豆包官网</button><span id="copy-status"></span></div><div class="workflow-step"><span class="step-number">2</span><span>把提示词发给豆包，复制豆包的回复。</span></div><div class="workflow-step"><span class="step-number">3</span><button id="import-rules">录入豆包回复</button><span id="import-status"></span></div></div><div class="category-search"><span aria-hidden="true">⌕</span><input id="category-query" placeholder="搜索分类" aria-label="搜索分类"><span class="muted">${s.categories.length} 个分类</span></div><div id="category-list">${categoryList("")}</div>`;
   } else if (section === "命名规则") {
@@ -1219,25 +1240,27 @@ function drawSettings() {
   );
   const updateButton = $("#check-update"), updateStatus = $("#update-status");
   updateStatus.setAttribute("role", "status");
-  let updateAvailable = false;
+  let updateAvailable = false, automaticUpdate = false, restarting = false;
   updateButton.onclick = async () => {
     const b = updateButton;
     b.disabled = true;
-    b.textContent = updateAvailable ? "正在打开下载…" : "正在检查…";
+    b.textContent = updateAvailable ? "正在准备更新…" : "正在检查…";
     try {
       if (updateAvailable) {
-        await api("downloadUpdate");
-        updateStatus.textContent = "已打开 Windows 下载链接。下载完成后关闭归屿，再安装或解压新版。";
+        const result = await api("downloadUpdate");
+        updateStatus.textContent = result?.message || "已打开 Windows 下载链接。";
+        restarting = Boolean(result?.automatic);
       } else {
         const r = await api("checkUpdate");
         updateStatus.textContent = r.message;
         updateAvailable = r.status === "available";
+        automaticUpdate = Boolean(r.automatic);
       }
     } catch (e) {
       updateStatus.textContent = e.message;
     } finally {
-      b.textContent = updateAvailable ? "下载更新" : "检查更新";
-      b.disabled = false;
+      b.textContent = restarting ? "正在安装…" : updateAvailable ? automaticUpdate ? "更新并重启" : "下载更新" : "检查更新";
+      b.disabled = restarting;
     }
   };
 }
@@ -1387,26 +1410,52 @@ $("#files").ondragend = () => {
   render();
 };
 $("#directories").ondragstart = (e) => {
-  dragDir = e.target.closest("[data-dir]")?.dataset.dir;
-  e.dataTransfer.setData("application/x-guiyu-dir", dragDir || "");
+  if (working) { e.preventDefault(); return; }
+  const button = e.target.closest("[data-order-path]");
+  if (!button) return;
+  dragDir = { path: button.dataset.orderPath, root: button.dataset.orderRoot, kind: button.dataset.orderKind };
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("application/x-guiyu-dir", JSON.stringify(dragDir));
 };
+function clearRailDrop() {
+  $$("#directories .insert-before, #directories .insert-after").forEach(el => el.classList.remove("insert-before", "insert-after"));
+}
+function railDrop(e) {
+  if (!dragDir) return null;
+  const group = e.target.closest("[data-root-group]");
+  if (!group || (dragDir.kind === "entry" && group.dataset.rootGroup !== dragDir.root)) return null;
+  if (dragDir.kind === "root") {
+    if (group.dataset.rootGroup === dragDir.path) return null;
+    const bounds = group.getBoundingClientRect();
+    return { element: group, path: group.dataset.rootGroup, after: e.clientY >= bounds.top + bounds.height / 2 };
+  }
+  const choices = [...group.querySelectorAll('[data-order-kind="entry"]')];
+  // Nearest-row hit testing includes the visual gaps and space after the last row.
+  const button = choices.find(el => e.clientY < el.getBoundingClientRect().bottom) || choices.at(-1);
+  if (!button || button.dataset.orderPath === dragDir.path) return null;
+  const bounds = button.getBoundingClientRect();
+  return { element: button, path: button.dataset.orderPath, after: e.clientY >= bounds.top + bounds.height / 2 };
+}
 $("#directories").ondragover = (e) => {
-  if (dragDir) e.preventDefault();
+  clearRailDrop();
+  const target = railDrop(e);
+  if (!target) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = "move";
+  target.element.classList.add(target.after ? "insert-after" : "insert-before");
 };
 $("#directories").ondrop = (e) => {
   e.preventDefault();
-  let target = e.target.closest("[data-dir]")?.dataset.dir,
-    from = data.snapshot.directories.find((d) => d.path === dragDir),
-    to = data.snapshot.directories.find((d) => d.path === target);
+  const target = railDrop(e), from = dragDir;
+  clearRailDrop();
   dragDir = null;
-  if (!from || !to || from.root !== to.root || from === to) return;
-  let paths = data.snapshot.directories
-    .filter((d) => d.root === from.root)
-    .map((d) => d.path)
-    .filter((p) => p !== from.path);
-  paths.splice(paths.indexOf(to.path), 0, from.path);
-  action(async () => apply(await api("order", { root: from.root, paths })));
+  if (!target || !from) return;
+  const before = from.kind === "root" ? data.settings.roots : data.snapshot.rootEntries.filter(e => e.directory === from.root).map(e => e.path);
+  const paths = window.GuiyuRailOrder.moved(before, from.path, target.path, target.after);
+  if (!paths || paths.every((p, i) => p === before[i])) return;
+  action(async () => apply(await api(from.kind === "root" ? "orderRoots" : "order", { root: from.root, paths })));
 };
+$("#directories").ondragleave = e => { if (!e.currentTarget.contains(e.relatedTarget)) clearRailDrop(); };
+$("#directories").ondragend = () => { dragDir = null; clearRailDrop(); };
 function dragDivider(el, type) {
   el.addEventListener("pointerdown", (e) => {
     el.setPointerCapture(e.pointerId);
@@ -1569,6 +1618,10 @@ window.guiyu?.onCommand?.((command) => {
   command.type === "--smart-name"
     ? namingDialog(command.items, true)
     : archiveDialog(command.items);
+});
+window.guiyu?.onUpdateProgress?.(value => {
+  const status = $("#update-status");
+  if (status) status.textContent = value.phase === "downloading" ? `正在下载更新 ${value.percent}%` : value.phase === "verifying" ? "正在校验更新包…" : "正在安装，完成后自动重新打开…";
 });
 api("state")
   .then((d) => {

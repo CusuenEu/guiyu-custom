@@ -28,6 +28,8 @@ function selectUpdate(releases, current, arch) {
       const url = `${repository}/releases/download/${encodeURIComponent(release.tag_name)}/${encodeURIComponent(asset.name)}`;
       if (asset.browser_download_url !== url) continue;
       candidates.push({ ...candidate, url, prerelease: Boolean(release.prerelease),
+        digest: asset.digest, size: asset.size,
+        packageVersion: `${Number(match[1].slice(0,4))}.${Number(match[1].slice(4))}.${Number(match[2])}`,
         kind: match[4] === ".zip" ? "zip" : "installer" });
     }
   }
@@ -40,12 +42,14 @@ function selectUpdate(releases, current, arch) {
     message: `暂未发布适用于当前 ${arch === "x64" ? "64" : "32"} 位程序的 Windows 更新包。` };
   if (latest.number <= installed.number) return { status: "current",
     message: `当前 Windows 版本 ${installed.display} 已是最新发布版本。` };
+  const automatic = latest.kind === "installer" && /^sha256:[a-f0-9]{64}$/i.test(latest.digest || "") && Number.isSafeInteger(latest.size) && latest.size > 0 && latest.size <= 600 * 1024 * 1024;
   return { status: "available", url: latest.url, version: latest.display,
-    kind: latest.kind,
-    message: `发现 Windows 新版本 ${latest.display}（当前 ${installed.display}）。${latest.kind === "installer" ? "下载后关闭归屿，再运行安装包更新。" : "下载后关闭归屿，解压到新文件夹并运行。"}` };
+    kind: latest.kind, digest: latest.digest, size: latest.size, packageVersion: latest.packageVersion,
+    automatic,
+    message: `发现 Windows 新版本 ${latest.display}（当前 ${installed.display}）。${automatic ? "点击更新后将自动下载、校验、安装并重新打开归屿。" : "此历史版本仅支持手动下载更新。"}` };
 }
 
-function createUpdater({ fetch, openExternal, current, arch, timeout = 15000 }) {
+function createUpdater({ fetch, openExternal, install, current, arch, timeout = 15000 }) {
   let pending;
   return {
     async check() {
@@ -78,9 +82,10 @@ function createUpdater({ fetch, openExternal, current, arch, timeout = 15000 }) 
     },
     async download() {
       if (!pending) throw Error("请先检查更新，确认有可用的 Windows 新版本。");
+      if (pending.automatic && install) return install(pending);
       // Only open the exact official asset selected in the main process.
       await openExternal(pending.url);
-      return true;
+      return { automatic: false, message: "已打开下载链接，此历史更新包需手动安装。" };
     },
   };
 }

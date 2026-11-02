@@ -67,7 +67,11 @@ FunctionEnd
 Section "安装"
   SetShellVarContext current
   SetOutPath "$INSTDIR"
+  ClearErrors
   File /r "${escape(appDir)}\\*"
+  IfErrors 0 +3
+  SetErrorLevel 1
+  Abort "安装文件无法写入，请关闭归屿后重试。"
   WriteUninstaller "$INSTDIR\\卸载归屿.exe"
   CreateDirectory "$SMPROGRAMS\\归屿"
   CreateShortcut "$SMPROGRAMS\\归屿\\归屿.lnk" "$INSTDIR\\Guiyu.exe"

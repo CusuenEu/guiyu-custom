@@ -32,6 +32,10 @@ const updater = require("./update.cjs").createUpdater({
   openExternal: (url) => shell.openExternal(url),
   current: require("../version.json"),
   arch: process.arch,
+  install: update => require("./install-update.cjs").createInstallerUpdater({
+    app, fetch: (url, options) => net.fetch(url, options),
+    progress: value => win?.webContents.send("guiyu-update-progress", value),
+  })(update),
 });
 let store,
   win,
@@ -193,15 +197,25 @@ async function dispatch(method, arg = {}) {
       await store.save(next);
       return true;
     }
+    case "orderRoots": {
+      if (!Array.isArray(arg.paths) || arg.paths.length !== store.settings.roots.length ||
+          new Set(arg.paths).size !== arg.paths.length || arg.paths.some(p => !store.settings.roots.includes(p)))
+        throw Error("项目总目录顺序无效，请刷新后重试。");
+      await store.save({ ...store.settings, roots: arg.paths });
+      await store.refresh();
+      return state();
+    }
     case "order": {
       let next = structuredClone(store.settings);
       if (
         !next.roots.includes(arg.root) ||
         !Array.isArray(arg.paths) ||
+        new Set(arg.paths).size !== arg.paths.length ||
+        arg.paths.length !== store.snapshot.rootEntries.filter(e => e.directory === arg.root).length ||
         arg.paths.some(
           (p) =>
-            !store.snapshot.directories.some(
-              (d) => d.root === arg.root && d.path === p,
+            !store.snapshot.rootEntries.some(
+              (d) => d.directory === arg.root && d.path === p,
             ),
         )
       )
@@ -327,47 +341,21 @@ async function dispatch(method, arg = {}) {
       }
     }
     case "archiveSuggest": {
-      let texts = arg.items.map((e) => e.name).join(" "),
-        projects = [...new Map([...store.snapshot.rootEntries, ...store.snapshot.projects]
-          .filter(p => p.folder).map(p => [p.path, p])).values()];
-      function ranked() {
-        return projects
-          .map((p) => {
-            let words =
-              p.name
-                .replace(/^\d+月\s*/, "")
-                .match(/[\p{Script=Han}]{2,}|[a-zA-Z]{3,}/gu) || [];
-            let score = words.reduce(
-              (s, w) => s + (texts.includes(w) ? w.length : 0),
-              0,
-            );
-            for (const w of texts.match(/[\p{Script=Han}]{2,}/gu) || [])
-              for (let i = 0; i < w.length - 1; i++)
-                if (p.name.includes(w.slice(i, i + 2))) score++;
-            return {
-              ...p,
-              score,
-              evidence: score ? "名称／文档开头关键词匹配" : "可手动选择",
-            };
-          })
-          .sort((a, b) => b.score - a.score);
-      }
-      let result = ranked(),
-        warnings = [];
-      if (!result[0]?.score || result[0].score === result[1]?.score) {
+      const texts = arg.items.map(e => e.name);
+      const projects = [...new Map([...store.snapshot.rootEntries, ...store.snapshot.projects]
+        .filter(p => p.folder).map(p => [p.path, p])).values()];
+      const { rank } = require("./archive-match.cjs");
+      let result = rank(projects, texts);
+      const warnings = [];
+      if (!result.some(p => p.score >= 75)) {
         for (const e of arg.items) {
-          await store.guard(e.path);
-          await verify(e);
+          await store.guard(e.path); await verify(e);
           try {
-            let docs = e.folder
-              ? (await list(e.path)).filter((x) => !x.folder).slice(0, 2)
-              : [e];
-            for (const d of docs) texts += " " + (await extract(d, 2));
-          } catch (err) {
-            warnings.push(err.message);
-          }
+            const docs = e.folder ? (await list(e.path)).filter(x => !x.folder).slice(0, 2) : [e];
+            for (const d of docs) texts.push(await extract(d, 2));
+          } catch (error) { warnings.push(error.message); }
         }
-        result = ranked();
+        result = rank(projects, texts);
       }
       return { projects: result, warnings };
     }
