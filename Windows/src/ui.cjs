@@ -983,6 +983,7 @@ async function namingDialog(items, smart) {
       if (!namingPanel.isConnected || !modalElement.open) return;
       for (const p of plans) if (selected.delete(p.entry.path))
         selected.add(p.entry.path.slice(0, p.entry.path.length - p.entry.name.length) + p.name);
+      const renamedSelection = [...selected];
       for (const p of plans) if (p.entry.folder) {
         const target = p.entry.path.slice(0, p.entry.path.length - p.entry.name.length) + p.name;
         if (project?.path === p.entry.path) project = [...(result.snapshot.rootEntries || []), ...result.snapshot.projects].find((x) => x.path === target) || null;
@@ -992,6 +993,8 @@ async function namingDialog(items, smart) {
       }
       apply(result);
       try { await load(); } catch (e) { toast(`命名已完成，列表刷新失败：${e.message}`, true); }
+      selected = new Set(renamedSelection.filter(p => visibleRows.some(e => e.path === p)));
+      syncSelection();
       if (andArchive) {
         if (!result.renamedItems?.length) throw Error("命名已完成，但未能取得归档文件信息，请关闭窗口后重新选择。");
         modalElement.removeEventListener("cancel", preventPendingCancel);

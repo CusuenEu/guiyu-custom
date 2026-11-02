@@ -60,11 +60,23 @@ async function check(win) {
   await wait(content("乙文档.txt"));
   await click('[data-source="downloads"]');
   await wait(`!!document.querySelector(${JSON.stringify(row("project", direct))})`);
+  await click(row("project", root)); await wait(content("空可归档目录"));
+  assert(await evalUI(content("2026")), "A linked project root inside Downloads must remain browsable as a source folder");
   await click(row("project", direct)); await wait(content("下载文档.txt"));
   await evalUI(`document.querySelector(${JSON.stringify(row("project", direct))}).dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))`);
   await wait("document.activeElement.id==='files'");
   assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("project", direct))})`), "Source double-click must keep middle folder list");
   assert(await evalUI(content("下载文档.txt")));
+  await evalUI(`document.querySelector(${JSON.stringify(row("project", direct))}).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:100}))`);
+  await evalUI("[...document.querySelectorAll('#context button')].find(b=>b.textContent==='智能命名…').click()");
+  await wait("!!document.querySelector('#name-stem')", 45000);
+  await evalUI("const input=document.querySelector('#name-stem');input.value='下载新名称';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#confirm-archive').click()");
+  await wait("!!document.querySelector('#archive-query')", 45000);
+  assert(await evalUI("document.querySelector('.file-summary').textContent.includes('下载新名称')"));
+  await evalUI("document.querySelector('#modal [data-cancel]').click()");
+  const renamedSource = path.join(downloads, '下载新名称');
+  assert.equal(await fs.readFile(path.join(renamedSource, '下载文档.txt'), 'utf8'), 'download');
+  assert(await evalUI(`document.querySelector(${JSON.stringify(row("project", renamedSource))})?.getAttribute('aria-selected')==='true'`), "Rename/archive-cancel must preserve the selected middle folder");
   await click('[data-source="linked"]');
   await wait("document.querySelector('#status').textContent==='本地工作空间'");
   assert(await evalUI("document.querySelector('#projects').textContent.includes('为空')"));
@@ -77,7 +89,7 @@ async function check(win) {
   await click(row("project", path.join(empty, "新文件夹")));
   await wait("document.querySelector('#files').textContent.includes('没有内容')");
   assert.deepEqual(externalOpens, [], "Folder interactions must never launch Explorer");
-  console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, sources, empty association and refresh");
+  console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, overlapping sources, rename/archive-cancel selection, empty association and refresh");
 }
 let tested = false;
 app.on("browser-window-created", (event, win) => {
