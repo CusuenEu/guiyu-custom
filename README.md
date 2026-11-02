@@ -55,10 +55,10 @@
 | 系统 | 当前版本 | 下载 |
 | --- | --- | --- |
 | macOS 13+ · Apple Silicon（M1/M2/M3/M4 等） | 20261102(01) | [DMG 安装包](https://github.com/tiduse1988/guiyu/releases/download/v20261102-01/Guiyu-20261102-01-macOS-arm64.dmg) · [ZIP](https://github.com/tiduse1988/guiyu/releases/download/v20261102-01/Guiyu-20261102-01-macOS-arm64.zip) |
-| Windows 10 / Windows 11 · 64 位（x64） | 20261102(03) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-03/Guiyu-20261102-03-Windows-x64-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-03/Guiyu-20261102-03-Windows-x64.zip) |
-| Windows 10 · 32 位（x86） | 20261102(03) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-03/Guiyu-20261102-03-Windows-ia32-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-03/Guiyu-20261102-03-Windows-ia32.zip) |
+| Windows 10 / Windows 11 · 64 位（x64） | 20261102(04) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-04/Guiyu-20261102-04-Windows-x64-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-04/Guiyu-20261102-04-Windows-x64.zip) |
+| Windows 10 · 32 位（x86） | 20261102(04) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-04/Guiyu-20261102-04-Windows-ia32-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-04/Guiyu-20261102-04-Windows-ia32.zip) |
 
-[Mac 发行记录](https://github.com/tiduse1988/guiyu/releases/latest) · [Windows 发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-03) · [全部版本](https://github.com/tiduse1988/guiyu/releases) · [源代码](https://github.com/tiduse1988/guiyu)
+[Mac 发行记录](https://github.com/tiduse1988/guiyu/releases/latest) · [Windows 发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-04) · [全部版本](https://github.com/tiduse1988/guiyu/releases) · [源代码](https://github.com/tiduse1988/guiyu)
 
 ### macOS 安装
 
