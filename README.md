@@ -36,10 +36,10 @@
 | 系统 | 已发布版本 | 安装包 |
 | --- | --- | --- |
 | macOS 13+ · Apple Silicon（M 系列） | 20261102(01) | [下载 DMG](https://github.com/tiduse1988/guiyu/releases/download/v20261102-01/Guiyu-20261102-01-macOS-arm64.dmg) |
-| Windows 10 / 11 · 64 位 | 20261102(06) · 测试版 | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-06/Guiyu-20261102-06-Windows-x64-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-06/Guiyu-20261102-06-Windows-x64.zip) |
-| Windows 10 · 32 位 | 20261102(06) · 测试版 | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-06/Guiyu-20261102-06-Windows-ia32-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-06/Guiyu-20261102-06-Windows-ia32.zip) |
+| Windows 10 / 11 · 64 位 | 20261102(06) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-06/Guiyu-20261102-06-Windows-x64-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-06/Guiyu-20261102-06-Windows-x64.zip) |
+| Windows 10 · 32 位 | 20261102(06) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-06/Guiyu-20261102-06-Windows-ia32-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-06/Guiyu-20261102-06-Windows-ia32.zip) |
 
-Windows 06 测试版包含目录拖动排序、盘符关联和归档匹配改进；双架构测试、安装卸载和界面回归已通过，自动更新仍存在等待旧程序退出超时的问题，请手动下载安装。[06 发行说明与校验文件](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-06) · [04 稳定版](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-04)。
+Windows 06 正式版包含目录拖动排序、盘符关联和归档匹配改进；双架构测试、安装卸载和界面回归已通过，自动更新仍存在等待旧程序退出超时的问题，04 客户端可通过“检查更新”下载，关闭归屿后运行安装包完成升级。[06 发行说明与校验文件](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-06) · [04 历史版](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-04)。
 
 Mac 打开 DMG 后拖入“应用程序”；Windows 双击安装包。ZIP 解压版及历史版本见[全部发行版本](https://github.com/tiduse1988/guiyu/releases)。
 
