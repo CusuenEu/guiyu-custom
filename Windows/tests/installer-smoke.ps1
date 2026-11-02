@@ -21,7 +21,12 @@ foreach ($installer in $installers) {
   if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $exe)) { throw "Install failed: $arch" }
   if (!(Test-Path -LiteralPath $shortcutPath)) { throw 'Missing desktop shortcut.' }
   $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
-  if ($link.TargetPath -ne $exe -or $link.IconLocation -ne ($exe + ',0')) { throw 'Wrong desktop shortcut target/icon.' }
+  Write-Host "Shortcut target=[$($link.TargetPath)] icon=[$($link.IconLocation)] expected=[$exe]"
+  $comma = $link.IconLocation.LastIndexOf(',')
+  if ($comma -lt 0) { throw 'Missing shortcut icon index.' }
+  $iconPath = $link.IconLocation.Substring(0, $comma).Trim().Trim('"')
+  $iconIndex = [int]$link.IconLocation.Substring($comma + 1).Trim()
+  if ($link.TargetPath -ne $exe -or $iconPath -ne $exe -or $iconIndex -ne 0) { throw 'Wrong desktop shortcut target/icon.' }
   foreach ($kind in @('*','Directory')) {
     foreach ($action in $actions) {
       $key = $registry.OpenSubKey("Software\Classes\$kind\shell\$($action[0])")
