@@ -51,10 +51,10 @@
 | 系统 | 当前版本 | 下载 |
 | --- | --- | --- |
 | macOS 13+ · Apple Silicon（M1/M2/M3/M4 等） | 20261101(01) | [下载 Mac 版（ZIP）](https://github.com/tiduse1988/guiyu/releases/download/v20261101-01/Guiyu-20261101-01-macOS-arm64.zip) |
-| Windows 10 / Windows 11 · 64 位（x64） | 20261102(02) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-02/Guiyu-20261102-02-Windows-x64-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-02/Guiyu-20261102-02-Windows-x64.zip) |
-| Windows 10 · 32 位（x86） | 20261102(02) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-02/Guiyu-20261102-02-Windows-ia32-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-02/Guiyu-20261102-02-Windows-ia32.zip) |
+| Windows 10 / Windows 11 · 64 位（x64） | 20261102(03) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-03/Guiyu-20261102-03-Windows-x64-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-03/Guiyu-20261102-03-Windows-x64.zip) |
+| Windows 10 · 32 位（x86） | 20261102(03) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-03/Guiyu-20261102-03-Windows-ia32-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-03/Guiyu-20261102-03-Windows-ia32.zip) |
 
-[Mac 发行记录](https://github.com/tiduse1988/guiyu/releases/latest) · [Windows 发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-02) · [全部版本](https://github.com/tiduse1988/guiyu/releases) · [源代码](https://github.com/tiduse1988/guiyu)
+[Mac 发行记录](https://github.com/tiduse1988/guiyu/releases/latest) · [Windows 发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-03) · [全部版本](https://github.com/tiduse1988/guiyu/releases) · [源代码](https://github.com/tiduse1988/guiyu)
 
 ### macOS 安装
 
@@ -69,6 +69,8 @@
 安装包会自动创建桌面“归屿”启动图标，并为文件、文件夹加入“归屿-智能命名”“归屿-智能归档”右键菜单（Windows 11 中可能位于“显示更多选项”）。ZIP 解压版请完整解压后运行 `Guiyu.exe`，右键入口可在设置中安装。
 
 智能命名弹框新增“确认并归档”，位于“取消”和“确认重命名”之间。先完成命名，成功后用新路径打开归档弹框，选择项目并确认后才移动；命名失败不进入归档。单个及批量智能命名均支持。
+
+Windows 中栏单击文件夹即可选中并显示右侧内容，支持 Ctrl／Shift 多选和方向键；双击在应用内浏览。空关联目录始终保留入口，未设置分类也可查看文件；下载、桌面中的子文件夹可以关联为项目目录。
 
 Windows 可归档目录默认提供“下载”和“桌面”，升级时替换旧“最近使用”入口，保留自定义关联。选中文档或文件夹按 `Ctrl+C` 复制，可到资源管理器 `Ctrl+V` 粘贴；输入框仍支持复制文字。更新时下载新版后关闭程序，再安装或解压。完整说明见 [Windows 使用说明](Windows/README.md)。
 
