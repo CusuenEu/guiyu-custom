@@ -96,6 +96,7 @@ struct ArchiveSourcePane: View {
     @State private var rows: [BrowserRow] = []; @State private var selected: String?; @State private var selections = Set<String>()
     @State private var folder = ""; @State private var loading = false; @State private var error = ""; @State private var generation = UUID(); @State private var recent: RecentFilesQuery?
     @State private var quick: QuickArchiveRequest?; @State private var rename: NamingTarget?; @State private var manual: NamingTarget?; @State private var batch: BatchNamingRequest?
+    @State private var archiveAfterNaming:QuickArchiveRequest?
     var filtered: [BrowserRow] { rows }
     var body: some View {
         VStack(alignment:.leading,spacing:0) {
@@ -120,7 +121,9 @@ struct ArchiveSourcePane: View {
         .onChange(of:store.settings.renames?.count) { _ in load() }
         .alert("操作未完成",isPresented:Binding(get:{!store.error.isEmpty && quick == nil && rename == nil && manual == nil && batch == nil},set:{if !$0 { store.error = "" }})) { Button("知道了") { store.error = "" } } message: { Text(store.error) }
         .sheet(item:$quick) { QuickArchiveDialog(store:store,request:$0) }
-        .sheet(item:$rename) { RenameDialog(store:store,target:$0) }
+        .sheet(item:$rename,onDismiss:{
+            if let request = archiveAfterNaming { archiveAfterNaming = nil;quick = request }
+        }) { RenameDialog(store:store,target:$0,onArchive:{archiveAfterNaming = $0}) }
         .sheet(item:$manual) { DirectRenameDialog(store:store,target:$0) }
         .sheet(item:$batch) { BatchRenameDialog(store:store,request:$0) }
     }

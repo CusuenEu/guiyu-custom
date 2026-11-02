@@ -33,7 +33,12 @@ cp -f .build/checkouts/GRDB.swift/LICENSE 'dist/归屿.app/Contents/Resources/GR
 cat > 'dist/归屿.app/Contents/Info.plist' <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Guiyu</string><key>CFBundleIdentifier</key><string>local.guiyu.workspace</string><key>CFBundleName</key><string>归屿</string><key>CFBundleDisplayName</key><string>归屿</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleInfoDictionaryVersion</key><string>6.0</string><key>LSMinimumSystemVersion</key><string>13.0</string><key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string></dict></plist>
 PLIST
-/usr/libexec/PlistBuddy -c 'Merge Resources/FinderServices.plist' 'dist/归屿.app/Contents/Info.plist'
+# Disable service declarations for a manual development build when requested.
+case "${GUIYU_FINDER_SERVICES:-1}" in
+  1) /usr/libexec/PlistBuddy -c 'Merge Resources/FinderServices.plist' 'dist/归屿.app/Contents/Info.plist' ;;
+  0) ;;
+  *) print -u2 'GUIYU_FINDER_SERVICES must be 0 or 1'; exit 1 ;;
+esac
 if [[ -f dist/AppIcon.icns ]]; then
 cp dist/AppIcon.icns 'dist/归屿.app/Contents/Resources/AppIcon.icns'
 /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon.icns' 'dist/归屿.app/Contents/Info.plist'
@@ -60,4 +65,4 @@ UPDATE_PLIST
 python3 scripts/test_version.py
 codesign --force --deep --sign - 'dist/归屿.app'
 codesign --verify --deep --strict 'dist/归屿.app' 
-'dist/归屿.app/Contents/MacOS/Guiyu' --self-test
+python3 scripts/run-isolated-self-tests.py 'dist/归屿.app'

@@ -77,6 +77,7 @@ import Sparkle
     }
     func updater(_ updater:SPUUpdater,didFindValidUpdate item:SUAppcastItem) { found(item.displayVersionString) }
     func updaterDidNotFindUpdate(_ updater:SPUUpdater) { noUpdate() }
+    func updater(_ updater:SPUUpdater,didAbortWithError error:Error) { finish(error) }
     func updater(_ updater:SPUUpdater,didFinishUpdateCycleFor updateCheck:SPUUpdateCheck,error:Error?) { finish(error) }
 
     // Isolated fixtures inject commands so preview/self-tests never start an update session.
@@ -100,7 +101,7 @@ import Sparkle
     static func selfTest() throws {
         var probes = 0, installs = 0
         let model = AppUpdater(commands:Commands(probe:{ probes += 1 },install:{ installs += 1 }))
-        for name in ["updater:didFindValidUpdate:","updaterDidNotFindUpdate:","updater:didFinishUpdateCycleForUpdateCheck:error:"] {
+        for name in ["updater:didFindValidUpdate:","updaterDidNotFindUpdate:","updater:didAbortWithError:","updater:didFinishUpdateCycleForUpdateCheck:error:"] {
             try verify(model.responds(to:NSSelectorFromString(name)),"Sparkle delegate callback must be connected: "+name)
         }
         model.performAction(); model.performAction()
@@ -115,6 +116,9 @@ import Sparkle
         try verify(model.availableVersion == nil && model.buttonTitle == "检查更新" && model.status == "已是最新版本","A no-update result must clear any stale install offer")
         model.check(); model.finish(NSError(domain:NSURLErrorDomain,code:NSURLErrorNotConnectedToInternet))
         try verify(model.actionEnabled && !model.isChecking && installs == 1,"Network errors must allow a retry without starting installation")
+        model.found("9.9.9");model.performAction()
+        model.updater(model.controller.updater,didAbortWithError:NSError(domain:NSURLErrorDomain,code:NSURLErrorSecureConnectionFailed))
+        try verify(!model.isUpdating && !model.isChecking && model.actionEnabled && model.status == "更新未完成，请重试","An early download/install abort immediately clears the updating state before error-alert acknowledgement")
         let comparator = SUStandardVersionComparator.default
         for (new,old) in [("20261031.1","14"),("20261031.2","20261031.1"),("20261101.1","20261031.99")] {
             try verify(comparator.compareVersion(new,toVersion:old) == .orderedDescending,"Dated builds must increase across same-day releases, dates and legacy versions")

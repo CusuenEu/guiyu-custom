@@ -356,6 +356,8 @@ struct Preview: NSViewRepresentable {
     try lightweightTest(root:root)
     try interactionTest()
     try finderShortcutTest(root:root)
+    try fileCopyTests(root:root)
+    try namingArchiveTests(root:root)
     try indexingTest(root:root)
     try directoryOrderingTest(root:root)
     try sidebarSectionsTest(root:root)
@@ -369,10 +371,12 @@ if CommandLine.arguments.contains("--self-test") { do { try MainActor.assumeIsol
 else if let index = CommandLine.arguments.firstIndex(of:"--window-frame-read-test"), CommandLine.arguments.indices.contains(index+1) { do { try MainActor.assumeIsolated { try windowFrameReadTest(CommandLine.arguments[index+1]) } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--project-roots-review") { do { try MainActor.assumeIsolated { try projectRootsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--finder-services-review") { do { try MainActor.assumeIsolated { try finderServicesUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--update-install-fixture") { do { try MainActor.assumeIsolated { try updateInstallationFixture() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--update-probe") { do { try MainActor.assumeIsolated { try AppUpdater.probeDiagnostic() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--smart-dialogs-review") { do { try MainActor.assumeIsolated { try smartDialogsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--category-flow-review") { do { try MainActor.assumeIsolated { try categoryWorkflowUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--naming-rules-review") { do { try MainActor.assumeIsolated { try namingRulesUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--naming-archive-review") { do { try MainActor.assumeIsolated { try namingArchiveUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--naming-region-review") { do { try MainActor.assumeIsolated { try namingRegionUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--archive-source-layout-review") { do { try MainActor.assumeIsolated { try archiveSourceLayoutReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--category-disclosure-review") { do { try MainActor.assumeIsolated { try categoryDisclosureReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }

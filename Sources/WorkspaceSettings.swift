@@ -71,6 +71,10 @@ struct WorkspaceSettingsView: View {
             }.frame(maxWidth:.infinity,maxHeight:.infinity)
         }.frame(width:820,height:620).background(WorkspaceTheme.canvas).tint(accent)
         .onExitCommand(perform:close)
+        // AppKit refuses Quit while a SwiftUI modal sheet is attached. Release
+        // this settings sheet when the user explicitly starts installing an
+        // available update, before Sparkle reaches its quit/relaunch phase.
+        .onChange(of:updater.isUpdating) { installing in if installing { close() } }
         .alert("设置未完成",isPresented:Binding(get:{!store.error.isEmpty && section != .categories},set:{if !$0 { store.error = "" }})) { Button("知道了") { store.error = "" } } message: { Text(store.error) }
     }
     var locations: some View {

@@ -1,5 +1,7 @@
 import Foundation
 
+private let archiveMatchThreshold = 65
+
 // A request-local, in-memory index. Building and querying it never reads documents or directories.
 struct ArchiveProjectIndex {
     private struct Name {
@@ -24,14 +26,18 @@ struct ArchiveProjectIndex {
         var built: [Entry] = []; var counts: [String:Int] = [:]
         let codeRegex = try! NSRegularExpression(pattern:"(?:项目编号|合同编号|招标编号|采购编号)[：:\\s]*([A-Za-z0-9][A-Za-z0-9_./—-]{3,})")
         for project in projects where project.shallow != true {
-            var labels = [project.name]
+            // Dates and bare numeric folders are containers, not project
+            // identities. Their nested documents may belong to many projects.
+            let container = FilenameQuery.normalize(project.name).range(of:"^[\\p{N}〇零一二三四五六七八九十百千\\s年月日./_—–\\-]+$",options:.regularExpression) != nil
+            var labels = container ? [] : [project.name]
             let files = grouped[project.path] ?? []
             // File names are already-loaded metadata; generic attachment labels add no identity.
-            labels += files.map { $0.url.deletingPathExtension().lastPathComponent }.filter { archiveProjectStem($0).count >= 6 }
+            if !container { labels += files.map { $0.url.deletingPathExtension().lastPathComponent }.filter { archiveProjectStem($0).count >= 6 } }
             var codes: [String] = []
             if includeCachedText {
                 for var file in files where !file.text.isEmpty {
-                    file.text = String(file.text.prefix(6000)); labels += projectNames(file)
+                    file.text = String(file.text.prefix(6000))
+                    if !container { labels += projectNames(file) }
                     let corpus = file.text as NSString
                     codes += codeRegex.matches(in:file.text,range:NSRange(location:0,length:corpus.length)).map { corpus.substring(with:$0.range(at:1)) }
                 }
@@ -71,7 +77,7 @@ struct ArchiveProjectIndex {
                         }
                     }
                 }
-                if points > score { score = points; evidence = origin+"与“"+name.label+"”"+(points >= 65 ? "匹配" : "部分相似，请核对") }
+                if points > score { score = points; evidence = origin+"与“"+name.label+"”"+(points >= archiveMatchThreshold ? "匹配" : "部分相似，请核对") }
             }
             let hits = entry.keywords.filter { normalized.contains($0) }
             if !hits.isEmpty {
@@ -97,13 +103,13 @@ struct ArchiveProjectIndex {
     }
 }
 func clearArchiveMatch(_ choices: [ProjectArchiveChoice]) -> Bool {
-    guard let first = choices.first, first.score >= 65 else { return false }
+    guard let first = choices.first, first.score >= archiveMatchThreshold else { return false }
     return choices.count == 1 || first.score-choices[1].score >= 20
 }
 func mergedArchiveChoices(_ choices: [[ProjectArchiveChoice]]) -> [ProjectArchiveChoice] {
     var scores: [String:Int] = [:]; var projects: [String:Project] = [:]; var evidence: [String:[String]] = [:]
     for row in choices {
-        for choice in row.prefix(8) {
+        for choice in row.prefix(8) where choice.score >= archiveMatchThreshold {
             scores[choice.id,default:0] += choice.score; projects[choice.id] = choice.project
             if !(evidence[choice.id] ?? []).contains(choice.evidence) { evidence[choice.id,default:[]].append(choice.evidence) }
         }
@@ -117,14 +123,16 @@ func mergedArchiveChoices(_ choices: [[ProjectArchiveChoice]]) -> [ProjectArchiv
 func matchArchiveRows(_ rows: [BrowserRow], index: ArchiveProjectIndex, token: IndexCancellation,
                       readOpening: (BrowserRow) -> String, update: ([ProjectArchiveChoice],Bool,String) -> Void) {
     guard !token.isCancelled else { return }
-    var results = rows.map { index.choices(input:URL(fileURLWithPath:$0.title).deletingPathExtension().lastPathComponent,origin:"文件名") }
+    var results = rows.map { index.choices(input:URL(fileURLWithPath:$0.title).deletingPathExtension().lastPathComponent,origin:"文件名").filter{$0.score >= archiveMatchThreshold} }
     let pending = results.indices.filter { !clearArchiveMatch(results[$0]) }
     update(mergedArchiveChoices(results),pending.isEmpty,pending.isEmpty ? "已按文件名匹配 · 请选择项目后确认归档" : "文件名匹配不明确，仅补读待归档文件的前两页…")
     for (offset,i) in pending.enumerated() {
         guard !token.isCancelled else { return }
         let text = readOpening(rows[i])
         guard !token.isCancelled else { return }
-        let content = index.choices(input:text,origin:"前两页")
+        // Apply the same confidence floor before the content bonus: a weak
+        // resemblance must not become a recommendation merely by adding 30.
+        let content = index.choices(input:text,origin:"前两页").filter{$0.score >= archiveMatchThreshold}
         if !content.isEmpty {
             // Opening-page evidence takes precedence over a weak or misleading filename.
             let contentIDs = Set(content.map(\.id))

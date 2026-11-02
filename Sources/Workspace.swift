@@ -60,6 +60,10 @@ struct BrowserTable: NSViewRepresentable {
         table.onTrash = trash == nil ? nil : { context.coordinator.trashSelection() }
         table.onRename = { context.coordinator.renameSelection() }
         table.onOpen = { context.coordinator.openSelection() }
+        table.onCopy = { [weak table] in
+            guard let table else { return }
+            context.coordinator.copySelection(to:table.copyPasteboard)
+        }
         table.onColumnWidthChange = { [weak coordinator = context.coordinator] in coordinator?.projectWidthChanged() }
         let menu = NSMenu(); menu.delegate = context.coordinator; table.menu = menu
         scroll.documentView = table; return scroll
@@ -164,6 +168,7 @@ struct BrowserTable: NSViewRepresentable {
         func trashSelection() { parent.trash?(selectedRows) }
         func renameSelection() { if selectedRows.count == 1 { parent.directRename?(selectedRows[0]) } else if !selectedRows.isEmpty { parent.batchRename?(selectedRows,false) } }
         func openSelection() { for row in selectedRows { parent.activate(row) } }
+        func copySelection(to pasteboard:NSPasteboard) { copyFileRows(selectedRows,to:pasteboard) }
         @objc func clicked(_ sender:NSTableView) { if rows.indices.contains(sender.clickedRow), rows[sender.clickedRow].header { parent.toggle(rows[sender.clickedRow]) } }
         @objc func open(_ sender:NSTableView) { if rows.indices.contains(sender.clickedRow), !rows[sender.clickedRow].header { parent.activate(rows[sender.clickedRow]) } }
         func menuNeedsUpdate(_ menu:NSMenu) {
@@ -237,7 +242,8 @@ final class BrowserRowView: NSTableRowView {
     }
 }
 final class BrowserNSTable: NSTableView {
-    var onSpace: (() -> Void)?; var onTrash: (() -> Void)?; var onRename: (() -> Void)?; var onOpen: (() -> Void)?
+    var onSpace: (() -> Void)?; var onTrash: (() -> Void)?; var onRename: (() -> Void)?; var onOpen: (() -> Void)?; var onCopy: (() -> Void)?
+    var copyPasteboard: NSPasteboard = .general
     var onColumnWidthChange: (() -> Void)?
     private var measuredColumnWidth: CGFloat = -1
     override func layout() {
@@ -255,11 +261,15 @@ final class BrowserNSTable: NSTableView {
     func performFileShortcut(_ event: NSEvent) -> Bool {
         guard let window, window.firstResponder === self, window.attachedSheet == nil, let action = fileShortcut(for:event) else { return false }
         let handler: (() -> Void)?
-        switch action { case .preview: handler = onSpace; case .trash: handler = onTrash; case .rename: handler = onRename; case .open: handler = onOpen }
+        switch action { case .preview: handler = onSpace; case .trash: handler = onTrash; case .rename: handler = onRename; case .open: handler = onOpen; case .copy: handler = onCopy }
         guard let handler else { return false }; handler(); return true
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool { performFileShortcut(event) || super.performKeyEquivalent(with:event) }
     override func keyDown(with event:NSEvent) { if !performFileShortcut(event) { super.keyDown(with:event) } }
+    @objc func copy(_ sender:Any?) {
+        guard let window,window.firstResponder === self,window.attachedSheet == nil else { return }
+        onCopy?()
+    }
 }
 final class BrowserCell: NSTableCellView {
     let icon = NSImageView(); let title = NSTextField(labelWithString:""); let subtitle = NSTextField(labelWithString:""); let date = NSTextField(labelWithString:""); var dateWidth: NSLayoutConstraint!; var titleHeight: NSLayoutConstraint!
@@ -290,6 +300,7 @@ struct ProjectWorkspace: View {
     @State var searchFocused = false
     @State var sidebarPreviewFraction: Double?; @State var sidebarDragOrigin: CGFloat?
     @State var searchFolderToOpen: String?
+    @State private var archiveAfterNaming:QuickArchiveRequest?
     var isScopeSearch: Bool { archiveSourceID == nil && !FilenameQuery(query).tokens.isEmpty }
     var activeSourceRows: [BrowserRow] { isScopeSearch ? search.output.searchEntries : sourceRows }
     var activeDragScope: String { isScopeSearch ? "search:"+(selectedDirectory?.path ?? year) : sourceFolder }
@@ -352,7 +363,9 @@ struct ProjectWorkspace: View {
             processedRenameCount = store.settings.renames?.count ?? 0; loadSource()
         }
         .sheet(item:$quickArchiveRequest) { QuickArchiveDialog(store:store,request:$0) }
-        .sheet(item:$naming) { RenameDialog(store:store,target:$0) }
+        .sheet(item:$naming,onDismiss:{
+            if let request = archiveAfterNaming { archiveAfterNaming = nil;quickArchiveRequest = request }
+        }) { RenameDialog(store:store,target:$0,onArchive:{archiveAfterNaming = $0}) }
         .sheet(item:$batchNaming) { BatchRenameDialog(store:store,request:$0) }
         .sheet(item:$manualNaming) { DirectRenameDialog(store:store,target:$0) }
         .sheet(item:$settingsDestination) { destination in workspaceSettings(destination) }
