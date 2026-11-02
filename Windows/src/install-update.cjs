@@ -64,7 +64,10 @@ async function launchHelper(helper, manifest, readyFile) {
   const logFile = path.join(path.dirname(manifest), "helper.log"), log = await fs.open(logFile, "a");
   let error, stopped = false, exitCode;
   const child = spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper, "-Manifest", manifest],
-    { detached: true, windowsHide: true, stdio: ["ignore", log.fd, log.fd] });
+    // DETACHED_PROCESS prevents Windows PowerShell from initializing its host
+    // on some Windows builds: it exits 0 before running -File. Windows children
+    // survive parent exit without it; unref + independent file stdio is enough.
+    { windowsHide: true, stdio: ["ignore", log.fd, log.fd] });
   child.once("error", e => { error = e; });
   child.once("exit", code => { stopped = true; exitCode = code; });
   await log.close();
