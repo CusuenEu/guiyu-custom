@@ -9,10 +9,10 @@ const { createUpdater, selectUpdate } = require("../src/update.cjs");
 const current = { date: "20261031", sequence: 4 };
 function release(date = "20261031", sequence = 5, options = {}) {
   const tag = options.tag || `windows-${date}-${String(sequence).padStart(2, "0")}`;
-  return { tag_name: tag, draft: false, prerelease: true,
+  return { tag_name: tag, draft: false, prerelease: options.testing !== false,
     assets: (options.arches || ["ia32", "x64"]).flatMap(arch =>
       (options.formats || ["-setup.exe"]).map(format => {
-        const name = `Guiyu-${date}-${String(sequence).padStart(2, "0")}-test-Windows-${arch}${format}`;
+        const name = `Guiyu-${date}-${String(sequence).padStart(2, "0")}-${options.testing === false ? "" : "test-"}Windows-${arch}${format}`;
         return { name, state: "uploaded",
           browser_download_url: `https://github.com/tiduse1988/guiyu/releases/download/${tag}/${name}` };
       })) };
@@ -20,6 +20,16 @@ function release(date = "20261031", sequence = 5, options = {}) {
 const mac = { tag_name: "v20261101-01", draft: false, prerelease: false,
   assets: [{ name: "Guiyu-20261101-01-macOS-arm64.zip", state: "uploaded" }] };
 const response = batch => ({ ok: true, json: async () => batch });
+
+test("formal Windows assets use clean names and take priority over later prereleases", () => {
+  for (const arch of ["ia32", "x64"]) {
+    const result = selectUpdate([mac, release(), release("20261102", 1, { testing: false }),
+      release("20261103", 1)], current, arch);
+    assert.equal(result.version, "20261102(01)");
+    assert(!result.url.includes("test-Windows"));
+    assert(result.url.endsWith(`Windows-${arch}-setup.exe`));
+  }
+});
 
 test("Mac latest and Windows prerelease EXE reproduce the live release layout", () => {
   for (const arch of ["ia32", "x64"]) {

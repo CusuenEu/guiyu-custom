@@ -1,4 +1,4 @@
-name: Windows preview validation
+name: Windows validation
 on:
   workflow_dispatch:
   push:
@@ -52,9 +52,12 @@ jobs:
           "GUIYU_MAKENSIS=$nsis" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: npm run package
         working-directory: Windows
+      - name: Verify installer integration
+        shell: pwsh
+        run: ./Windows/tests/installer-smoke.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: Guiyu-Windows-preview
+          name: Guiyu-Windows
           path: |
             Windows/out/*.zip
             Windows/out/*-setup.exe

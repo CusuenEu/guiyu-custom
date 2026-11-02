@@ -48,7 +48,7 @@ const fs = require("node:fs/promises"),
         path.join(dir, "使用说明.md"),
       );
       await fs.copyFile(path.join(root, 'VALIDATION.md'), path.join(dir, '验证范围.md'));
-      const zip = path.join(out, `${release.assetPrefix}-test-Windows-${arch}.zip`);
+      const zip = path.join(out, `${release.assetPrefix}-Windows-${arch}.zip`);
       if (process.platform === "win32") {
         const { zipSync } = require("fflate");
         async function collect(d, base, files = {}) {
@@ -68,7 +68,7 @@ const fs = require("node:fs/promises"),
         execFileSync("/usr/bin/ditto", ["-c", "-k", "--keepParent", dir, zip]);
       console.log(zip);
       if (process.platform === "win32") {
-        const installer = path.join(out, `${release.assetPrefix}-test-Windows-${arch}-setup.exe`);
+        const installer = path.join(out, `${release.assetPrefix}-Windows-${arch}-setup.exe`);
         await require("./installer.cjs").createInstaller(dir, installer);
         console.log(installer);
       }

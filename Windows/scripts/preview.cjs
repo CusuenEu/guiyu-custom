@@ -44,7 +44,7 @@ let settings = {
   roots: [base],
   sources: [
     { id: "downloads", name: "下载", path: "C:\\Downloads", kind: "folder" },
-    { id: "recent", name: "最近使用", kind: "recent" },
+    { id: "desktop", name: "桌面", kind: "folder", path: "C:\\Desktop" },
   ],
   categories: ["方案", "招标文件", "投标文件", "其他"].map((name) => ({
     id: name,
@@ -75,7 +75,7 @@ const folderContents = new Map([
   [projectSpecification.path, [make("项目资料.txt", projectSpecification.path, false)]],
 ]);
 const state = () => ({
-  version: require("../version.json").display + " Windows 测试版",
+  version: require("../version.json").display + " Windows",
   platform: "win32",
   arch: "x64",
   settings,

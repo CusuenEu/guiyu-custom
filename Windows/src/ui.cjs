@@ -118,7 +118,7 @@ function rail() {
   $("#sources").innerHTML = data.settings.sources
     .map(
       (s) =>
-        `<button data-source="${esc(s.id)}" class="${source?.id === s.id ? "active" : ""}" title="${esc(s.path || "Windows 最近访问的文件")}"><span aria-hidden="true" style="font-size:23px">${s.kind === "recent" ? "◷" : "⇩"}</span><span>${esc(s.name)}</span></button>`,
+        `<button data-source="${esc(s.id)}" class="${source?.id === s.id ? "active" : ""}" title="${esc(s.path || "关联文件夹")}"><span aria-hidden="true" style="font-size:23px">${s.id === "desktop" ? "▣" : "⇩"}</span><span>${esc(s.name)}</span></button>`,
     )
     .join("");
 }
@@ -1003,7 +1003,7 @@ function drawSettings() {
   let s = data.settings,
     content = "";
   if (section === "文件位置") {
-    content = `<h3>项目总目录 <button id="settings-add-root">关联目录…</button></h3>${s.roots.map((r, i) => `<div class="setting-row">${folder}<span class="label">${esc(basename(r))}<small title="${esc(r)}">${esc(r)}</small></span><button data-remove-root="${i}" aria-label="移除关联 ${esc(basename(r))}">−</button></div>`).join("") || '<p class="muted">关联一个或多个项目总目录，开始浏览。</p>'}<p class="muted">左侧展示各总目录下的子文件夹。移除关联会保留原文件。</p><h3>可归档目录 <button id="settings-add-source">关联文件夹…</button></h3>${s.sources.map((r, i) => `<div class="setting-row"><span class="label">${esc(r.name)}<small>${esc(r.path || "Windows 最近访问的文件")}</small></span><button data-remove-source="${i}">移除关联</button></div>`).join("")}<p><button id="restore-sources">恢复默认入口</button></p><h3>资源管理器快捷入口</h3><p class="muted">右键文件或文件夹可直接使用智能命名、智能归档。移动应用目录后请重新安装入口。</p><button id="install-menu">安装右键入口</button> <button id="remove-menu">移除右键入口</button>`;
+    content = `<h3>项目总目录 <button id="settings-add-root">关联目录…</button></h3>${s.roots.map((r, i) => `<div class="setting-row">${folder}<span class="label">${esc(basename(r))}<small title="${esc(r)}">${esc(r)}</small></span><button data-remove-root="${i}" aria-label="移除关联 ${esc(basename(r))}">−</button></div>`).join("") || '<p class="muted">关联一个或多个项目总目录，开始浏览。</p>'}<p class="muted">左侧展示各总目录下的子文件夹。移除关联会保留原文件。</p><h3>可归档目录 <button id="settings-add-source">关联文件夹…</button></h3>${s.sources.map((r, i) => `<div class="setting-row"><span class="label">${esc(r.name)}<small>${esc(r.path || "关联文件夹")}</small></span><button data-remove-source="${i}">移除关联</button></div>`).join("")}<p><button id="restore-sources">恢复默认入口</button></p><h3>资源管理器快捷入口</h3><p class="muted">右键文件或文件夹可直接使用智能命名、智能归档。移动应用目录后请重新安装入口。</p><button id="install-menu">安装右键入口</button> <button id="remove-menu">移除右键入口</button>`;
   } else if (section === "文件分类") {
     content = `<form id="add-category" class="setting-form"><input id="category-name" placeholder="新分类名称" aria-label="分类名称" maxlength="40" required><button class="primary">添加分类</button></form><div class="workflow"><h3>分类设置后，请务必按一下操作。 <button id="guides" aria-label="查看操作图解">ⓘ</button></h3><div class="workflow-step"><span class="step-number">1</span><button id="copy-prompt" class="workflow-primary">复制提示词，去豆包官网</button><span id="copy-status"></span></div><div class="workflow-step"><span class="step-number">2</span><span>把提示词发给豆包，复制豆包的回复。</span></div><div class="workflow-step"><span class="step-number">3</span><button id="import-rules">录入豆包回复</button><span id="import-status"></span></div></div><div class="category-search"><span aria-hidden="true">⌕</span><input id="category-query" placeholder="搜索分类" aria-label="搜索分类"><span class="muted">${s.categories.length} 个分类</span></div><div id="category-list">${categoryList("")}</div>`;
   } else if (section === "命名规则") {
@@ -1420,7 +1420,7 @@ dragDivider($("#rail-divider"), "rail");
 dragDivider($("#left-divider"), "left");
 dragDivider($("#right-divider"), "right");
 document.addEventListener("keydown", (e) => {
-  if ($("#modal").open || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))
+  if ($("#modal").open || e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))
     return;
   if (e.key === "Escape") {
     selected.clear();
@@ -1452,7 +1452,13 @@ document.addEventListener("keydown", (e) => {
   let items = selectedItems();
   if (!items.length && !source && project && e.target.id === "projects")
     items = [project];
-  if (e.key === " " && items.length) {
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c" && items.length) {
+    e.preventDefault();
+    action(async () => {
+      const result = await api("copyFiles", { items });
+      toast(`已复制 ${result.count} 项，可到资源管理器粘贴`);
+    });
+  } else if (e.key === " " && items.length) {
     e.preventDefault();
     action(() => api("preview", { path: items[0].path }));
   } else if (e.key === "F2" && items.length) {

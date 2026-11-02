@@ -26,6 +26,7 @@ const {
 } = require("./core.cjs");
 const { naming, extract } = require("./documents.cjs");
 const namingFormat = require("./naming-format.cjs");
+const sourceDefaults = require("./source-defaults.cjs");
 const updater = require("./update.cjs").createUpdater({
   fetch: (url, options) => net.fetch(url, options),
   openExternal: (url) => shell.openExternal(url),
@@ -90,7 +91,7 @@ function state() {
   return {
     settings: store.settings,
     snapshot: store.snapshot,
-    version: require("../version.json").display + " Windows 测试版",
+    version: require("../version.json").display + " Windows",
     platform: process.platform,
     arch: process.arch,
     pendingCommand,
@@ -104,6 +105,19 @@ async function dispatch(method, arg = {}) {
     case "consumeCommand":
       pendingCommand = null;
       return true;
+    case "copyFiles": {
+      if (process.platform !== "win32") throw Error("文件复制仅适用于 Windows。");
+      if (!Array.isArray(arg.items) || !arg.items.length) throw Error("请选择要复制的文档或文件夹。");
+      const paths = [];
+      for (const item of arg.items) {
+        const current = await store.guard(item.path);
+        await verify(item);
+        if (!paths.includes(current.path)) paths.push(current.path);
+      }
+      const script = await fs.readFile(path.join(__dirname, "../scripts/copy-files.ps1"), "utf8");
+      await runPS(script, { GUIYU_COPY_PATHS: JSON.stringify(paths) }, 15000);
+      return { count: paths.length };
+    }
     case "explorerMenu": {
       if (process.platform !== "win32") throw Error("此功能仅适用于 Windows。");
       const script = await fs.readFile(
@@ -174,23 +188,7 @@ async function dispatch(method, arg = {}) {
     case "source": {
       const s = store.settings.sources.find((x) => x.id === arg.id);
       if (!s) throw Error("来源不存在。");
-      if (s.kind !== "recent") return list(s.path);
-      if (process.platform !== "win32")
-        throw Error("最近使用需要 Windows 系统。");
-      let output = await runPS(
-        `$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.Encoding]::UTF8;$sh=New-Object -ComObject WScript.Shell;$d=Join-Path $env:APPDATA 'Microsoft\\Windows\\Recent';$a=@(Get-ChildItem -LiteralPath $d -Filter *.lnk | Sort-Object LastWriteTime -Descending | Select-Object -First 500 | ForEach-Object {$sh.CreateShortcut($_.FullName).TargetPath} | Where-Object {$_ -and (Test-Path -LiteralPath $_)});ConvertTo-Json -InputObject $a -Compress`,
-      );
-      let paths = JSON.parse(output);
-      if (!Array.isArray(paths)) paths = [paths];
-      store.recentAllowed = new Set(
-        paths.map((p) => path.resolve(p).toLowerCase()),
-      );
-      store.recentBrowseRoots = [];
-      return (
-        await Promise.all(
-          [...new Set(paths)].map((p) => entry(p).catch(() => null)),
-        )
-      ).filter(Boolean);
+      return list(s.path);
     }
     case "layout": {
       let next = structuredClone(store.settings);
@@ -519,15 +517,7 @@ async function dispatch(method, arg = {}) {
 }
 const crypto = require("node:crypto");
 function defaults() {
-  return [
-    {
-      id: "downloads",
-      name: "下载",
-      kind: "folder",
-      path: app.getPath("downloads"),
-    },
-    { id: "recent", name: "最近使用", kind: "recent" },
-  ];
+  return sourceDefaults.defaults(name => app.getPath(name));
 }
 app.whenReady().then(async () => {
   try {
@@ -536,6 +526,8 @@ app.whenReady().then(async () => {
         ? path.join(app.getPath("temp"), "Guiyu-windows-review")
         : path.join(app.getPath("appData"), "Guiyu-Windows"),
     ).init(defaults());
+    const sources = sourceDefaults.migrate(store.settings.sources, defaults()[1]);
+    if (sources !== store.settings.sources) await store.save({ ...store.settings, sources });
     await store.refresh();
     ipcMain.on("guiyu-cancel-naming", (event) => {
       if (event.sender === win?.webContents) namingCancellation?.abort();

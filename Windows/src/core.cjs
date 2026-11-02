@@ -82,6 +82,7 @@ function runPS(script, env = {}, timeout = 90000, signal) {
         "-NoLogo",
         "-NoProfile",
         "-NonInteractive",
+        "-STA",
         "-ExecutionPolicy",
         "Bypass",
         "-Command",

@@ -1,6 +1,6 @@
 $ErrorActionPreference='Stop'
 foreach($kind in @('*','Directory')){
- foreach($pair in @(@('GuiyuName','归屿 · 智能命名','--smart-name'),@('GuiyuArchive','归屿 · 智能归档','--smart-archive'))){
+ foreach($pair in @(@('GuiyuName','归屿-智能命名','--smart-name'),@('GuiyuArchive','归屿-智能归档','--smart-archive'))){
   $subkey='Software\Classes\'+$kind+'\shell\'+$pair[0]
   if($env:GUIYU_MENU_ACTION -eq 'remove'){
    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($subkey,$false)

@@ -17,8 +17,8 @@ function selectUpdate(releases, current, arch) {
   const candidates = [];
   for (const release of releases) {
     if (release.draft || !release.tag_name) continue;
-    // Windows testing releases are deliberately marked prerelease on GitHub.
-    // Derive the Windows version from its asset, never from a Mac release tag.
+    // Keep legacy asset names readable; derive Windows versions from their
+    // assets, never from a Mac release tag.
     for (const asset of release.assets || []) {
       const match = /^Guiyu-(\d{8})-(\d{2})-(?:test-)?Windows-(ia32|x64)(-setup\.exe|\.zip)$/.exec(asset.name);
       if (!match || match[3] !== arch || asset.state !== "uploaded") continue;
@@ -27,13 +27,15 @@ function selectUpdate(releases, current, arch) {
       catch { continue; }
       const url = `${repository}/releases/download/${encodeURIComponent(release.tag_name)}/${encodeURIComponent(asset.name)}`;
       if (asset.browser_download_url !== url) continue;
-      candidates.push({ ...candidate, url,
+      candidates.push({ ...candidate, url, prerelease: Boolean(release.prerelease),
         kind: match[4] === ".zip" ? "zip" : "installer" });
     }
   }
-  candidates.sort((a, b) => b.number - a.number ||
+  const stable = candidates.filter(candidate => !candidate.prerelease);
+  const eligible = stable.length ? stable : candidates;
+  eligible.sort((a, b) => b.number - a.number ||
     Number(b.kind === "installer") - Number(a.kind === "installer"));
-  const latest = candidates[0];
+  const latest = eligible[0];
   if (!latest) return { status: "unavailable",
     message: `暂未发布适用于当前 ${arch === "x64" ? "64" : "32"} 位程序的 Windows 更新包。` };
   if (latest.number <= installed.number) return { status: "current",
