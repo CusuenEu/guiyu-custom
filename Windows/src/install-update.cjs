@@ -61,30 +61,37 @@ function createInstallerUpdater({ fetch, app, progress = () => {}, launch = laun
   };
 }
 async function launchHelper(helper, manifest, readyFile) {
-  const logFile = path.join(path.dirname(manifest), "helper.log"), log = await fs.open(logFile, "a");
-  let error, stopped = false, exitCode;
-  const child = spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", helper, "-Manifest", manifest],
-    // DETACHED_PROCESS prevents Windows PowerShell from initializing its host
-    // on some Windows builds: it exits 0 before running -File. Windows children
-    // survive parent exit without it; unref + independent file stdio is enough.
-    { windowsHide: true, stdio: ["ignore", log.fd, log.fd] });
+  const logFile = path.join(path.dirname(manifest), "helper.log");
+  const literal = value => "'" + value.replace(/'/g, "''") + "'";
+  const encode = value => Buffer.from(value, "utf16le").toString("base64");
+  const command = encode(`& ${literal(helper)} -Manifest ${literal(manifest)} *> ${literal(logFile)}`);
+  // Start-Process creates an independent Windows process with its own console.
+  // Direct Electron children can lose their console when the old app quits;
+  // Node's detached flag also breaks Windows PowerShell initialization on CI.
+  const bootstrap = encode(`$ErrorActionPreference='Stop'; $env:PSModulePath=[IO.Path]::Combine($PSHOME,'Modules'); $p=Start-Process -FilePath ([IO.Path]::Combine($PSHOME,'powershell.exe')) -WindowStyle Hidden -ArgumentList @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand','${command}') -PassThru; @{pid=$p.Id}|ConvertTo-Json -Compress`);
+  let error, stopped = false, exitCode, helperPid, output = "", diagnostic = "";
+  const child = spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", bootstrap],
+    { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  child.stdout.on("data", chunk => { output = (output + chunk).slice(-4000); try { const result = JSON.parse(output.trim()); if (Number.isInteger(result.pid) && result.pid > 0) helperPid = result.pid; } catch {} });
+  child.stderr.on("data", chunk => { diagnostic = (diagnostic + chunk).slice(-2000); });
   child.once("error", e => { error = e; });
   child.once("exit", code => { stopped = true; exitCode = code; });
-  await log.close();
+  const stop = () => { if (helperPid) try { process.kill(helperPid); } catch {} if (!stopped) child.kill(); };
   for (let i = 0; i < 300; i++) {
-    try { const ready = JSON.parse((await fs.readFile(readyFile, "utf8")).replace(/^\uFEFF/, "")); if (ready.pid === child.pid) { child.unref(); return; } }
+    try { const ready = JSON.parse((await fs.readFile(readyFile, "utf8")).replace(/^\uFEFF/, "")); if (helperPid && ready.pid === helperPid) { child.unref(); return; } }
     catch {}
     let status;
     try { status = JSON.parse((await fs.readFile(path.join(path.dirname(manifest), "status.json"), "utf8")).replace(/^\uFEFF/, "")); } catch {}
-    if (status?.phase === "failed") { child.kill(); throw Error(`更新助手未能准备就绪，旧程序仍在运行：${status.message}`); }
-    if (error || stopped) {
-      const detail = error?.message || (await fs.readFile(logFile, "utf8").catch(() => "")).trim().slice(-1200);
+    if (status?.phase === "failed") { stop(); throw Error(`更新助手未能准备就绪，旧程序仍在运行：${status.message}`); }
+    if (error || (stopped && (exitCode !== 0 || !helperPid))) {
+      const detail = error?.message || diagnostic || (await fs.readFile(logFile, "utf8").catch(() => "")).trim().slice(-1200);
+      stop();
       throw Error(`无法启动更新安装程序（${exitCode ?? "启动失败"}），归屿仍保持运行：${detail}`);
     }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  child.kill();
-  const diagnostic = (await fs.readFile(logFile, "utf8").catch(() => "")).trim().slice(-1500);
+  stop();
+  diagnostic ||= (await fs.readFile(logFile, "utf8").catch(() => "")).trim().slice(-1500);
   const readyText = (await fs.readFile(readyFile, "utf8").catch(() => "未生成就绪记录")).trim();
   throw Error(`更新安装程序准备超时，归屿仍保持运行：${diagnostic || `进程 ${child.pid}，${readyText}`}`);
 }
