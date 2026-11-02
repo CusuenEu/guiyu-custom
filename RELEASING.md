@@ -20,7 +20,7 @@ macOS 正式版检查地址为 `https://github.com/tiduse1988/guiyu/releases/lat
 
 目前采用临时代码签名，尚未 Developer ID 签名/公证。Sparkle Ed25519 签名保证更新真实性，不等于 Apple Gatekeeper 的首次安装认证。未来可升级 Developer ID 分发；需要相应账号、证书和公证过程。
 
-GitHub Actions 只构建和自测，不能在没有发布密钥时自动发布官方更新。自动更新指客户端自动升级，不意味着每次源码提交都会发布。
+macOS 的常规构建工作流只构建和自测，不能在没有发布密钥时自动发布官方更新。自动更新指客户端自动升级，不意味着每次源码提交都会发布。
 
 ## Windows 发布
 

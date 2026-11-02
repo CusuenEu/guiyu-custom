@@ -22,7 +22,7 @@
 - **沿用真实文件夹**：直接读取你已有的目录，无需把文件导入云端或迁入专有资料库。
 - **本地处理**：文件管理、提取与搜索在 Mac 上完成，无需配置大模型 API，也不上传文件正文。
 - **操作由你确认**：智能命名和归档不会悄悄改名或搬走文件。
-- **免费开源**：MIT 许可，可使用、修改和商用；提供 macOS 13+ Apple Silicon 版和 Windows 32／64 位测试版，下载入口见下方“下载与安装”。
+- **免费开源**：MIT 许可，可使用、修改和商用；提供 macOS 13+ Apple Silicon 版和 Windows 32／64 位版，下载入口见下方“下载与安装”。
 
 ## 视频介绍
 
@@ -51,10 +51,10 @@
 | 系统 | 当前版本 | 下载 |
 | --- | --- | --- |
 | macOS 13+ · Apple Silicon（M1/M2/M3/M4 等） | 20261101(01) | [下载 Mac 版（ZIP）](https://github.com/tiduse1988/guiyu/releases/download/v20261101-01/Guiyu-20261101-01-macOS-arm64.zip) |
-| Windows 10 / Windows 11 · 64 位（x64） | 20261031(05) 测试版 | [下载 Windows 64 位（EXE 安装包）](https://github.com/tiduse1988/guiyu/releases/download/windows-20261031-05/Guiyu-20261031-05-test-Windows-x64-setup.exe) |
-| Windows 10 · 32 位（x86） | 20261031(05) 测试版 | [下载 Windows 32 位（EXE 安装包）](https://github.com/tiduse1988/guiyu/releases/download/windows-20261031-05/Guiyu-20261031-05-test-Windows-ia32-setup.exe) |
+| Windows 10 / Windows 11 · 64 位（x64） | 20261102(01) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-01/Guiyu-20261102-01-Windows-x64-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-01/Guiyu-20261102-01-Windows-x64.zip) |
+| Windows 10 · 32 位（x86） | 20261102(01) | [EXE 安装包](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-01/Guiyu-20261102-01-Windows-ia32-setup.exe) · [ZIP 解压版](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-01/Guiyu-20261102-01-Windows-ia32.zip) |
 
-[Mac 发行记录](https://github.com/tiduse1988/guiyu/releases/latest) · [Windows 测试版发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261031-05) · [全部版本](https://github.com/tiduse1988/guiyu/releases) · [源代码](https://github.com/tiduse1988/guiyu)
+[Mac 发行记录](https://github.com/tiduse1988/guiyu/releases/latest) · [Windows 发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-01) · [全部版本](https://github.com/tiduse1988/guiyu/releases) · [源代码](https://github.com/tiduse1988/guiyu)
 
 ### macOS 安装
 
@@ -62,11 +62,13 @@
 
 当前免费分发版本使用本地代码签名和 Sparkle 更新签名，**尚未使用 Apple Developer ID 签名及公证**。首次打开可能被 macOS 阻止；确认从本仓库下载后，在“系统设置 → 隐私与安全性”查看“仍要打开”。不要关闭系统整体安全保护。若设备受组织策略限制，请联系管理员或从源码构建。
 
-### Windows 安装（测试版）
+### Windows 安装
 
 64 位 Windows 10 和 Windows 11 选择 **Windows 64 位**，32 位 Windows 10 选择 **Windows 32 位**；Windows 11 没有 32 位系统版本。下载上表的 `-setup.exe` 后双击，按安装向导完成安装，无需另行安装 Node.js。
 
-Windows 当前发布的是 EXE 安装包。更新时手动下载新版安装包；完整使用说明及测试版限制见 [Windows 使用说明](Windows/README.md)。
+安装包会自动创建桌面“归屿”启动图标，并为文件、文件夹加入“归屿-智能命名”“归屿-智能归档”右键菜单（Windows 11 中可能位于“显示更多选项”）。ZIP 解压版请完整解压后运行 `Guiyu.exe`，右键入口可在设置中安装。
+
+Windows 可归档目录默认提供“下载”和“桌面”，升级时替换旧“最近使用”入口，保留自定义关联。选中文档或文件夹按 `Ctrl+C` 复制，可到资源管理器 `Ctrl+V` 粘贴；输入框仍支持复制文字。更新时下载新版后关闭程序，再安装或解压。完整说明见 [Windows 使用说明](Windows/README.md)。
 
 ## 自动更新（macOS）
 
@@ -293,6 +295,6 @@ Excel（XLSX）仅用横向、纵向表头生成候选：普通标题来自前8�
 
 项目目录与可归档目录之间的横线可按住上下拖动，分别调整两块区域高度；两个目录列表独立滚动，搜索与底部设置保持固定。悬停横线时显示上下调整光标，拖动中实时更新，松手后保存本机位置，重新打开及调整窗口大小时恢复比例。两块区域都有最小高度，分隔线也支持键盘上下键和无障碍增减操作。
 
-## Windows 测试版源码
+## Windows 源码
 
 Windows 下载入口统一放在上方[下载与安装](#下载与安装)。使用、构建说明及当前限制见 [Windows/README.md](Windows/README.md)，可分别构建 x86 和 x64 包。
