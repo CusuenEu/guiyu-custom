@@ -101,8 +101,8 @@ test("Ctrl+C copies file selections, leaving text fields, editable text and dial
 test("native clipboard retains a file/folder list and Copy effect after writer exits", { skip: process.platform !== "win32" }, async t => {
   const f = await fixture(t);
   const script = await fs.readFile(path.join(__dirname, "../scripts/copy-files.ps1"), "utf8");
-  await runPS(script, { GUIYU_COPY_PATHS: JSON.stringify([f.file, f.folder]) }, 15000);
-  const result = JSON.parse(await runPS("[Console]::OutputEncoding=[Text.Encoding]::UTF8;Add-Type -AssemblyName System.Windows.Forms;$d=[Windows.Forms.Clipboard]::GetDataObject();$e=$d.GetData('Preferred DropEffect');$bytes=$e.ToArray();[string[]]$paths=[Windows.Forms.Clipboard]::GetFileDropList();ConvertTo-Json -Compress @{paths=$paths;effect=[int]$bytes[0]}", {}, 15000));
+  await runPS(script, { GUIYU_COPY_PATHS: JSON.stringify([f.file, f.folder]) }, 45000);
+  const result = JSON.parse(await runPS("[Console]::OutputEncoding=[Text.Encoding]::UTF8;Add-Type -AssemblyName System.Windows.Forms;$d=[Windows.Forms.Clipboard]::GetDataObject();$e=$d.GetData('Preferred DropEffect');$bytes=$e.ToArray();[string[]]$paths=[Windows.Forms.Clipboard]::GetFileDropList();ConvertTo-Json -Compress @{paths=$paths;effect=[int]$bytes[0]}", {}, 45000));
   assert.deepEqual(result.paths, [f.file, f.folder]);
   assert.equal(result.effect, 1);
   assert.equal(await fs.readFile(f.file, "utf8"), "original");

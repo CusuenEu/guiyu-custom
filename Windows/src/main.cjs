@@ -115,7 +115,7 @@ async function dispatch(method, arg = {}) {
         if (!paths.includes(current.path)) paths.push(current.path);
       }
       const script = await fs.readFile(path.join(__dirname, "../scripts/copy-files.ps1"), "utf8");
-      await runPS(script, { GUIYU_COPY_PATHS: JSON.stringify(paths) }, 15000);
+      await runPS(script, { GUIYU_COPY_PATHS: JSON.stringify(paths) }, 45000);
       return { count: paths.length };
     }
     case "explorerMenu": {

@@ -98,7 +98,7 @@ function runPS(script, env = {}, timeout = 90000, signal) {
       },
       (err, out, stderr) =>
         err
-          ? reject(Error((stderr || err.message).trim()))
+          ? reject(Error(err.killed ? "Windows 操作超时，请稍后重试。" : (stderr || err.message).trim()))
           : resolve(out.replace(/^\uFEFF/, "")),
     ),
   );
