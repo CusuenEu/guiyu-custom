@@ -74,6 +74,9 @@ async function launchHelper(helper, manifest, readyFile) {
   for (let i = 0; i < 300; i++) {
     try { const ready = JSON.parse((await fs.readFile(readyFile, "utf8")).replace(/^\uFEFF/, "")); if (ready.pid === child.pid) { child.unref(); return; } }
     catch {}
+    let status;
+    try { status = JSON.parse((await fs.readFile(path.join(path.dirname(manifest), "status.json"), "utf8")).replace(/^\uFEFF/, "")); } catch {}
+    if (status?.phase === "failed") { child.kill(); throw Error(`更新助手未能准备就绪，旧程序仍在运行：${status.message}`); }
     if (error || stopped) {
       const detail = error?.message || (await fs.readFile(logFile, "utf8").catch(() => "")).trim().slice(-1200);
       throw Error(`无法启动更新安装程序（${exitCode ?? "启动失败"}），归屿仍保持运行：${detail}`);
@@ -81,6 +84,8 @@ async function launchHelper(helper, manifest, readyFile) {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   child.kill();
-  throw Error("更新安装程序准备超时，归屿仍保持运行，请重试。");
+  const diagnostic = (await fs.readFile(logFile, "utf8").catch(() => "")).trim().slice(-1500);
+  const readyText = (await fs.readFile(readyFile, "utf8").catch(() => "未生成就绪记录")).trim();
+  throw Error(`更新安装程序准备超时，归屿仍保持运行：${diagnostic || `进程 ${child.pid}，${readyText}`}`);
 }
 module.exports = { createInstallerUpdater };
