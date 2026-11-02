@@ -95,8 +95,30 @@ async function check(win) {
   assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("dir", empty))})`), "Association must remain when first child appears");
   await click(row("project", path.join(empty, "新文件夹")));
   await wait("document.querySelector('#files').textContent.includes('没有内容')");
+  // Exercise the actual Electron second-instance transport used by Explorer.
+  // The child bypasses fixture preparation so it cannot overwrite primary state.
+  const explorerFolder = path.join(temp, "右键 中文 & $1 文件夹");
+  await fs.mkdir(explorerFolder);
+  const originalFile = path.join(explorerFolder, "保留原件.txt");
+  await fs.writeFile(originalFile, "unchanged");
+  for (const type of ["--smart-name", "--smart-archive"]) {
+    await new Promise((resolve, reject) => {
+      const child = require("node:child_process").spawn(process.execPath,
+        [type, "--allow-file-access-from-files", explorerFolder],
+        { env: { ...process.env, GUIYU_EXPLORER_CHILD: "1" }, stdio: "ignore", windowsHide: true });
+      const timer = setTimeout(() => { child.kill(); reject(Error("Explorer second instance did not exit")); }, 30000);
+      child.once("error", error => { clearTimeout(timer); reject(error); });
+      child.once("exit", code => { clearTimeout(timer); code === 0 ? resolve() : reject(Error(`Explorer child exit ${code}`)); });
+    });
+    await wait(type === "--smart-name" ? "!!document.querySelector('#name-stem')" : "!!document.querySelector('#archive-query')", 45000);
+    assert(await evalUI("document.querySelector('#modal').textContent.includes('右键 中文 & $1 文件夹')"));
+    await evalUI("document.querySelector('#modal [data-cancel]').click()");
+    await wait("!document.querySelector('#modal').open");
+    assert.equal(await fs.readFile(originalFile, "utf8"), "unchanged");
+  }
   assert.deepEqual(externalOpens, [], "Folder interactions must never launch Explorer");
   console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, overlapping sources, redirected Desktop, rename/archive-cancel selection, empty association and refresh");
+  console.log("PASS Explorer: real second-instance smart naming/archive with Chromium switches and Chinese/space/special-character paths");
 }
 let tested = false;
 app.on("browser-window-created", (event, win) => {
@@ -107,4 +129,5 @@ app.on("browser-window-created", (event, win) => {
     app.exit(1);
   }));
 });
-prepare().then(() => require(path.join(process.resourcesPath, "production.asar/src/main.cjs"))).catch(error => { console.error(error); app.exit(1); });
+if (process.env.GUIYU_EXPLORER_CHILD === "1") require(path.join(process.resourcesPath, "production.asar/src/main.cjs"));
+else prepare().then(() => require(path.join(process.resourcesPath, "production.asar/src/main.cjs"))).catch(error => { console.error(error); app.exit(1); });

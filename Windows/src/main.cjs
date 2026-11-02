@@ -37,18 +37,25 @@ let store,
   win,
   pendingCommand = null;
 async function incoming(args) {
-  let i = args.findIndex((a) =>
-    ["--smart-name", "--smart-archive"].includes(a),
-  );
-  if (i < 0 || !args[i + 1]) return;
+  if (!Array.isArray(args)) return;
+  const commands = args.filter(a => ["--smart-name", "--smart-archive"].includes(a));
+  if (!commands.length) return;
   try {
-    const p = await fs.realpath(args[i + 1]),
+    // Electron can reorder second-instance argv and insert Chromium switches.
+    // Explorer supplies one absolute file/folder path; never resolve a switch.
+    const paths = args.slice(process.defaultApp ? 2 : 1).filter(a =>
+      typeof a === "string" && !a.startsWith("-") &&
+      (path.isAbsolute(a) || path.win32.isAbsolute(a)),
+    );
+    if (commands.length !== 1 || paths.length !== 1)
+      throw Error("未能识别唯一的所选文件路径，请重新从资源管理器选择文件。");
+    const p = await fs.realpath(paths[0]),
       e = await entry(p);
     store.externalAllowed ??= new Set();
     store.externalAllowed.add(
       process.platform === "win32" ? p.toLowerCase() : p,
     );
-    pendingCommand = { type: args[i], items: [e] };
+    pendingCommand = { type: commands[0], items: [e] };
     win?.webContents.send("guiyu-command", pendingCommand);
   } catch (e) {
     dialog.showErrorBox("无法打开所选文件", e.message);
@@ -521,7 +528,7 @@ const crypto = require("node:crypto");
 function defaults() {
   return sourceDefaults.defaults(name => app.getPath(name));
 }
-app.whenReady().then(async () => {
+const initialized = app.whenReady().then(async () => {
   try {
     store = await new Store(
       review
@@ -560,10 +567,13 @@ app.whenReady().then(async () => {
     app.quit();
   }
 });
-if (!app.requestSingleInstanceLock()) app.quit();
-app.on("second-instance", async (event, args) => {
+// Preserve the original argv: Electron does not preserve its order in the event.
+if (!app.requestSingleInstanceLock({ argv: process.argv })) app.quit();
+app.on("second-instance", async (event, args, workingDirectory, additionalData) => {
+  await initialized;
+  if (!store || !win) return;
   win?.show();
   win?.focus();
-  await incoming(args);
+  await incoming(Array.isArray(additionalData?.argv) ? additionalData.argv : args);
 });
 app.on("window-all-closed", () => app.quit());
