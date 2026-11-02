@@ -4,7 +4,7 @@
 
 方案、招标文件、投标文件和报价表，常常散落在下载文件夹和层层项目目录里。归屿把真实项目目录、文件整理和快速查找放进一个原生 macOS 工作空间，让你更容易给文件起好名字、放对位置、再次找到。
 
-[下载最新版](https://github.com/tiduse1988/guiyu/releases/latest) · [观看／下载介绍视频](https://github.com/tiduse1988/guiyu/releases/download/v0.5.0/Guiyu-product-introduction.mp4) · [构建与操作说明](#从源码构建)
+[下载与安装（Mac / Windows）](#下载与安装) · [观看／下载介绍视频](https://github.com/tiduse1988/guiyu/releases/download/v0.5.0/Guiyu-product-introduction.mp4) · [构建与操作说明](#从源码构建)
 
 ![归屿工作空间（示例数据）](docs/workspace.png)
 
@@ -22,7 +22,7 @@
 - **沿用真实文件夹**：直接读取你已有的目录，无需把文件导入云端或迁入专有资料库。
 - **本地处理**：文件管理、提取与搜索在 Mac 上完成，无需配置大模型 API，也不上传文件正文。
 - **操作由你确认**：智能命名和归档不会悄悄改名或搬走文件。
-- **免费开源**：MIT 许可，可使用、修改和商用；当前官方安装包支持 macOS 13+ 的 Apple Silicon Mac。
+- **免费开源**：MIT 许可，可使用、修改和商用；提供 macOS 13+ Apple Silicon 版和 Windows 32／64 位测试版，下载入口见下方“下载与安装”。
 
 ## 视频介绍
 
@@ -46,13 +46,29 @@
 
 ## 下载与安装
 
-[下载最新版（macOS Apple Silicon）](https://github.com/tiduse1988/guiyu/releases/latest) · [源代码](https://github.com/tiduse1988/guiyu)
+按自己的系统选择下载，Mac 和 Windows 的版本分别更新：
+
+| 系统 | 当前版本 | 下载 |
+| --- | --- | --- |
+| macOS 13+ · Apple Silicon（M1/M2/M3/M4 等） | 20261101(01) | [下载 Mac 版（ZIP）](https://github.com/tiduse1988/guiyu/releases/download/v20261101-01/Guiyu-20261101-01-macOS-arm64.zip) |
+| Windows 10 / Windows 11 · 64 位（x64） | 20261031(05) 测试版 | [下载 Windows 64 位（EXE 安装包）](https://github.com/tiduse1988/guiyu/releases/download/windows-20261031-05/Guiyu-20261031-05-test-Windows-x64-setup.exe) |
+| Windows 10 · 32 位（x86） | 20261031(05) 测试版 | [下载 Windows 32 位（EXE 安装包）](https://github.com/tiduse1988/guiyu/releases/download/windows-20261031-05/Guiyu-20261031-05-test-Windows-ia32-setup.exe) |
+
+[Mac 发行记录](https://github.com/tiduse1988/guiyu/releases/latest) · [Windows 测试版发行说明](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261031-05) · [全部版本](https://github.com/tiduse1988/guiyu/releases) · [源代码](https://github.com/tiduse1988/guiyu)
+
+### macOS 安装
 
 要求 macOS 13 或更高版本，当前官方安装包适用于 M1/M2/M3/M4 等 Apple Silicon Mac。解压 `Guiyu-版本-macOS-arm64.zip`，将“归屿.app”拖入“应用程序”后运行。不要直接在压缩包、只读磁盘或临时下载预览中运行，以免影响自动更新。
 
 当前免费分发版本使用本地代码签名和 Sparkle 更新签名，**尚未使用 Apple Developer ID 签名及公证**。首次打开可能被 macOS 阻止；确认从本仓库下载后，在“系统设置 → 隐私与安全性”查看“仍要打开”。不要关闭系统整体安全保护。若设备受组织策略限制，请联系管理员或从源码构建。
 
-## 自动更新
+### Windows 安装（测试版）
+
+64 位 Windows 10 和 Windows 11 选择 **Windows 64 位**，32 位 Windows 10 选择 **Windows 32 位**；Windows 11 没有 32 位系统版本。下载上表的 `-setup.exe` 后双击，按安装向导完成安装，无需另行安装 Node.js。
+
+Windows 当前发布的是 EXE 安装包。更新时手动下载新版安装包；完整使用说明及测试版限制见 [Windows 使用说明](Windows/README.md)。
+
+## 自动更新（macOS）
 
 0.5.0 起内置 Sparkle 2。0.5.2 起，设置页左下角显示应用包中的当前版本及构建号，默认按钮为“检查更新”；检查发现新版后显示新版版本号，按钮变为“立即更新”，点击后进入原生更新窗口确认下载和安装。检查本身不会安装更新。沿用自动检查偏好，但关闭旧版自动下载／退出安装偏好；更新须由用户点击发起。菜单栏保留相同更新入口及“自动检查更新”开关。断网不影响本地文件管理，检查失败可稍后重试。
 
@@ -279,4 +295,4 @@ Excel（XLSX）仅用横向、纵向表头生成候选：普通标题来自前8�
 
 ## Windows 测试版源码
 
-本次源码版本为 `20261031(04)`，Windows同步本地Mac的标题识别、原名保留、项目内路径、来源列表及窗口记忆等改动。支持分别构建x86和x64解压包，说明见[Windows/README.md](Windows/README.md)。本地32项隔离测试通过；完整Windows真机兼容性及系统OCR/Word交互仍需验收。源码版本提升不代表已经发布新的macOS安装包或Sparkle更新。
+Windows 下载入口统一放在上方[下载与安装](#下载与安装)。使用、构建说明及当前限制见 [Windows/README.md](Windows/README.md)，可分别构建 x86 和 x64 包。
