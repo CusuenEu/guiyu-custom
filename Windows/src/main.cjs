@@ -26,6 +26,12 @@ const {
 } = require("./core.cjs");
 const { naming, extract } = require("./documents.cjs");
 const namingFormat = require("./naming-format.cjs");
+const updater = require("./update.cjs").createUpdater({
+  fetch: (url, options) => net.fetch(url, options),
+  openExternal: (url) => shell.openExternal(url),
+  current: require("../version.json"),
+  arch: process.arch,
+});
 let store,
   win,
   pendingCommand = null;
@@ -470,34 +476,10 @@ async function dispatch(method, arg = {}) {
       }
       return true;
     }
-    case "checkUpdate": {
-      const response = await net.fetch(
-        "https://api.github.com/repos/tiduse1988/guiyu/releases/latest",
-        {
-          headers: { Accept: "application/vnd.github+json" },
-          signal: AbortSignal.timeout(15000),
-        },
-      );
-      if (!response.ok)
-        throw Error("更新服务暂不可用（" + response.status + "）。");
-      const data = await response.json();
-      let asset = data.assets?.find(
-        (a) =>
-          a.name.includes("Windows-" + process.arch) && a.name.endsWith(".zip"),
-      );
-      return asset
-        ? {
-            url: data.html_url,
-            version: data.tag_name,
-            message: "发现 Windows 安装包，请下载并手动替换。",
-          }
-        : { message: "当前发布中尚无 Windows 更新包。" };
-    }
+    case "checkUpdate":
+      return updater.check();
     case "downloadUpdate":
-      await shell.openExternal(
-        "https://github.com/tiduse1988/guiyu/releases/latest",
-      );
-      return true;
+      return updater.download();
     case "demo": {
       const root = await fs.mkdtemp(
         path.join(app.getPath("temp"), "Guiyu-demo-"),

@@ -1145,19 +1145,26 @@ function drawSettings() {
   $$("[data-undo]").forEach(
     (b) => (b.onclick = () => update("undo", { id: b.dataset.undo })),
   );
-  $("#check-update").onclick = async () => {
-    const b = $("#check-update");
+  const updateButton = $("#check-update"), updateStatus = $("#update-status");
+  updateStatus.setAttribute("role", "status");
+  let updateAvailable = false;
+  updateButton.onclick = async () => {
+    const b = updateButton;
     b.disabled = true;
+    b.textContent = updateAvailable ? "正在打开下载…" : "正在检查…";
     try {
-      let r = await api("checkUpdate");
-      $("#update-status").textContent = r.message;
-      if (r.url) {
-        b.textContent = "立即更新";
-        b.onclick = () => api("downloadUpdate");
+      if (updateAvailable) {
+        await api("downloadUpdate");
+        updateStatus.textContent = "已打开 Windows 下载链接。下载完成后关闭归屿，再安装或解压新版。";
+      } else {
+        const r = await api("checkUpdate");
+        updateStatus.textContent = r.message;
+        updateAvailable = r.status === "available";
       }
     } catch (e) {
-      $("#update-status").textContent = e.message;
+      updateStatus.textContent = e.message;
     } finally {
+      b.textContent = updateAvailable ? "下载更新" : "检查更新";
       b.disabled = false;
     }
   };
