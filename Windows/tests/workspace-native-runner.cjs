@@ -1,5 +1,5 @@
 "use strict";
-const { app, BrowserWindow, shell } = require("electron");
+const { app, shell, ipcMain } = require("electron");
 const fs = require("node:fs/promises"), path = require("node:path"), assert = require("node:assert/strict");
 const temp = process.env.GUIYU_WORKSPACE_TEST;
 if (!temp || process.env.CI !== "true") throw Error("Isolated CI only");
@@ -7,7 +7,13 @@ const downloads = path.join(temp, "下载"), root = path.join(downloads, "关联
 const year = path.join(root, "2026"), first = path.join(year, "甲项目"), second = path.join(year, "乙项目");
 const direct = path.join(downloads, "下载文件夹"), linkedSource = path.join(root, "空可归档目录");
 const externalOpens = [];
+const copiedSelections = [];
 shell.openPath = async p => { externalOpens.push(p); return ""; };
+const handle = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, handler) => handle(channel, (event, method, args) => {
+  if (channel === "guiyu" && method === "copyFiles") copiedSelections.push(args.items.map(e => e.path));
+  return handler(event, method, args);
+});
 async function prepare() {
   for (const dir of [first, second, empty, direct, linkedSource]) await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(path.join(first, "甲文档.txt"), "first");
@@ -25,7 +31,7 @@ async function check(win) {
   const evalUI = script => win.webContents.executeJavaScript(script);
   const row = (kind, value) => `[data-${kind}=${JSON.stringify(value)}]`;
   const click = (selector, extra = {}) => evalUI(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing '+${JSON.stringify(selector)});e.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1,...${JSON.stringify(extra)}}));})()`);
-  const wait = (condition) => evalUI(`new Promise((resolve,reject)=>{const until=Date.now()+15000;const poll=()=>{if(${condition})return resolve(true);if(Date.now()>until)return reject(Error('UI wait timed out: '+${JSON.stringify(condition)}));setTimeout(poll,20)};poll()})`);
+  const wait = (condition, timeout = 15000) => evalUI(`new Promise((resolve,reject)=>{const until=Date.now()+${timeout};const poll=()=>{if(${condition})return resolve(true);if(Date.now()>until)return reject(Error('UI wait timed out: '+${JSON.stringify(condition)}));setTimeout(poll,20)};poll()})`);
   const content = name => `document.querySelector('#files').textContent.includes(${JSON.stringify(name)})`;
   await wait("document.querySelectorAll('[data-dir]').length>0");
   assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("dir", empty))})`), "Empty association must be visible");
@@ -38,6 +44,9 @@ async function check(win) {
   assert(!await evalUI("!!document.querySelector('#empty-categories')"));
   await click(row("project", second), { ctrlKey: true }); await wait(content("乙文档.txt"));
   assert.equal(await evalUI("document.querySelectorAll('#projects [aria-selected=true]').length"), 2, "Middle Ctrl multiselect");
+  await evalUI("document.querySelector('#projects').focus();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'c',ctrlKey:true,bubbles:true}))");
+  await wait("document.querySelector('#toast').textContent.includes('已复制 2 项')", 45000);
+  assert.deepEqual([...copiedSelections[0]].sort(), [first, second].sort(), "Middle copy must use middle folders, never right-side files");
   await click(row("project", first)); await wait(content("甲文档.txt"));
   await evalUI(`document.querySelector(${JSON.stringify(row("project", first))}).dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))`);
   await wait("document.activeElement.id==='files'"); assert(await evalUI(content("甲文档.txt")));
@@ -68,7 +77,7 @@ async function check(win) {
   await click(row("project", path.join(empty, "新文件夹")));
   await wait("document.querySelector('#files').textContent.includes('没有内容')");
   assert.deepEqual(externalOpens, [], "Folder interactions must never launch Explorer");
-  console.log("PASS renderer: selection, Ctrl multiselect, keyboard, category-free contents, nested browse, sources, empty association and refresh");
+  console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, sources, empty association and refresh");
 }
 let tested = false;
 app.on("browser-window-created", (event, win) => {
