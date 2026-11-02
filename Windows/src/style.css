@@ -212,6 +212,8 @@ header {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+#sidebar nav button.root-entry { margin-top: 6px; font-weight: 600; }
+#sidebar nav button.nested-dir { margin-left: 12px; width: calc(100% - 12px); }
 #sidebar nav button {
   display: flex;
   align-items: center;

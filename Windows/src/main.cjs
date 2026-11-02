@@ -134,8 +134,7 @@ async function dispatch(method, arg = {}) {
       await store.refresh();
       return state();
     case "list": {
-      const item = await store.guard(arg.path);
-      if (!item.folder) throw Error("请选择文件夹。");
+      await store.browse(arg.path);
       if (store.recentAllowed?.has(path.resolve(arg.path).toLowerCase()))
         store.recentBrowseRoots = [arg.path];
       return list(arg.path);
@@ -154,22 +153,7 @@ async function dispatch(method, arg = {}) {
     }
     case "addSource": {
       let r = await choose();
-      if (!r.canceled) {
-        let next = structuredClone(store.settings);
-        for (const p of r.filePaths) {
-          const real = await fs.realpath(p);
-          if (next.roots.some((root) => overlap(real, root)))
-            throw Error("可归档目录不能与项目总目录重叠。");
-          if (!next.sources.some((s) => s.path === real))
-            next.sources.push({
-              id: crypto.randomUUID(),
-              name: path.basename(real),
-              path: real,
-              kind: "folder",
-            });
-        }
-        await store.save(next);
-      }
+      if (!r.canceled) await store.addSources(r.filePaths);
       return state();
     }
     case "removeSource": {
@@ -337,7 +321,8 @@ async function dispatch(method, arg = {}) {
     }
     case "archiveSuggest": {
       let texts = arg.items.map((e) => e.name).join(" "),
-        projects = store.snapshot.projects.filter((p) => p.folder);
+        projects = [...new Map([...store.snapshot.rootEntries, ...store.snapshot.projects]
+          .filter(p => p.folder).map(p => [p.path, p])).values()];
       function ranked() {
         return projects
           .map((p) => {
@@ -421,6 +406,8 @@ async function dispatch(method, arg = {}) {
       return true;
     case "trash": {
       for (const e of arg.items) {
+        if (store.settings.roots.some(root => path.resolve(root).toLowerCase() === path.resolve(e.path).toLowerCase()))
+          throw Error("关联的项目总目录本身不能移到回收站。");
         await store.guard(e.path);
         await verify(e);
       }

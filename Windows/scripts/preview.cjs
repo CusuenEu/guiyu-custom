@@ -41,7 +41,7 @@ let projects = names.map((name) => ({ ...make(name, directory), directory })),
     directory,
   }));
 let settings = {
-  roots: [base],
+  roots: [base, "C:\\空关联目录"],
   sources: [
     { id: "downloads", name: "下载", path: "C:\\Downloads", kind: "folder" },
     { id: "desktop", name: "桌面", kind: "folder", path: "C:\\Desktop" },
@@ -80,6 +80,8 @@ const state = () => ({
   arch: "x64",
   settings,
   snapshot: {
+    rootEntries: ["2026", "2025"].map(name => ({ ...make(name, base), directory: base })),
+    rootFiles: projects.map(p => ({ ...p, project: directory, projectName: "2026", directory: base })),
     directories: [
       { ...make("2026", base), root: base },
       { ...make("2025", base), root: base },
@@ -104,7 +106,7 @@ const server = http.createServer(async (req, res) => {
           break;
         case "list":
           if (process.env.GUIYU_PREVIEW_SLOW_LIST === "1") await new Promise((resolve) => setTimeout(resolve, 400));
-          result = folderContents.get(arg.path) || (arg.path === "C:\\Downloads\\示例文件夹"
+          result = folderContents.get(arg.path) || (arg.path === directory ? projects : null) || (arg.path === "C:\\Downloads\\示例文件夹"
             ? [make("示例文档.txt", arg.path, false), make("子文件夹", arg.path)]
             : arg.path === "C:\\Downloads\\第二个文件夹"
               ? [make("另一个文件.txt", arg.path, false)]
