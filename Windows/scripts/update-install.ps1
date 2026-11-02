@@ -1,4 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$Manifest)
+# A launcher started from PowerShell 7 can pass module paths incompatible with
+# Windows PowerShell 5.1. This helper needs only the system's own modules.
+$env:PSModulePath = [IO.Path]::Combine($PSHOME, 'Modules')
 $ErrorActionPreference = 'Stop'
 $data = Get-Content -LiteralPath $Manifest -Raw -Encoding UTF8 | ConvertFrom-Json
 function Status($phase, $message, $processId = 0) {
@@ -6,7 +9,11 @@ function Status($phase, $message, $processId = 0) {
 }
 try {
   if ($data.digest -notmatch '^[a-f0-9]{64}$' -or $data.packageVersion -notmatch '^\d{4}\.\d{3,4}\.\d{1,2}$') { throw 'Invalid update metadata' }
-  if ((Get-FileHash -LiteralPath $data.installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $data.digest) { throw 'Installer checksum changed' }
+  $stream = [IO.File]::OpenRead($data.installer)
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try { $actualHash = ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '').ToLowerInvariant() }
+  finally { $stream.Dispose(); $sha.Dispose() }
+  if ($actualHash -ne $data.digest) { throw 'Installer checksum changed' }
   @{ pid=$PID } | ConvertTo-Json -Compress | Set-Content -LiteralPath $data.readyFile -Encoding UTF8
   Status 'waiting' 'Waiting for Guiyu to close'
   # No forced termination: give normal file operations and Electron shutdown time.
