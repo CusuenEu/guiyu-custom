@@ -20,39 +20,6 @@ jobs:
           run-id: ${{ inputs.run_id }}
           github-token: ${{ github.token }}
           path: Windows/out
-      - name: Inspect actual shortcut contents
+      - name: Verify both existing installers
         shell: pwsh
-        run: |
-          $ErrorActionPreference='Stop'
-          $installer=Get-ChildItem Windows/out/*-ia32-setup.exe | Select-Object -First 1
-          $dir=Join-Path $env:RUNNER_TEMP '归屿 安装检查'
-          $p=Start-Process -FilePath $installer.FullName -ArgumentList ('/S /D='+$dir) -Wait -PassThru
-          if($p.ExitCode -ne 0){throw 'Install failed'}
-          $desktop=[Environment]::GetFolderPath('Desktop')
-          $file=Join-Path $desktop '归屿.lnk'
-          Get-Item -LiteralPath $file | Format-List FullName,Length
-          $wsh=New-Object -ComObject WScript.Shell
-          $link=$wsh.CreateShortcut($file)
-          Write-Host "WSH Target=[$($link.TargetPath)] Icon=[$($link.IconLocation)] WorkDir=[$($link.WorkingDirectory)]"
-          $bytes=[IO.File]::ReadAllBytes($file)
-          Write-Host ('LNK base64: '+[Convert]::ToBase64String($bytes))
-          $shell=New-Object -ComObject Shell.Application
-          $item=$shell.NameSpace($desktop).ParseName('归屿.lnk')
-          Write-Host "Shell GetLink.Path=[$($item.GetLink.Path)]"
-          $file2=Join-Path $desktop '归屿-WSH.lnk'
-          $link2=$wsh.CreateShortcut($file2)
-          $link2.TargetPath=Join-Path $dir 'Guiyu.exe'
-          $link2.IconLocation=(Join-Path $dir 'Guiyu.exe')+',0'
-          $link2.Save()
-          $read=$wsh.CreateShortcut($file2)
-          Write-Host "WSH-created Target=[$($read.TargetPath)] Icon=[$($read.IconLocation)]"
-          $exe=Join-Path $dir 'Guiyu.exe'
-          $env:GUIYU_LINK=$file
-          & powershell.exe -NoProfile -NonInteractive -STA -Command '[Console]::OutputEncoding=[Text.Encoding]::UTF8;$s=New-Object -ComObject WScript.Shell;$l=$s.CreateShortcut($env:GUIYU_LINK);Write-Output ("PS5 Target=["+$l.TargetPath+"] Icon=["+$l.IconLocation+"]")'
-          foreach($kind in @('*','Directory')){
-            foreach($key in @('GuiyuName','GuiyuArchive')){
-              $r=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Software\Classes\$kind\shell\$key")
-              Write-Host "Menu $kind $key label=[$($r.GetValue(''))]"
-              $r.Dispose()
-            }
-          }
+        run: ./Windows/tests/installer-smoke.ps1

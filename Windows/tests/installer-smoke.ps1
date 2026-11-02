@@ -20,13 +20,13 @@ foreach ($installer in $installers) {
   $process = Start-Process -FilePath $installer.FullName -ArgumentList ("/S /D=" + $installDir) -PassThru -Wait
   if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $exe)) { throw "Install failed: $arch" }
   if (!(Test-Path -LiteralPath $shortcutPath)) { throw 'Missing desktop shortcut.' }
-  $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
-  Write-Host "Shortcut target=[$($link.TargetPath)] icon=[$($link.IconLocation)] expected=[$exe]"
-  $comma = $link.IconLocation.LastIndexOf(',')
-  if ($comma -lt 0) { throw 'Missing shortcut icon index.' }
-  $iconPath = $link.IconLocation.Substring(0, $comma).Trim().Trim('"')
-  $iconIndex = [int]$link.IconLocation.Substring($comma + 1).Trim()
-  if ($link.TargetPath -ne $exe -or $iconPath -ne $exe -or $iconIndex -ne 0) { throw 'Wrong desktop shortcut target/icon.' }
+  # Shell.Application preserves Unicode LNK paths where the legacy WSH reader does not.
+  $shell = New-Object -ComObject Shell.Application
+  $link = $shell.NameSpace($desktop).ParseName('归屿.lnk').GetLink
+  [string]$iconPath = ''
+  $iconIndex = $link.GetIconLocation([ref]$iconPath)
+  Write-Host "Shortcut target=[$($link.Path)] icon=[$iconPath,$iconIndex] expected=[$exe]"
+  if ($link.Path -ne $exe -or $iconPath -ne $exe -or $iconIndex -ne 0) { throw 'Wrong desktop shortcut target/icon.' }
   foreach ($kind in @('*','Directory')) {
     foreach ($action in $actions) {
       $key = $registry.OpenSubKey("Software\Classes\$kind\shell\$($action[0])")
