@@ -23,3 +23,13 @@ jobs:
       - name: Verify both existing installers
         shell: pwsh
         run: ./Windows/tests/installer-smoke.ps1
+      - name: Expand existing app packages
+        shell: pwsh
+        run: Get-ChildItem Windows/out/*-Windows-*.zip | ForEach-Object { Expand-Archive -LiteralPath $_.FullName -DestinationPath Windows/out -Force }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --omit=optional --ignore-scripts
+        working-directory: Windows
+      - name: Verify existing packaged workspaces
+        run: node Windows/tests/workspace-native.cjs

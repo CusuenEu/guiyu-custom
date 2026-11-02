@@ -8,7 +8,7 @@ async function run() {
   const { createPackage } = await import("@electron/asar");
   const out = path.resolve(__dirname, "../out");
   for (const arch of ["ia32", "x64"]) {
-    const temp = await fs.mkdtemp(path.join(os.tmpdir(), `guiyu-workspace-${arch}-`));
+    const temp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `guiyu-workspace-${arch}-`)));
     try {
       const runtime = path.join(temp, "runtime"), shim = path.join(temp, "shim");
       await fs.cp(path.join(out, `Guiyu-win32-${arch}`), runtime, { recursive: true });
@@ -29,7 +29,7 @@ async function run() {
         child.once("exit", code => { clearTimeout(timer); code === 0 ? resolve() : reject(Error(`${arch} native workspace exit ${code}`)); });
       });
       console.log(`PASS ${arch}: real packaged workspace/IPC/filesystem regression`);
-    } finally { await fs.rm(temp, { recursive: true, force: true }); }
+    } finally { await fs.rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
   }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
