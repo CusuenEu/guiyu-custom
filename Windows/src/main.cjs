@@ -381,8 +381,23 @@ async function dispatch(method, arg = {}) {
     }
     case "rename": {
       const result = await store.rename(arg.plans);
+      let renamedItems;
+      if (arg.forArchive) {
+        try {
+          renamedItems = [];
+          for (const plan of arg.plans) {
+            const target = path.join(path.dirname(plan.entry.path), plan.name);
+            const arrived = await store.guard(target);
+            if (arrived.identity !== plan.entry.identity)
+              throw Error("重命名后的文件已被替换，请重新选择。");
+            renamedItems.push(arrived);
+          }
+        } catch (e) {
+          throw Error(`已完成 ${result} 项，无法准备归档，请关闭窗口后重新选择：${e.message}`);
+        }
+      }
       await store.refresh();
-      return { result, ...state() };
+      return { result, ...state(), ...(arg.forArchive ? { renamedItems } : {}) };
     }
     case "archive": {
       const result = await store.archive(arg.items, arg.destination);

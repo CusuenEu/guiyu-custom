@@ -89,7 +89,7 @@ const state = () => ({
     unavailable: [],
   },
 });
-let lastRename = [];
+let lastRename = [], lastArchiveItems = [], renameCalls = 0, renameError = "", renameDelay = 0;
 const server = http.createServer(async (req, res) => {
   try {
     if (req.url === "/fixture-api") {
@@ -159,11 +159,21 @@ const server = http.createServer(async (req, res) => {
           });
           break;
         }
-        case "rename":
+        case "rename": {
           // Capture the production editor's exact confirmation payload in memory only.
-          lastRename = arg.plans; result = { ...state(), result: lastRename.length }; break;
+          renameCalls++; lastRename = arg.plans;
+          if (renameDelay) await new Promise(resolve => setTimeout(resolve, renameDelay));
+          if (renameError) throw Error(renameError);
+          result = { ...state(), result: lastRename.filter(p => p.name !== p.entry.name).length,
+            ...(arg.forArchive ? { renamedItems: lastRename.map(p => ({ ...p.entry,
+              name: p.name, path: path.win32.join(path.win32.dirname(p.entry.path), p.name) })) } : {}) };
+          break;
+        }
         case "reviewLastRename": result = lastRename; break;
+        case "reviewRenameMode": renameError = arg.error || ""; renameDelay = arg.delay || 0; renameCalls = 0; lastArchiveItems = []; result = true; break;
+        case "reviewRenameStatus": result = { renameCalls, lastRename, lastArchiveItems }; break;
         case "archiveSuggest":
+          lastArchiveItems = arg.items;
           result = {
             projects: projects.map((p, i) => ({
               ...p,

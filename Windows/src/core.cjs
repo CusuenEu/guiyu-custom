@@ -586,6 +586,10 @@ class Store {
           throw Error("仅更改大小写请先更改为临时名称。");
         await verify(e);
         await moveExclusive(e.path, dst);
+        if (this.externalAllowed?.has(key(e.path))) {
+          this.externalAllowed.delete(key(e.path));
+          this.externalAllowed.add(key(dst));
+        }
         const next = structuredClone(this.settings);
         this.remap(next, e.path, dst);
         next.renames.push({

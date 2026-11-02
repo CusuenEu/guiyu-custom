@@ -712,8 +712,8 @@ function errorIn(e) {
   if (el) el.textContent = e.message;
   else toast(e.message, true);
 }
-function actions(confirm) {
-  return `<div id="dialog-error" class="inline-error" role="alert"></div><div class="dialog-actions"><button data-cancel>取消</button><button id="confirm" class="primary">${confirm}</button></div>`;
+function actions(confirm, withArchive = false) {
+  return `<div id="dialog-error" class="inline-error" role="alert"></div><div class="dialog-actions"><button data-cancel>取消</button>${withArchive ? '<button id="confirm-archive">确认并归档</button>' : ''}<button id="confirm" class="primary">${confirm}</button></div>`;
 }
 function smartHeader(title, symbol) {
   return `<div class="smart-header"><span class="smart-header-icon" aria-hidden="true">${symbol}</span><h2>${title}</h2></div>`;
@@ -731,11 +731,12 @@ function namingLoadingDialog(entry) {
         <div class="recognized-panel"><h3>识别文字</h3><textarea aria-label="识别文字" placeholder="在左侧框选要识别的文字" disabled></textarea><div class="recognized-actions"><span class="muted">正在准备，请稍候</span><button type="button" disabled>使用识别文字</button></div></div>
         <div class="recommend-panel"><h3>推荐名称</h3><div class="scroll candidate-list"><div class="naming-loading" role="status"><span class="naming-spinner" aria-hidden="true"></span><span>正在生成推荐名称…</span></div></div><div class="name-editor"><label for="loading-name">最终文件名</label><div class="naming-line"><input id="loading-name" placeholder="识别完成后可编辑" disabled></div></div></div>
       </section>
-    </div>${actions("确认重命名")}</div>`;
+    </div>${actions("确认重命名", true)}</div>`;
 }
 async function namingDialog(items, smart) {
-  modal(smart && items.length === 1 ? namingLoadingDialog(items[0]) : `<div class="dialog-body" style="height:460px"><h2>${smart ? "智能命名" : "更改名称"}</h2><p class="muted">正在准备${items.length}个条目…</p>${actions("确认重命名")}</div>`);
+  modal(smart && items.length === 1 ? namingLoadingDialog(items[0]) : `<div class="dialog-body" style="height:460px"><h2>${smart ? "智能命名" : "更改名称"}</h2><p class="muted">正在准备${items.length}个条目…</p>${actions("确认重命名", smart)}</div>`);
   $("#confirm").disabled = true;
+  if ($("#confirm-archive")) $("#confirm-archive").disabled = true;
   const pending = $("#modal-content").firstElementChild;
   let suggestions;
   try {
@@ -766,8 +767,10 @@ async function namingDialog(items, smart) {
     if (!smart) body += '<div class="setting-form"><input id="find" placeholder="查找文字" aria-label="查找文字"><input id="replace" placeholder="替换为" aria-label="替换为"><input id="prefix" placeholder="添加前缀" aria-label="添加前缀"><button id="apply-batch">应用</button></div>';
     body += '<div class="scroll">' + suggestions.map((r, i) => `<div class="batch-original">${esc(r.entry.name)}</div><div class="batch-row"><input type="checkbox" data-include="${i}" aria-label="处理 ${esc(r.entry.name)}" ${smart && r.fallback ? "" : "checked"}><input type="text" data-name="${i}" aria-label="新名称 ${esc(r.entry.name)}" value="${esc(smart ? batchEditor(r, r.candidates[0]) : GuiyuNaming.literalStem(r.entry.name, r.ext))}"><span>${esc(r.ext)}</span>${smart ? `<select data-alternate="${i}" aria-label="其他候选"><option value="">其他候选</option>${r.candidates.map((c, j) => `<option value="${j}">${esc(batchEditor(r, c))}</option>`).join("")}</select>` : ""}</div>`).join("") + '</div>';
   }
-  modal(body + actions("确认重命名") + '</div>');
-  const confirm = $("#confirm");
+  modal(body + actions("确认重命名", smart) + '</div>');
+  const confirm = $("#confirm"), confirmArchive = $("#confirm-archive");
+  const namingPanel = $("#modal-content").firstElementChild;
+  let submitting = false, partial = false;
   function canSubmit() {
     const active = suggestions.filter((r, i) => !batch || $(`[data-include="${i}"]`).checked);
     return active.length > 0 && active.every((r) => {
@@ -776,7 +779,8 @@ async function namingDialog(items, smart) {
     });
   }
   function updateEditor() {
-    confirm.disabled = !canSubmit();
+    confirm.disabled = submitting || partial || !canSubmit();
+    if (confirmArchive) confirmArchive.disabled = confirm.disabled;
     if (!batch && smart) $$('[data-candidate]').forEach((button) => {
       const chosen = editor(suggestions[0], suggestions[0].candidates[+button.dataset.candidate]) === $("#name-stem").value;
       button.classList.toggle('chosen', chosen); button.setAttribute('aria-pressed', String(chosen));
@@ -909,12 +913,20 @@ async function namingDialog(items, smart) {
     }); updateEditor();
   };
   updateEditor();
-  confirm.onclick = async () => {
-    if (!canSubmit()) return;
+  const modalElement = $("#modal");
+  const preventPendingCancel = (event) => { if (submitting) event.preventDefault(); };
+  async function submit(andArchive = false) {
+    if (submitting || partial || !canSubmit()) return;
+    submitting = true;
+    modalElement.addEventListener("cancel", preventPendingCancel);
+    $("#dialog-error").textContent = "";
     if (smart && !batch) window.guiyu?.cancelNaming?.();
-    confirm.disabled = true;
+    updateEditor();
+    const cancelButtons = $$('[data-cancel]');
+    cancelButtons.forEach(b => b.disabled = true);
+    let renamed = false;
     try {
-      if(smart && !batch && suggestions[0].fallback && $("#name-stem").value===GuiyuNaming.literalStem(suggestions[0].entry.name,suggestions[0].ext)){ $("#modal").close(); return; }
+      if(!andArchive && smart && !batch && suggestions[0].fallback && $("#name-stem").value===GuiyuNaming.literalStem(suggestions[0].entry.name,suggestions[0].ext)){ $("#modal").close(); return; }
       const plans = suggestions.flatMap((r, i) => {
         if (batch && !$(`[data-include="${i}"]`).checked) return [];
         let stem = batch ? $(`[data-name="${i}"]`).value : $("#name-stem").value;
@@ -926,8 +938,9 @@ async function namingDialog(items, smart) {
         if (smart && !r.fallback) GuiyuNaming.validatePrefix(name, r.format);
         return [{ entry: r.entry, name, smart: smart && !r.fallback }];
       });
-      const result = await api('rename', { plans });
-      $("#modal").close();
+      const result = await api('rename', { plans, ...(andArchive ? { forArchive: true } : {}) });
+      renamed = true;
+      if (!namingPanel.isConnected || !modalElement.open) return;
       for (const p of plans) if (p.entry.folder) {
         const target = p.entry.path.slice(0, p.entry.path.length - p.entry.name.length) + p.name;
         if (project?.path === p.entry.path) project = result.snapshot.projects.find((x) => x.path === target) || null;
@@ -935,11 +948,25 @@ async function namingDialog(items, smart) {
         if (sourcePreviewCurrent === p.entry.path || sourcePreviewCurrent.startsWith(p.entry.path + '\\') || sourcePreviewCurrent.startsWith(p.entry.path + '/')) sourcePreviewCurrent = target + sourcePreviewCurrent.slice(p.entry.path.length);
         if (sourceFolder?.path === p.entry.path) sourceFolder = { ...sourceFolder, path: target, name: p.name };
       }
-      apply(result); await load(); toast(`已重命名 ${result.result} 项`);
+      apply(result);
+      try { await load(); } catch (e) { toast(`命名已完成，列表刷新失败：${e.message}`, true); }
+      if (andArchive) {
+        if (!result.renamedItems?.length) throw Error("命名已完成，但未能取得归档文件信息，请关闭窗口后重新选择。");
+        modalElement.removeEventListener("cancel", preventPendingCancel);
+        await archiveDialog(result.renamedItems);
+      } else $("#modal").close();
+      if (result.result) toast(`已重命名 ${result.result} 项`);
     } catch (e) {
-      errorIn(e); if (/已完成\s*[1-9]\d*\s*项/.test(e.message)) confirm.dataset.partial = 'true';
-    } finally { if (confirm.dataset.partial !== 'true') confirm.disabled = !canSubmit(); }
-  };
+      errorIn(e); if (renamed || /已完成\s*[1-9]\d*\s*项/.test(e.message)) partial = true;
+    } finally {
+      submitting = false;
+      cancelButtons.forEach(b => b.disabled = false);
+      modalElement.removeEventListener("cancel", preventPendingCancel);
+      if (namingPanel.isConnected) updateEditor();
+    }
+  }
+  confirm.onclick = () => submit(false);
+  if (confirmArchive) confirmArchive.onclick = () => submit(true);
 }
 async function archiveDialog(items) {
   modal(
