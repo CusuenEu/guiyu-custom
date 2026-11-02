@@ -33,8 +33,10 @@
     )
       return [];
     const separator = root.includes("\\") ? "\\" : "/",
-      pathFor = (parts) =>
-        (base.prefix + parts.join("/")).replace(/\//g, separator);
+      pathFor = (parts) => {
+        const value = (base.prefix + parts.join("/")).replace(/\//g, separator);
+        return base.windows && parts.length === 1 && /^[a-z]:$/i.test(parts[0]) ? value + separator : value;
+      };
     const result = [
       {
         name: rootTitle || base.parts.at(-1) || root,

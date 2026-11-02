@@ -78,3 +78,48 @@ Archive-source layout refinement (2026-10-31): Downloads, Recents and linked-sou
 ## 20261031(04) CI适配
 
 Windows脚本语法检查显式按UTF-8读取后调用ParseInput，避免Windows PowerShell 5将无BOM的中文脚本按ANSI解码。Mac窗口记忆测试比较生产最小内容尺寸适配后的恢复结果；CI小屏幕上原辅助窗口的400×300最小值不能作为生产工作区1060×700的期望。未跳过测试，也未修改产品窗口几何逻辑。
+
+## Update-install modal regression (2026-11-01, local candidate)
+
+An actual update attempt verified the signed archive but AppKit rejected Quit while the SwiftUI settings sheet remained attached. Settings now closes only when an available update is explicitly started. The updater also handles `updater:didAbortWithError:` to release its busy state before an error alert is acknowledged. `./build.sh` passes, including the early-abort recovery regression.
+
+Maintainers with the existing release signing key can run `python3 scripts/test_update_install.py` after building. It uses a unique temporary bundle identity, isolated preferences/settings, a localhost signed feed and a tiny replacement app. `--update-install-fixture` refuses ordinary bundles and mismatched fixture roots. The script drives the actual production settings sheet and real Sparkle download/extraction/install lifecycle, checks normal AppKit termination, physical bundle replacement, signature/binary equality and new-version relaunch. Baseline reproduction failed with the sheet still attached; the fixed flow passes. It does not install over or quit the user's app. Source and logs remain a local candidate; no release or version bump is included in this diagnostic repair.
+
+Sparkle reference: https://sparkle-project.org/documentation/api-reference/Protocols/SPUUpdaterDelegate.html and https://sparkle-project.org/documentation/api-reference/Protocols/SPUUserDriver.html .
+
+## Mac 拖入安装包验证（2026-11-02，本地候选）
+
+`./scripts/build-dmg.sh` 生成手动安装 DMG；构建工具固定在 `scripts/dmg-requirements.txt`，不进入应用依赖。运行 `.build/dmg-tools/bin/python scripts/verify-dmg.py dist/Guiyu-20261101-01-macOS-arm64.dmg --self-test` 可复核只读挂载、指向真实 `/Applications` 的“应用程序”符号链接、660×420 Finder 窗口与图标坐标、应用图标、严格代码签名，以及复制到隔离 Applications 后的签名、可执行文件一致性和完整自测。此次上述检查通过；feed 生成检查产生一个仅指向 ZIP 的更新条目，SHA256SUMS 覆盖 ZIP、DMG 和 appcast。
+
+证据集中在主项目的 `.impeccable/review/mac-installer/`：`build.log`、`verify.log`、`feed-generation.log`、`manifest.json` 和 `finish-review.md`。`layout-preview.png` 是读取挂载包实际素材与坐标生成的 AppKit 布局预览，并非 Finder 截图；独立审查在该预览与所提供结构验证范围内记为 ship，无实质修复项。未验证前台 Finder 展示、实体拖拽、Gatekeeper 或安装到真实 `/Applications`。候选仍为 `20261101(01)`，包含先前未发布的更新弹窗修复；本轮未升号、提交、发布或替换已安装应用，未改 Windows。
+
+## Mac file-copy shortcuts (2026-11-02, local candidate)
+
+`Sources/FileCopyTests.swift` exercises the actual hosted BrowserTable in both file/multiple-selection and project/single-selection layouts. Native Command-C key equivalents and the Copy selector on the first responder write file-URL objects to a unique pasteboard. Coverage includes Unicode/spaces/# filenames, folder hierarchy, item order/deduplication, category exclusion, stale/empty selection preservation, sidebar mouse focus and folder copying, and text-editor/modal exclusion. Native text selection is copied using NSTextView.writablePasteboardTypes to preserve AppKit's supported pasteboard formats. A separate recipient consumes the native URLs and copies temporary documents/folders; source bytes and identity remain unchanged. Full `./build.sh` passes, including version tests, strict signature verification, the new regression and all existing isolated self-tests. The general clipboard is never written by these tests.
+
+This validates native handlers and file-object clipboard interoperability with an isolated recipient; it does not claim physical keyboard or real Finder paste acceptance. No new paste operation is implemented inside Guiyu. Runtime code, build and installer remain a local unpublished candidate without a version increment or installed-application replacement. Windows is unchanged. Evidence: primary `.impeccable/review/file-copy/`. Apple's file-URL pasteboard API: https://developer.apple.com/documentation/appkit/nspasteboard .
+
+## Finder Services test isolation (2026-11-02)
+
+Targeted LaunchServices unregister and pbs refresh reduced Guiyu from eight service records (formal app plus three uniquely identified historical probes) to exactly two belonging to /Applications/归屿.app. All 59 unrelated service records matched before/after. Application and project files were not deleted; the running installed app was not restarted. A stale mounted-image registration could not be scanned and was reported, without blocking refresh of the installed provider.
+
+`python3 scripts/test_service_cleanup.py` passes three planner regressions for preserving the installed app and other namespaces, path spaces/parentheses, duplicate rows and unknown records. `./build.sh` passes full self-tests through the new isolated runner: copied test bundles have a unique identity, no NSServices and disabled automatic update checks; the distribution bundle retains both service declarations and its original metadata/signature. After full self-tests, service cache verification still reports only the installed naming/archive pair. DMG verification reuses the isolated runner, and updater fixtures strip NSServices before either app version can launch. A manual developer build may opt out with GUIYU_FINDER_SERVICES=0; release preparation rejects it until rebuilt with services enabled. These are local script changes, with no release/version bump or Windows edits. Evidence: primary .impeccable/review/finder-service-cleanup/.
+
+## Archive false-recommendation regression (2026-11-02, local candidate)
+
+The reported numeric/date-folder hits were reproduced using the current matching source plus a read-only snapshot of 112 projects and 3215 filename records; no private document body was read. Nested reference names produced weak filename matches for 202210 and 7. The old flow published any positive score and could add 30 to weak content similarities. After the fix, the same metadata-only automatic recommendation retains the two descriptively named 智慧工地 projects and excludes the numeric containers and weak aliases. This is a metadata diagnostic, not a capture or replay of the actual private PDF's opening pages.
+
+ArchiveMatchingTests adds exact nested-title false positives for numeric/month/date/fullwidth container names, accidental date text, preserved explicit keywords/manual search, weak filename/content hits that must not be promoted by the opening bonus, and demoted filename candidates disappearing after stronger content evidence. Existing abbreviated-project metadata, exact code, filename-first/no-read, ambiguity, page limits, cancellation and performance regressions remain. ./build.sh passes complete isolated self-tests and signature/version checks. No project files are renamed or archived, no installed app is replaced, and no Git publication, version bump or Windows edits are included. Evidence: primary .impeccable/review/archive-match-fix/.
+
+## 确认并归档验证（2026-11-02，本地候选）
+
+`./build.sh`、打包应用的 `--naming-archive-review` 与 `--smart-dialogs-review` 均通过。`NamingArchiveTests` 覆盖改名后重新创建路径／身份／修改时间、未改名及原名回退继续归档、失败／忙碌／过期请求保护、文件夹层级和单独确认后才移动；`NamingArchiveReview` 激活实际原生新按钮，并检查主窗口与来源的 sheet 关闭后交接、Finder 服务窗口替换、紧凑文件夹、空名禁用及取消归档保留改名。普通绿色确认和 Return 保持只命名。
+
+六张真实原生截图、`build.log`、`native-ui.log`、`manifest.json` 和 `finish-review.md` 位于 `.impeccable/review/naming-archive`：`workspace-file-actions.png`、`folder-actions.png`、`empty-name-disabled.png`、`workspace-archive.png`、`source-archive.png`、`finder-archive.png`。独立复核记录 `disposition: ship`，仅针对本次局部原生实现、截图和隔离模型／控件证据，无需要修复的实质问题；来源及可执行文件哈希与复核时的官方工作副本一致。普通 Return 回归日志为 `/tmp/guiyu-naming-archive-legacy-ui.log`；DMG 验证日志 `/tmp/guiyu-naming-archive-dmg-verify.log` 也通过。以上使用临时文件及独立测试身份，未改名或移动真实用户数据，未操作实体鼠标／按键，也不代表完整人工或无障碍验收。候选版本仍为 `20261101(01)`；本项未提交、发布、升号、替换已安装应用或修改 Windows。
+
+
+## Mac file-format icon integration · 20261102(02)
+
+The supplied FileTypeIcons.swift is copied unchanged into Sources. Resources/FileTypeIcons.xcassets retains all 45 image sets and 1x/2x/3x PNGs; the accompanying manifest and licenses are bundled. build.sh compiles Assets.car when actool is available. Command Line Tools builds load the same catalog image sets directly as a multi-representation NSImage; no second extension map is maintained. The local release uses this catalog fallback because full Xcode is not installed. Xcode CI exercises compiled asset loading as well.
+
+Full isolated self-tests cover all 334 aliases against the supplied manifest, all image scales, caching, case and compound suffixes, unknown formats, ordinary folders versus known document bundles, and real temporary Finder alias metadata. Native --file-icons-review checks production BrowserTable cells and captures all icon families plus archive summaries. --smart-dialogs-review and --ui-review exercise existing dialogs, selection, search, project-row alignment and workspace layouts. Local build and all three native review commands completed with exit 0. Screenshots and logs are retained under .impeccable/review/file-type-icons/; native rendering and handler checks do not constitute physical pointer/keyboard acceptance. No user document was renamed or moved.

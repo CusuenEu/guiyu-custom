@@ -32,6 +32,26 @@ import AppKit
     let genericReference = FileItem(path:"/archive/generic/机房.pdf",project:"/archive/generic",text:"",size:1,date:Date())
     let genericIndex = ArchiveProjectIndex(projects:[Project(path:"/archive/generic",name:"202206")],references:[genericReference])
     try verify(genericIndex.choices(input:"抖音集团2026年机房租赁招采项目",origin:"文件名").isEmpty,"Year-only folders and generic short reference filenames must not add unrelated recommendations")
+    let containerProjects = [Project(path:"/archive/date",name:"202210"),Project(path:"/archive/month",name:"7"),Project(path:"/archive/chinese-date",name:"2024年7月"),Project(path:"/archive/fullwidth",name:"２０２２１０"),Project(path:"/archive/site",name:"智慧工地")]
+    let containerReferences = containerProjects.prefix(4).map { FileItem(path:$0.path+"/贵安移动智慧工地技术支撑服务项目.pdf",project:$0.path,text:"",size:1,date:Date()) }
+    let containers = ArchiveProjectIndex(projects:containerProjects,references:containerReferences)
+    let specific = "贵安移动智慧工地技术支撑服务项目合同审批表"
+    try verify(containers.choices(input:specific,origin:"文件名").map(\.id) == ["/archive/site"],"Numeric/month/date containers never borrow nested document names as a project identity, even for an exact title match")
+    try verify(containers.choices(input:"2024年7月审批资料",origin:"前两页").isEmpty,"A date occurring in opening-page text is not evidence for a date-named destination")
+    try verify(containers.search("202210").contains{$0.path == "/archive/date"} && containers.search("7").contains{$0.path == "/archive/month"},"Opaque containers remain available through explicit manual name search")
+    let explicit = ArchiveProjectIndex(projects:[Project(path:"/archive/date",name:"202210",keywords:"智慧工地")])
+    try verify(explicit.choices(input:specific,origin:"文件名").first?.id == "/archive/date","An explicit user-defined project keyword remains valid for an opaque container")
+    let weak = ArchiveProjectIndex(projects:[Project(path:"/archive/unrelated",name:"财务资料")],references:[FileItem(path:"/archive/unrelated/智慧工地报价.xls",project:"/archive/unrelated",text:"",size:1,date:Date())])
+    let weakTitle = "贵安智慧工地合同审批表"
+    let weakScores = weak.choices(input:weakTitle,origin:"文件名")
+    try verify(!weakScores.isEmpty && weakScores.allSatisfy{$0.score < 65},"Fixture retains a weak resemblance for manual fuzzy search")
+    updates = [];reads = []
+    matchArchiveRows([BrowserRow(id:"/inbox/weak.pdf",title:weakTitle+".pdf")],index:weak,token:IndexCancellation(),readOpening:{row in reads.append(row.id);return weakTitle}) { updates.append(($0,$1,$2)) }
+    try verify(reads.count == 1 && updates.allSatisfy{$0.0.isEmpty} && updates.last?.1 == true,"Weak filename and content resemblances never enter recommendations or gain credibility from the content bonus")
+    let resolved = ArchiveProjectIndex(projects:[Project(path:"/archive/site-a",name:"智慧工地"),Project(path:"/archive/site-b",name:"智慧工地"),Project(path:"/archive/water-only",name:"水利投资")])
+    updates = []
+    matchArchiveRows([BrowserRow(id:"/inbox/ambiguous.pdf",title:"智慧工地资料.pdf")],index:resolved,token:IndexCancellation(),readOpening:{_ in "水利投资舆情监测项目"}) { updates.append(($0,$1,$2)) }
+    try verify(updates.first?.0.count == 2 && updates.last?.0.map(\.id) == ["/archive/water-only"],"Filename candidates demoted below the confidence floor do not linger as matched projects after opening-page evidence resolves them")
     let cancelled = IndexCancellation(); cancelled.cancel(); reads = []; updates = []
     matchArchiveRows([generic],index:index,token:cancelled,readOpening:{ row in reads.append(row.id); return "" }) { updates.append(($0,$1,$2)) }
     try verify(reads.isEmpty && updates.isEmpty,"Cancellation prevents reads and publication")

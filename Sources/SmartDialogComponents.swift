@@ -33,8 +33,7 @@ struct SmartDialogFileSummary: View {
     var body: some View {
         HStack(spacing:12) {
             if let row = rows.first {
-                if row.folder { Image(nsImage:WorkspaceTheme.folder).resizable().frame(width:30,height:28) }
-                else if let icon = WorkspaceFileIcons.image(for:row.file) { Image(nsImage:icon).resizable().scaledToFit().frame(width:28,height:30) }
+                if let icon = WorkspaceFileIcons.image(for:row) { Image(nsImage:icon).resizable().scaledToFit().frame(width:28,height:28) }
                 else { Image(systemName:"doc").font(.system(size:24)).foregroundStyle(accent).frame(width:28) }
                 VStack(alignment:.leading,spacing:5) {
                     Text(row.title+(rows.count > 1 ? " 等 \(rows.count) 项" : "")).font(.system(size:13,weight:.medium)).lineLimit(1).truncationMode(.middle)

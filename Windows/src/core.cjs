@@ -16,7 +16,7 @@ const key = (p) =>
     ? path.resolve(p).toLowerCase()
     : path.resolve(p);
 const inside = (p, root) =>
-  key(p) === key(root) || key(p).startsWith(key(root) + path.sep);
+  key(p) === key(root) || key(p).startsWith(key(root).endsWith(path.sep) ? key(root) : key(root) + path.sep);
 const overlap = (a, b) => inside(a, b) || inside(b, a);
 async function exists(p) {
   try {
@@ -82,6 +82,7 @@ function runPS(script, env = {}, timeout = 90000, signal) {
         "-NoLogo",
         "-NoProfile",
         "-NonInteractive",
+        "-STA",
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
@@ -97,7 +98,7 @@ function runPS(script, env = {}, timeout = 90000, signal) {
       },
       (err, out, stderr) =>
         err
-          ? reject(Error((stderr || err.message).trim()))
+          ? reject(Error(err.killed ? "Windows 操作超时，请稍后重试。" : (stderr || err.message).trim()))
           : resolve(out.replace(/^\uFEFF/, "")),
     ),
   );
@@ -408,6 +409,8 @@ class Store {
       namingRules: namingFormat.settings(),
     };
     this.snapshot = {
+      rootEntries: [],
+      rootFiles: [],
       directories: [],
       projects: [],
       files: [],
@@ -429,6 +432,11 @@ class Store {
         throw Error("配置文件无法读取，已停止以防覆盖：" + e.message);
       this.settings.sources = defaultSources;
     }
+    // Resolve explicitly linked locations once, including redirected Windows
+    // Desktop/Downloads paths; missing links remain visible in settings.
+    this.settings.roots = await Promise.all(this.settings.roots.map(async p => fs.realpath(p).catch(() => p)));
+    this.settings.sources = await Promise.all(this.settings.sources.map(async s => s.path ?
+      { ...s, path: await fs.realpath(s.path).catch(() => s.path) } : s));
     return this;
   }
   async save(next) {
@@ -440,6 +448,8 @@ class Store {
   }
   async refresh() {
     const snapshot = {
+      rootEntries: [],
+      rootFiles: [],
       directories: [],
       projects: [],
       files: [],
@@ -447,18 +457,25 @@ class Store {
     };
     for (const root of this.settings.roots) {
       try {
-        const dirs = (await list(root)).filter((e) => e.folder);
+        const rootEntries = await list(root);
         const order = this.settings.directoryOrders[root] || [];
-        dirs.sort(
+        rootEntries.sort(
           (a, b) =>
             (order.indexOf(a.path) < 0 ? 9999 : order.indexOf(a.path)) -
               (order.indexOf(b.path) < 0 ? 9999 : order.indexOf(b.path)) ||
             a.name.localeCompare(b.name, "zh"),
         );
+        snapshot.rootEntries.push(...rootEntries.map(e => ({ ...e, directory: root })));
+        const dirs = rootEntries.filter((e) => e.folder);
         for (const dir of dirs) {
           snapshot.directories.push({ ...dir, root });
+          // A linked drive is a shallow view, not an eager scan of every project
+          // on the disk. Its selected folders are read through browse/list.
+          if (root === path.parse(root).root) continue;
           try {
             const projects = await list(dir.path);
+            snapshot.rootFiles.push(...projects.map(e => ({ ...e,
+              project: dir.path, projectName: dir.name, directory: root })));
             snapshot.projects.push(
               ...projects.map((e) => ({ ...e, directory: dir.path })),
             );
@@ -505,6 +522,17 @@ class Store {
     if (key(real) !== key(p)) throw Error("目录联接或链接目标不在允许范围。");
     return entry(p);
   }
+  async browse(p) {
+    if (typeof p !== "string" || !(this.allowed(p) ||
+        this.settings.roots.some(root => key(root) === key(p)) ||
+        this.settings.sources.some(s => s.path && key(s.path) === key(p))))
+      throw Error("文件夹不在当前关联目录范围内。");
+    const real = await fs.realpath(p);
+    if (key(real) !== key(p)) throw Error("目录联接或链接目标不在允许范围。");
+    const folder = await entry(p);
+    if (!folder.folder) throw Error("请选择文件夹。");
+    return folder;
+  }
   async addRoots(roots) {
     const next = structuredClone(this.settings);
     for (const root of roots) {
@@ -512,16 +540,24 @@ class Store {
       if (!(await entry(p)).folder) throw Error("请选择文件夹。");
       if (next.roots.some((r) => key(r) === key(p))) continue;
       if (
-        p === path.parse(p).root ||
-        next.roots.some((r) => overlap(r, p)) ||
-        next.sources.some((s) => s.path && overlap(p, s.path))
+        next.roots.some((r) => overlap(r, p))
       )
-        throw Error("项目总目录不能相互嵌套或与可归档目录重叠。");
+        throw Error("项目总目录不能相互嵌套。");
       await fs.readdir(p);
       next.roots.push(p);
     }
     await this.save(next);
     return this.refresh();
+  }
+  async addSources(paths) {
+    const next = structuredClone(this.settings);
+    for (const p of paths) {
+      const real = await fs.realpath(p), folder = await entry(real);
+      if (!folder.folder) throw Error("请选择文件夹。");
+      if (!next.sources.some(s => s.path && key(s.path) === key(real)))
+        next.sources.push({ id: crypto.randomUUID(), name: folder.name || real, path: real, kind: "folder" });
+    }
+    await this.save(next);
   }
   async assign(items, id) {
     if (!this.settings.categories.some((c) => c.id === id))
@@ -535,6 +571,13 @@ class Store {
     await this.save(next);
   }
   remap(next, src, dst, moves = true) {
+    for (const source of next.sources) if (source.path && inside(source.path, src)) {
+      if (key(source.path) === key(src) && source.name === path.basename(src)) source.name = path.basename(dst);
+      source.path = path.join(dst, path.relative(src, source.path));
+    }
+    for (const paths of Object.values(next.directoryOrders))
+      for (let i = 0; i < paths.length; i++) if (inside(paths[i], src))
+        paths[i] = path.join(dst, path.relative(src, paths[i]));
     for (const [p, a] of Object.entries(next.assignments))
       if (inside(p, src)) {
         delete next.assignments[p];
@@ -559,8 +602,8 @@ class Store {
       await this.guard(e.path);
       await verify(e);
       validateName(name);
-      if (this.snapshot.directories.some((d) => key(d.path) === key(e.path)))
-        throw Error("导航目录不执行项目命名。");
+      if (this.settings.roots.some(root => key(root) === key(e.path)))
+        throw Error("关联的项目总目录本身不能重命名。");
       if (
         !e.folder &&
         path.extname(name).toLowerCase() !== path.extname(e.name).toLowerCase()
@@ -585,6 +628,10 @@ class Store {
           throw Error("仅更改大小写请先更改为临时名称。");
         await verify(e);
         await moveExclusive(e.path, dst);
+        if (this.externalAllowed?.has(key(e.path))) {
+          this.externalAllowed.delete(key(e.path));
+          this.externalAllowed.add(key(dst));
+        }
         const next = structuredClone(this.settings);
         this.remap(next, e.path, dst);
         next.renames.push({
@@ -602,13 +649,15 @@ class Store {
   }
   async archive(items, destination) {
     if (
-      !this.snapshot.projects.some(
+      ![...this.snapshot.rootEntries, ...this.snapshot.projects].some(
         (p) => p.folder && key(p.path) === key(destination),
       )
     )
       throw Error("请选择当前项目列表中的目标。");
     await this.guard(destination);
     for (const e of items) {
+      if (this.settings.roots.some(root => key(root) === key(e.path)))
+        throw Error("关联的项目总目录本身不能归档。");
       await this.guard(e.path);
       await verify(e);
       if (

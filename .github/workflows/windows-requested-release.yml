@@ -1,0 +1,81 @@
+name: Publish requested Windows packages
+on:
+  workflow_run:
+    workflows: ['Windows validation']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Windows validation run for 20261102(06)
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.display_title == 'release(windows): publish 20261102(06) packages for testing')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUILD_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+    steps:
+      - name: Verify source build and installation checks
+        id: source
+        run: |
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN_ID" > /tmp/build-run.json
+          gh api --paginate --slurp "repos/$GH_REPO/actions/runs/$BUILD_RUN_ID/jobs?per_page=100" > /tmp/build-jobs.json
+          node - <<'JS'
+          const fs=require('node:fs'),r=require('/tmp/build-run.json');
+          const jobs=require('/tmp/build-jobs.json').flatMap(p=>p.jobs);
+          if(r.status!=='completed'||r.event!=='push'||r.head_branch!=='main'||r.head_repository.full_name!==process.env.GH_REPO||r.path!=='.github/workflows/windows.yml')throw Error('Expected this repository main push Windows validation');
+          const core=jobs.filter(j=>/^core \(/.test(j.name));
+          const packageJob=jobs.find(j=>j.name==='package');
+          if(core.length!==2||core.some(j=>j.conclusion!=='success'))throw Error('Both architecture core checks must pass');
+          if(!packageJob?.steps.some(s=>s.name==='Verify installer integration'&&s.conclusion==='success'))throw Error('Actual installer smoke checks must pass');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'sha='+r.head_sha+'\n');
+          fs.appendFileSync(process.env.GITHUB_ENV,'SOURCE_SHA='+r.head_sha+'\nVALIDATION_RESULT='+r.conclusion+'\n');
+          JS
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: Guiyu-Windows
+          run-id: ${{ env.BUILD_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: release-assets
+      - name: Verify four separate Windows packages and prepare release
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),v=require('./Windows/version.json');
+          const {metadata}=require('./Windows/scripts/version.cjs');
+          if(v.date!=='20261102'||v.sequence!==6||JSON.stringify(v)!==JSON.stringify(metadata(v)))throw Error('Expected Windows 20261102(06)');
+          const wanted=['ia32','x64'].flatMap(a=>[`${v.assetPrefix}-Windows-${a}.zip`,`${v.assetPrefix}-Windows-${a}-setup.exe`]).sort();
+          const actual=fs.readdirSync('release-assets').sort();
+          if(JSON.stringify(actual)!==JSON.stringify(wanted)||actual.some(n=>!fs.statSync('release-assets/'+n).size))throw Error('Expected exactly four nonempty Windows assets');
+          const r=require('/tmp/build-run.json'),jobs=require('/tmp/build-jobs.json').flatMap(p=>p.jobs);
+          const results=jobs.map(j=>'- '+j.name+': '+j.conclusion+(j.steps||[]).filter(s=>s.conclusion==='failure'||s.conclusion==='skipped').map(s=>'\n  - '+s.name+': '+s.conclusion).join('')).join('\n');
+          const status=r.conclusion==='success'?'该提交 Windows 完整 CI 已通过。':'供用户测试的预发布版本：完整 Windows CI 尚未通过，请查看以下实际结果。';
+          fs.writeFileSync('release-notes.md',fs.readFileSync('Windows/RELEASE-NOTES.md','utf8')+'\n## 本次构建验证\n\n'+status+'\n\n'+results+'\n\n构建记录：'+r.html_url+'\n源码：'+r.head_sha+'\n');
+          fs.appendFileSync(process.env.GITHUB_ENV,'RELEASE_TAG=windows-20261102-06\nRELEASE_TITLE=归屿 '+v.display+' Windows\n');
+          JS
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+      - name: Publish each package as a separate release asset
+        run: |
+          gh release create "$RELEASE_TAG" --target "$SOURCE_SHA" --draft --latest=false --title "$RELEASE_TITLE" --notes-file release-notes.md release-assets/*
+          test "$(gh release view "$RELEASE_TAG" --json assets --jq '.assets | length')" = '5'
+          if [ "$VALIDATION_RESULT" = 'success' ]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease=true --latest=false
+          fi
+          gh release view "$RELEASE_TAG" --json url,assets,isDraft,isPrerelease

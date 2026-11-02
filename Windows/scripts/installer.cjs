@@ -20,8 +20,25 @@ async function createInstaller(appDir, output) {
   const escape = s => s.replace(/\$/g, "$$$$").replace(/"/g, '$\\"');
   const deleteFiles = files.map(f => `  Delete "$INSTDIR\\${escape(f)}"`).join("\n");
   const removeDirs = dirs.map(d => `  RMDir "$INSTDIR\\${escape(d)}"`).join("\n");
+  const actions = [
+    ['GuiyuName', '归屿-智能命名', '--smart-name'],
+    ['GuiyuArchive', '归屿-智能归档', '--smart-archive'],
+  ];
+  const menuInstall = ['*', 'Directory'].flatMap(kind => actions.map(([key, label, flag]) => {
+    const registry = `Software\\Classes\\${kind}\\shell\\${key}`;
+    return `  WriteRegStr HKCU "${registry}" "" "${label}"
+  WriteRegStr HKCU "${registry}" "Icon" '$\\"$INSTDIR\\Guiyu.exe$\\",0'
+  WriteRegStr HKCU "${registry}\\command" "" '$\\"$INSTDIR\\Guiyu.exe$\\" ${flag} $\\"%1$\\"'`;
+  })).join('\n');
+  const menuRemove = ['*', 'Directory'].flatMap(kind => actions.map(([key, , flag]) => {
+    const registry = `Software\\Classes\\${kind}\\shell\\${key}`;
+    return `  ReadRegStr $0 HKCU "${registry}\\command" ""
+  StrCmp $0 '$\\"$INSTDIR\\Guiyu.exe$\\" ${flag} $\\"%1$\\"' 0 +2
+  DeleteRegKey HKCU "${registry}"`;
+  })).join('\n');
   const script = `Unicode true
 !include "MUI2.nsh"
+!include "x64.nsh"
 Name "归屿"
 OutFile "${escape(output)}"
 InstallDir "$LOCALAPPDATA\\Programs\\Guiyu"
@@ -34,14 +51,33 @@ RequestExecutionLevel user
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "SimpChinese"
+!macro RegistryView
+  \${If} \${RunningX64}
+    SetRegView 64
+  \${Else}
+    SetRegView 32
+  \${EndIf}
+!macroend
+Function .onInit
+  !insertmacro RegistryView
+FunctionEnd
+Function un.onInit
+  !insertmacro RegistryView
+FunctionEnd
 Section "安装"
   SetShellVarContext current
   SetOutPath "$INSTDIR"
+  ClearErrors
   File /r "${escape(appDir)}\\*"
+  IfErrors 0 +3
+  SetErrorLevel 1
+  Abort "安装文件无法写入，请关闭归屿后重试。"
   WriteUninstaller "$INSTDIR\\卸载归屿.exe"
   CreateDirectory "$SMPROGRAMS\\归屿"
   CreateShortcut "$SMPROGRAMS\\归屿\\归屿.lnk" "$INSTDIR\\Guiyu.exe"
-  CreateShortcut "$DESKTOP\\归屿.lnk" "$INSTDIR\\Guiyu.exe"
+  CreateShortcut "$DESKTOP\\归屿.lnk" "$INSTDIR\\Guiyu.exe" "" "$INSTDIR\\Guiyu.exe" 0
+${menuInstall}
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
   WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Guiyu" "DisplayName" "归屿"
   WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Guiyu" "UninstallString" '"$INSTDIR\\卸载归屿.exe"'
   WriteRegDWORD HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Guiyu" "NoModify" 1
@@ -52,6 +88,8 @@ Section "Uninstall"
   Delete "$DESKTOP\\归屿.lnk"
   Delete "$SMPROGRAMS\\归屿\\归屿.lnk"
   RMDir "$SMPROGRAMS\\归屿"
+${menuRemove}
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
 ${deleteFiles}
 ${removeDirs}
   Delete "$INSTDIR\\卸载归屿.exe"

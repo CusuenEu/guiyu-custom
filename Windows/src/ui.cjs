@@ -18,10 +18,13 @@ const match = (s, q) =>
     .every((t) => norm(s).includes(t));
 const basename = (p) => p.split(/[\\/]/).filter(Boolean).at(-1) || p;
 const folder = '<span class="folder-icon" aria-hidden="true"></span>';
-const icon = (e) =>
-  e.folder
-    ? folder
-    : `<span aria-hidden="true" class="doc-icon ${/\.docx?$/i.test(e.name) ? "word" : /\.xlsx?$/i.test(e.name) ? "excel" : /\.pdf$/i.test(e.name) ? "pdf" : ""}">${/\.docx?$/i.test(e.name) ? "W" : /\.xlsx?$/i.test(e.name) ? "X" : /\.pdf$/i.test(e.name) ? "⌁" : "≡"}</span>`;
+const icon = (e) => {
+  const type = GuiyuFileIcons.identify(e.name || e.path, { isDirectory: Boolean(e.folder) });
+  return type
+    ? `<img aria-hidden="true" alt="" class="file-type-icon" data-file-type="${type.id}" src="../assets/file-icons/${type.id}.svg" width="28" height="28" draggable="false">`
+    : folder;
+};
+
 let data,
   dir = "",
   project = null,
@@ -29,10 +32,10 @@ let data,
   sourceFolder = null,
   sourcePreviewCurrent = "",
   sourceChildren = [],
-  sourceLoading = false,
-  sourceFocus = "projects",
+  previewLoading = false,
+  selectionPane = "projects",
   sourceGeneration = 0,
-  sourceLoad = Promise.resolve(),
+  previewLoad = Promise.resolve(),
   current = "",
   rows = [],
   query = "",
@@ -47,6 +50,7 @@ let data,
   dragDir = null,
   working = false;
 let apiQueue = Promise.resolve();
+let directoryRows = null, directoryPath = "", railFile = "";
 const api = (method, arg) => {
   if (!window.guiyu) throw Error("请从归屿应用启动。");
   const request = apiQueue.then(() => window.guiyu.invoke(method, arg));
@@ -84,41 +88,39 @@ function apply(d) {
   document.documentElement.style.setProperty("--middle", w[1] + "px");
   $("#directory-section").style.height =
     data.settings.sidebarFraction * 100 + "%";
-  if (!data.snapshot.directories.some((d) => d.path === dir)) {
-    dir = data.snapshot.directories[0]?.path || "";
+  if (!data.settings.roots.includes(dir) && !data.snapshot.directories.some((d) => d.path === dir)) {
+    dir = data.settings.roots[0] || data.snapshot.directories[0]?.path || "";
     project = null;
     if (!source) current = "";
   }
-  if (project && !data.snapshot.projects.some((p) => p.path === project.path)) {
+  if (project && !projectEntries().some((p) => p.path === project.path)) {
     project = null;
     current = "";
   }
+  if (source) source = data.settings.sources.find(s => s.id === source.id) || null;
   rail();
   render();
 }
 function rail() {
-  let roots = data.settings.roots,
-    dirs = data.snapshot.directories;
+  const roots = data.settings.roots;
   $("#directories").innerHTML =
     roots
       .map(
         (root) =>
-          (roots.length > 1
-            ? `<div class="root-label" title="${esc(root)}">${esc(basename(root))}</div>`
-            : "") +
-          dirs
-            .filter((d) => d.root === root)
+          `<section class="root-group" data-root-group="${esc(root)}"><button data-dir="${esc(root)}" data-order-path="${esc(root)}" data-order-root="${esc(root)}" data-order-kind="root" draggable="true" class="root-entry ${!source && dir === root && !railFile ? "active" : ""}" title="${esc(root)} · 拖动调整关联位置顺序">${folder}<span>${esc(basename(root) || root)}</span></button><div class="rail-children">` +
+          (data.snapshot.rootEntries || [])
+            .filter((d) => d.directory === root)
             .map(
               (d) =>
-                `<button data-dir="${esc(d.path)}" draggable="true" class="${!source && dir === d.path ? "active" : ""}" title="${esc(d.path)}">${folder}<span>${esc(d.name)}</span></button>`,
+                `<button ${d.folder ? `data-dir="${esc(d.path)}"` : `data-rail-file="${esc(d.path)}"`} data-order-path="${esc(d.path)}" data-order-root="${esc(root)}" data-order-kind="entry" draggable="true" class="nested-dir ${!source && (dir === d.path || railFile === d.path) ? "active" : ""}" title="${esc(d.path)} · 拖动调整顺序">${icon(d)}<span>${esc(d.name)}</span></button>`,
             )
-            .join(""),
+            .join("") + (data.snapshot.unavailable.includes(root) ? '<p class="root-label">暂时无法读取，请检查磁盘或权限</p>' : !(data.snapshot.rootEntries || []).some(e => e.directory === root) ? '<p class="root-label">此关联位置为空</p>' : '') + '</div></section>',
       )
       .join("") || '<div class="root-label">关联项目总目录开始使用</div>';
   $("#sources").innerHTML = data.settings.sources
     .map(
       (s) =>
-        `<button data-source="${esc(s.id)}" class="${source?.id === s.id ? "active" : ""}" title="${esc(s.path || "Windows 最近访问的文件")}"><span aria-hidden="true" style="font-size:23px">${s.kind === "recent" ? "◷" : "⇩"}</span><span>${esc(s.name)}</span></button>`,
+        `<button data-source="${esc(s.id)}" class="${source?.id === s.id ? "active" : ""}" title="${esc(s.path || "关联文件夹")}"><span aria-hidden="true" style="font-size:23px">${s.id === "desktop" ? "▣" : "⇩"}</span><span>${esc(s.name)}</span></button>`,
     )
     .join("");
 }
@@ -135,36 +137,57 @@ function relevance(e) {
     q = norm(query);
   return n === q ? 0 : n.startsWith(q) ? 1 : 2;
 }
-let visibleRows = [];
+let visibleRows = [], middleRows = [], fileRows = [];
+let folderLoading = false, folderError = "";
+function projectEntries(snapshot = data.snapshot) {
+  if (directoryPath === dir && directoryRows && snapshot === data.snapshot) return directoryRows;
+  return [...(snapshot.rootEntries || []), ...snapshot.projects].filter(p => p.directory === dir);
+}
+function fileIndex() { return [...data.snapshot.files, ...(data.snapshot.rootFiles || [])]; }
+function activeFolder() { return source ? sourceFolder : project; }
+function middleSelected(e) { return selectionPane === "projects" ? selected.has(e.path) : activeFolder()?.path === e.path; }
+function focusPane(pane) {
+  if (selectionPane !== pane) {
+    selected.clear(); anchor = null;
+    const context = activeFolder();
+    if (pane === "projects" && context && middleRows.some(e => e.path === context.path)) {
+      selected.add(context.path); anchor = middleRows.findIndex(e => e.path === context.path);
+    }
+  }
+  selectionPane = pane;
+  visibleRows = pane === "projects" ? middleRows : fileRows;
+}
+
 function render() {
   if (!data) return;
   let projects = source
     ? rows
-    : data.snapshot.projects.filter((p) => p.directory === dir);
+    : projectEntries();
   if (query)
     projects = projects.filter(
       (p) =>
         match(p.name, query) ||
         (!source &&
-          data.snapshot.files.some(
+          fileIndex().some(
             (e) => e.project === p.path && match(e.name, query),
           )),
     );
   projects = [...projects].sort(
     (a, b) => (query ? relevance(a) - relevance(b) : 0) || (source ? b.mtime-a.mtime || a.name.localeCompare(b.name,'zh') : order(a, b)),
   );
+  middleRows = projects;
   const projectMarkup =
     projects
       .map(
         (e) =>
-          `<div role="option" tabindex="-1" aria-selected="${source ? (sourceFocus === "projects" && selected.has(e.path)) || sourceFolder?.path === e.path : project?.path === e.path}" class="project-row ${source ? "source-row" : ""} ${source ? ((sourceFocus === "projects" && selected.has(e.path)) || sourceFolder?.path === e.path ? "selected" : "") : project?.path === e.path ? "selected" : ""}" data-project="${esc(e.path)}" title="${esc(e.name)}">${icon(e)}<span class="name">${esc(e.name)}</span>${source ? `<span class="date">${esc(new Intl.DateTimeFormat("sv-SE",{year:"numeric",month:"2-digit",day:"2-digit"}).format(e.mtime))}</span>` : ""}</div>`,
+          `<div role="option" tabindex="-1" aria-selected="${middleSelected(e)}" class="project-row ${source ? "source-row" : ""} ${middleSelected(e) ? "selected" : ""}" data-project="${esc(e.path)}" title="${esc(e.name)}">${icon(e)}<span class="name">${esc(e.name)}</span>${source ? `<span class="date">${esc(new Intl.DateTimeFormat("sv-SE",{year:"numeric",month:"2-digit",day:"2-digit"}).format(e.mtime))}</span>` : ""}</div>`,
       )
       .join("") ||
-    `<div class="empty">${folder}<span>${!data.settings.roots.length && !source ? "在设置中选择项目总目录，开始浏览" : "当前目录没有匹配的项目或文件"}</span>${!data.settings.roots.length && !source ? '<button id="empty-settings">打开设置</button><button id="demo">体验示例空间</button>' : ""}</div>`;
+    `<div class="empty">${folder}<span>${!data.settings.roots.length && !source ? "在设置中选择项目总目录，开始浏览" : data.snapshot.unavailable.includes(dir) && !source ? "当前关联目录无法读取，请检查路径或访问权限" : "当前目录为空，没有匹配的项目或文件"}</span>${!data.settings.roots.length && !source ? '<button id="empty-settings">打开设置</button><button id="demo">体验示例空间</button>' : ""}</div>`;
   const existingProjects = [...$("#projects").querySelectorAll("[data-project]")];
   if (projects.length && existingProjects.length === projects.length && existingProjects.every((el, i) => el.dataset.project === projects[i].path && el.title === projects[i].name)) {
     existingProjects.forEach((el, i) => {
-      const active = source ? (sourceFocus === "projects" && selected.has(projects[i].path)) || sourceFolder?.path === projects[i].path : project?.path === projects[i].path;
+      const active = middleSelected(projects[i]);
       el.classList.toggle("selected", active);
       el.setAttribute("aria-selected", String(active));
     });
@@ -179,7 +202,7 @@ function render() {
     sourceChildren = files;
     renderBreadcrumbs(sourceFolder.path, "#subnav", sourceFolder.name, sourcePreviewCurrent);
   } else if (query && !source) {
-    files = data.snapshot.files.filter(
+    files = fileIndex().filter(
       (e) => e.directory === dir && match(e.name, query),
     );
     $("#subnav").textContent =
@@ -189,20 +212,25 @@ function render() {
     files = rows;
     renderBreadcrumbs(project.path);
   }
-  visibleRows = source && sourceFocus === "projects" ? projects : files;
+  fileRows = files;
+  visibleRows = selectionPane === "projects" ? middleRows : fileRows;
+  const available = new Set(visibleRows.map(e => e.path));
+  for (const p of selected) if (!available.has(p)) selected.delete(p);
   let body = "";
-  if (source && sourceFolder) {
-    body = sourceLoading ? '<div class="empty">正在读取文件夹…</div>' : files.length ? files.map(fileRow).join("") : '<div class="empty">当前文件夹没有内容</div>';
-  } else if (!data.settings.categories.length)
+  if (folderError && activeFolder()) body = `<div class="empty">无法读取当前文件夹：${esc(folderError)}</div>`;
+  else if (!source && project && folderLoading) body = '<div class="empty">正在读取文件夹…</div>';
+  else if (source && sourceFolder) {
+    body = previewLoading ? '<div class="empty">正在读取文件夹…</div>' : files.length ? files.map(fileRow).join("") : '<div class="empty">当前文件夹没有内容</div>';
+  } else if (!data.settings.categories.length && !project && !query)
     body =
       '<div class="empty"><button id="empty-categories">请设置文件分类</button></div>';
   else if (source || (!project && !query)) body = "";
   else if (!files.length)
     body =
       '<div class="empty">' +
-      (query ? "没有匹配的三级文件或文件夹" : "当前文件夹没有内容") +
+      (query ? "没有匹配的文件或文件夹" : "当前文件夹没有内容") +
       "</div>";
-  else if (mode === "源文档") {
+  else if (mode === "源文档" || !data.settings.categories.length) {
     body = [...files]
       .sort(
         (a, b) =>
@@ -244,7 +272,7 @@ function render() {
   $("#count").textContent =
     (source && sourceFolder) || (!source && (project || query)) ? `${files.length} 个项目` : "";
   $("#selected-count").textContent = `已选 ${selected.size} 项`;
-  $("#batch-tools").hidden = (source && sourceFocus === "projects") || selected.size < 2;
+  $("#batch-tools").hidden = selectionPane === "projects" || selected.size < 2;
   $$("[data-mode]").forEach((b) =>
     b.setAttribute("aria-selected", b.dataset.mode === mode),
   );
@@ -320,15 +348,26 @@ async function load() {
     catch (e) { sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; toast(e.message, true); }
   }
   if (gen !== generation) return;
-  selected.clear();
+  folderLoading = false; previewLoading = false; folderError = "";
+  if (selectionPane === "files") selected.clear();
   render();
 }
 async function refresh() {
+  const gen = ++generation;
   let p = project?.path,
     c = current;
   const d = await api("refresh");
+  // A user navigation made while metadata refresh was pending wins over the
+  // old selection captured above. Never reset the newly selected project.
+  if (gen !== generation) return;
+  directoryRows = null; directoryPath = "";
   apply(d);
-  project = d.snapshot.projects.find((e) => e.path === p) || null;
+  if (!source && dir) {
+    const requested = dir, children = await api("list", { path: requested });
+    if (gen !== generation) return;
+    directoryRows = children; directoryPath = requested;
+  }
+  project = projectEntries(d.snapshot).find((e) => e.path === p) || null;
   current = project || source ? c : "";
   await load();
 }
@@ -336,11 +375,12 @@ function selectedItems() {
   return visibleRows.filter((e) => selected.has(e.path));
 }
 function select(e, event) {
+  if (!e) return;
   let index = visibleRows.findIndex((x) => x.path === e.path);
   if (event.shiftKey && anchor !== null) {
     let start = Math.min(anchor, index),
       end = Math.max(anchor, index);
-    if (!event.ctrlKey) selected.clear();
+    if (!event.ctrlKey && !event.metaKey) selected.clear();
     for (const x of visibleRows.slice(start, end + 1)) selected.add(x.path);
   } else if (event.ctrlKey || event.metaKey) {
     if (selected.has(e.path)) selected.delete(e.path);
@@ -350,17 +390,22 @@ function select(e, event) {
     selected = new Set([e.path]);
     anchor = index;
   }
+  syncSelection();
+}
+function syncSelection() {
   for (const el of $$('[data-file], [data-project]')) {
     const path = el.dataset.file || el.dataset.project;
-    if (el.dataset.project && (!source || sourceFocus !== "projects")) continue;
-    if (el.dataset.file && source && sourceFocus !== "files") continue;
-    const active = selected.has(path);
+    const active = el.dataset.project && selectionPane !== "projects" ? activeFolder()?.path === path : selected.has(path);
     el.classList.toggle("selected", active);
     el.setAttribute("aria-selected", String(active));
   }
   $("#selected-count").textContent = `已选 ${selected.size} 项`;
-  $("#batch-tools").hidden = (source && sourceFocus === "projects") || selected.size < 2;
+  $("#batch-tools").hidden = selectionPane === "projects" || selected.size < 2;
 }
+for (const pane of ["projects", "files"])
+  $("#" + pane).addEventListener("focusin", () => {
+    if (selectionPane !== pane) { focusPane(pane); syncSelection(); }
+  });
 $("#query").addEventListener("compositionstart", () => (composing = true));
 let composing = false,
   timer;
@@ -385,91 +430,120 @@ $("#clear-query").onclick = () => {
   selected.clear();
   render();
 };
-$("#directories").onclick = (e) => {
-  const b = e.target.closest("[data-dir]");
+$("#directories").onclick = async (e) => {
+  const b = e.target.closest("[data-dir], [data-rail-file]");
   if (!b) return;
-  dir = b.dataset.dir;
+  railFile = b.dataset.railFile || "";
+  dir = b.dataset.dir || b.dataset.orderRoot;
+  const gen = ++generation;
+  directoryRows = null; directoryPath = "";
+  selectionPane = "projects"; anchor = null; folderError = ""; folderLoading = false;
   source = null;
-  sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; sourceLoading = false; sourceGeneration++;
+  sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; previewLoading = false; sourceGeneration++;
   project = null;
   current = "";
   rows = [];
   selected.clear();
   rail();
   render();
+  try {
+    const children = await api("list", { path: dir });
+    if (gen !== generation) return;
+    // Normal linked folders already have an indexed direct-child snapshot.
+    // Only use a transient list for lazy drive folders absent from that index.
+    const indexed = [...data.snapshot.rootEntries, ...data.snapshot.projects].filter(p => p.directory === dir);
+    directoryRows = indexed.length || data.settings.roots.includes(dir) ? null : children;
+    directoryPath = directoryRows ? dir : "";
+    if (railFile) selected.add(railFile);
+    render();
+  } catch (error) { if (gen === generation) toast(error.message, true); }
+};
+$("#directories").ondblclick = e => {
+  const file = e.target.closest("[data-rail-file]")?.dataset.railFile;
+  if (file) action(() => api("open", { path: file }));
 };
 $("#sources").onclick = (e) => {
   const b = e.target.closest("[data-source]");
   if (!b) return;
   action(async () => {
+    generation++; anchor = null; folderError = ""; folderLoading = false;
+    selected.clear(); rows = [];
     source = data.settings.sources.find((s) => s.id === b.dataset.source);
-    sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; sourceLoading = false; sourceFocus = "projects"; sourceGeneration++;
+    sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; previewLoading = false; selectionPane = "projects"; sourceGeneration++;
     project = null;
     current = source.kind==='folder' ? source.path : "";
     rail();
-    await sourceLoad;
+    await previewLoad;
     await load();
   });
 };
-$("#projects").onclick = (e) => {
-  const b = e.target.closest("[data-project]");
-  if (!b) {
-    if (e.target.id === "empty-settings") settings();
-    if (e.target.id === "demo") action(async () => apply(await api("demo")));
+function showMiddleFolder(item) {
+  const gen = ++generation, sourceID = source?.id;
+  sourceGeneration++;
+  folderError = "";
+  project = !source && item?.folder ? item : null;
+  if (source) {
+    sourceFolder = item?.folder ? item : null;
+    sourcePreviewCurrent = sourceFolder?.path || "";
+    sourceChildren = [];
+    previewLoading = !!sourceFolder;
+  } else {
+    current = project?.path || "";
+    rows = [];
+    folderLoading = !!project;
+  }
+  render();
+  if (!item?.folder) return Promise.resolve();
+  previewLoad = api("list", { path: item.path }).then(children => {
+    if (gen !== generation || source?.id !== sourceID || activeFolder()?.path !== item.path) return;
+    if (source) { sourceChildren = children; previewLoading = false; }
+    else { rows = children; folderLoading = false; }
+    render();
+  }).catch(error => {
+    if (gen !== generation || source?.id !== sourceID || activeFolder()?.path !== item.path) return;
+    folderError = error.message; previewLoading = false; folderLoading = false; render();
+  });
+  return previewLoad;
+}
+function selectMiddle(item, event) {
+  focusPane("projects");
+  select(item, event);
+  const active = selected.has(item.path) ? item : selectedItems().at(-1);
+  const location = source ? sourcePreviewCurrent : current;
+  if (active?.folder && activeFolder()?.path === active.path && location === active.path && !folderError) { render(); return previewLoad; }
+  return showMiddleFolder(active);
+}
+async function openMiddleFolder(item) {
+  if (activeFolder()?.path !== item.path || folderError) {
+    focusPane("projects"); selected = new Set([item.path]);
+    await showMiddleFolder(item);
+  } else await previewLoad;
+  if (activeFolder()?.path !== item.path || folderError) return;
+  focusPane("files"); render(); $("#files").focus({ preventScroll: true });
+}
+$("#projects").onclick = (event) => {
+  const row = event.target.closest("[data-project]");
+  if (!row) {
+    if (event.target.id === "empty-settings") settings();
+    if (event.target.id === "demo") action(async () => apply(await api("demo")));
     return;
   }
-  const item = (source ? rows : data.snapshot.projects).find(
-    (x) => x.path === b.dataset.project,
-  );
-  if (source) {
-    if (sourceFocus !== "projects") { selected.clear(); sourceFocus = "projects"; }
-    visibleRows = [...rows].filter((x) => !query || match(x.name, query)).sort((a, b) => (query ? relevance(a) - relevance(b) : 0) || b.mtime-a.mtime || a.name.localeCompare(b.name,"zh"));
-    select(item, e);
-    if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.detail <= 1) {
-      const gen = ++sourceGeneration;
-      sourceFolder = item.folder ? item : null;
-      sourcePreviewCurrent = item.folder ? item.path : "";
-      sourceChildren = [];
-      sourceLoading = item.folder;
-      render();
-      if (item.folder) sourceLoad = sourceLoad.then(async () => {
-        if (gen !== sourceGeneration) return;
-        const children = await api("list", { path: item.path });
-        if (gen !== sourceGeneration) return;
-        sourceChildren = children; sourceLoading = false; render();
-      }).catch((err) => {
-        if (gen === sourceGeneration) { sourceFolder = null; sourcePreviewCurrent = ""; sourceLoading = false; render(); toast(err.message, true); }
-      });
-    }
-  }
-  else if (item.folder) {
-    const gen = ++generation;
-      project = item;
-      current = item.path;
-      selected.clear();
-      rows = [];
-      render();
-      api("list", { path: item.path }).then((next) => {
-        if (gen !== generation || source || project?.path !== item.path) return;
-        rows = next;
-        render();
-      }).catch((err) => { if (gen === generation) toast(err.message, true); });
-  }
-  else {
-    selected = new Set([item.path]);
-  }
+  const item = middleRows.find(e => e.path === row.dataset.project);
+  if (item) selectMiddle(item, event);
 };
-$("#projects").ondblclick = (e) => {
-  const p=e.target.closest('[data-project]')?.dataset.project;
-  if(!p)return;const item=(source?rows:data.snapshot.projects).find(x=>x.path===p);
-  action(async()=>{if(source?.kind==='folder' && item?.folder){sourceGeneration++;sourceFolder=null;sourcePreviewCurrent='';sourceChildren=[];sourceLoading=false;current=p;sourceFocus='projects';await sourceLoad;await load();}else { await sourceLoad; await api('open',{path:p}); }});
+$("#projects").ondblclick = event => {
+  const row = event.target.closest("[data-project]");
+  const item = middleRows.find(e => e.path === row?.dataset.project);
+  if (!item) return;
+  if (item.folder) openMiddleFolder(item);
+  else action(() => api("open", { path: item.path }));
 };
 $("#files").onclick = (e) => {
   const b = e.target.closest("[data-file]"),
     g = e.target.closest("[data-group]");
   if (b) {
-    if (source && sourceFocus !== "files") { selected.clear(); sourceFocus = "files"; visibleRows = sourceChildren; }
-    select(visibleRows.find((x) => x.path === b.dataset.file), e);
+    focusPane("files");
+    select(fileRows.find((x) => x.path === b.dataset.file), e);
   }
   else if (g) {
     collapsed.has(g.dataset.group)
@@ -478,9 +552,7 @@ $("#files").onclick = (e) => {
     render();
   } else if (e.target.id === "empty-categories") settings("文件分类");
 };
-$("#files").ondblclick = (e) => {
-  const p = e.target.closest("[data-file]")?.dataset.file,
-    item = visibleRows.find((x) => x.path === p);
+function openFileItem(item) {
   if (!item) return;
   action(async () => {
     if (item.folder) {
@@ -490,18 +562,22 @@ $("#files").ondblclick = (e) => {
         if (gen !== sourceGeneration || !source || !sourceFolder) return;
         sourcePreviewCurrent = item.path;
         sourceChildren = children;
-        selected.clear(); sourceFocus = "files"; render();
+        selected.clear(); selectionPane = "files"; render();
         return;
       }
       if (query) {
-        project = data.snapshot.projects.find((p) => p.path === item.project);
+        project = [...(data.snapshot.rootEntries || []), ...data.snapshot.projects].find((p) => p.path === item.project);
         query = "";
         $("#query").value = "";
       }
       current = item.path;
       await load();
-    } else await api("open", { path: p });
+    } else await api("open", { path: item.path });
   });
+}
+$("#files").ondblclick = (e) => {
+  const p = e.target.closest("[data-file]")?.dataset.file;
+  openFileItem(fileRows.find((x) => x.path === p));
 };
 function renderBreadcrumbs(root, bar = "#subnav", title = "项目根目录", location = current) {
   const parts = GuiyuNavigation.breadcrumbs(root, location, title);
@@ -538,13 +614,13 @@ function breadcrumbClick(e) {
     if (fromSource) {
       if (gen !== sourceGeneration || source?.id !== sourceID || source?.path !== owner) return;
       rows = children;
-      sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; sourceLoading = false;
-      sourceFocus = "projects";
+      sourceFolder = null; sourcePreviewCurrent = ""; sourceChildren = []; previewLoading = false;
+      selectionPane = "projects";
     } else if (preview) {
       if (gen !== sourceGeneration || source?.id !== sourceID || sourceFolder?.path !== owner) return;
       sourceChildren = children;
       sourcePreviewCurrent = target;
-      sourceFocus = "files";
+      selectionPane = "files";
     } else {
       if (gen !== generation || source || project?.path !== owner) return;
       rows = children;
@@ -649,24 +725,20 @@ function fileMenu(ev, items, archive = false) {
 $("#files").oncontextmenu = (e) => {
   const p = e.target.closest("[data-file]")?.dataset.file;
   if (p) {
-    if (source && sourceFocus !== "files") { selected.clear(); sourceFocus = "files"; visibleRows = sourceChildren; }
+    focusPane("files");
     if (!selected.has(p)) selected = new Set([p]);
     render();
     fileMenu(e, selectedItems(), !!source);
   }
 };
-$("#projects").oncontextmenu = (e) => {
-  const p = e.target.closest("[data-project]")?.dataset.project;
-  if (!p) return;
-  const item = (source ? rows : data.snapshot.projects).find(
-    (x) => x.path === p,
-  );
-  if (source) {
-    if (sourceFocus !== "projects") { selected.clear(); sourceFocus = "projects"; visibleRows = rows; }
-    if (!selected.has(p)) selected = new Set([p]);
-    render();
-    fileMenu(e, selectedItems(), true);
-  } else fileMenu(e, [item]);
+$("#projects").oncontextmenu = event => {
+  const row = event.target.closest("[data-project]");
+  const item = middleRows.find(e => e.path === row?.dataset.project);
+  if (!item) return;
+  focusPane("projects");
+  if (!selected.has(item.path)) selected = new Set([item.path]);
+  render();
+  fileMenu(event, selectedItems(), !!source);
 };
 $("#batch-menu").onclick = (e) => fileMenu(e, selectedItems(), !!source);
 document.addEventListener("pointerdown", (e) => {
@@ -712,8 +784,8 @@ function errorIn(e) {
   if (el) el.textContent = e.message;
   else toast(e.message, true);
 }
-function actions(confirm) {
-  return `<div id="dialog-error" class="inline-error" role="alert"></div><div class="dialog-actions"><button data-cancel>取消</button><button id="confirm" class="primary">${confirm}</button></div>`;
+function actions(confirm, withArchive = false) {
+  return `<div id="dialog-error" class="inline-error" role="alert"></div><div class="dialog-actions"><button data-cancel>取消</button>${withArchive ? '<button id="confirm-archive">确认并归档</button>' : ''}<button id="confirm" class="primary">${confirm}</button></div>`;
 }
 function smartHeader(title, symbol) {
   return `<div class="smart-header"><span class="smart-header-icon" aria-hidden="true">${symbol}</span><h2>${title}</h2></div>`;
@@ -731,11 +803,12 @@ function namingLoadingDialog(entry) {
         <div class="recognized-panel"><h3>识别文字</h3><textarea aria-label="识别文字" placeholder="在左侧框选要识别的文字" disabled></textarea><div class="recognized-actions"><span class="muted">正在准备，请稍候</span><button type="button" disabled>使用识别文字</button></div></div>
         <div class="recommend-panel"><h3>推荐名称</h3><div class="scroll candidate-list"><div class="naming-loading" role="status"><span class="naming-spinner" aria-hidden="true"></span><span>正在生成推荐名称…</span></div></div><div class="name-editor"><label for="loading-name">最终文件名</label><div class="naming-line"><input id="loading-name" placeholder="识别完成后可编辑" disabled></div></div></div>
       </section>
-    </div>${actions("确认重命名")}</div>`;
+    </div>${actions("确认重命名", true)}</div>`;
 }
 async function namingDialog(items, smart) {
-  modal(smart && items.length === 1 ? namingLoadingDialog(items[0]) : `<div class="dialog-body" style="height:460px"><h2>${smart ? "智能命名" : "更改名称"}</h2><p class="muted">正在准备${items.length}个条目…</p>${actions("确认重命名")}</div>`);
+  modal(smart && items.length === 1 ? namingLoadingDialog(items[0]) : `<div class="dialog-body" style="height:460px"><h2>${smart ? "智能命名" : "更改名称"}</h2><p class="muted">正在准备${items.length}个条目…</p>${actions("确认重命名", smart)}</div>`);
   $("#confirm").disabled = true;
+  if ($("#confirm-archive")) $("#confirm-archive").disabled = true;
   const pending = $("#modal-content").firstElementChild;
   let suggestions;
   try {
@@ -766,8 +839,10 @@ async function namingDialog(items, smart) {
     if (!smart) body += '<div class="setting-form"><input id="find" placeholder="查找文字" aria-label="查找文字"><input id="replace" placeholder="替换为" aria-label="替换为"><input id="prefix" placeholder="添加前缀" aria-label="添加前缀"><button id="apply-batch">应用</button></div>';
     body += '<div class="scroll">' + suggestions.map((r, i) => `<div class="batch-original">${esc(r.entry.name)}</div><div class="batch-row"><input type="checkbox" data-include="${i}" aria-label="处理 ${esc(r.entry.name)}" ${smart && r.fallback ? "" : "checked"}><input type="text" data-name="${i}" aria-label="新名称 ${esc(r.entry.name)}" value="${esc(smart ? batchEditor(r, r.candidates[0]) : GuiyuNaming.literalStem(r.entry.name, r.ext))}"><span>${esc(r.ext)}</span>${smart ? `<select data-alternate="${i}" aria-label="其他候选"><option value="">其他候选</option>${r.candidates.map((c, j) => `<option value="${j}">${esc(batchEditor(r, c))}</option>`).join("")}</select>` : ""}</div>`).join("") + '</div>';
   }
-  modal(body + actions("确认重命名") + '</div>');
-  const confirm = $("#confirm");
+  modal(body + actions("确认重命名", smart) + '</div>');
+  const confirm = $("#confirm"), confirmArchive = $("#confirm-archive");
+  const namingPanel = $("#modal-content").firstElementChild;
+  let submitting = false, partial = false;
   function canSubmit() {
     const active = suggestions.filter((r, i) => !batch || $(`[data-include="${i}"]`).checked);
     return active.length > 0 && active.every((r) => {
@@ -776,7 +851,8 @@ async function namingDialog(items, smart) {
     });
   }
   function updateEditor() {
-    confirm.disabled = !canSubmit();
+    confirm.disabled = submitting || partial || !canSubmit();
+    if (confirmArchive) confirmArchive.disabled = confirm.disabled;
     if (!batch && smart) $$('[data-candidate]').forEach((button) => {
       const chosen = editor(suggestions[0], suggestions[0].candidates[+button.dataset.candidate]) === $("#name-stem").value;
       button.classList.toggle('chosen', chosen); button.setAttribute('aria-pressed', String(chosen));
@@ -909,12 +985,20 @@ async function namingDialog(items, smart) {
     }); updateEditor();
   };
   updateEditor();
-  confirm.onclick = async () => {
-    if (!canSubmit()) return;
+  const modalElement = $("#modal");
+  const preventPendingCancel = (event) => { if (submitting) event.preventDefault(); };
+  async function submit(andArchive = false) {
+    if (submitting || partial || !canSubmit()) return;
+    submitting = true;
+    modalElement.addEventListener("cancel", preventPendingCancel);
+    $("#dialog-error").textContent = "";
     if (smart && !batch) window.guiyu?.cancelNaming?.();
-    confirm.disabled = true;
+    updateEditor();
+    const cancelButtons = $$('[data-cancel]');
+    cancelButtons.forEach(b => b.disabled = true);
+    let renamed = false;
     try {
-      if(smart && !batch && suggestions[0].fallback && $("#name-stem").value===GuiyuNaming.literalStem(suggestions[0].entry.name,suggestions[0].ext)){ $("#modal").close(); return; }
+      if(!andArchive && smart && !batch && suggestions[0].fallback && $("#name-stem").value===GuiyuNaming.literalStem(suggestions[0].entry.name,suggestions[0].ext)){ $("#modal").close(); return; }
       const plans = suggestions.flatMap((r, i) => {
         if (batch && !$(`[data-include="${i}"]`).checked) return [];
         let stem = batch ? $(`[data-name="${i}"]`).value : $("#name-stem").value;
@@ -926,24 +1010,44 @@ async function namingDialog(items, smart) {
         if (smart && !r.fallback) GuiyuNaming.validatePrefix(name, r.format);
         return [{ entry: r.entry, name, smart: smart && !r.fallback }];
       });
-      const result = await api('rename', { plans });
-      $("#modal").close();
+      const result = await api('rename', { plans, ...(andArchive ? { forArchive: true } : {}) });
+      renamed = true;
+      if (!namingPanel.isConnected || !modalElement.open) return;
+      for (const p of plans) if (selected.delete(p.entry.path))
+        selected.add(p.entry.path.slice(0, p.entry.path.length - p.entry.name.length) + p.name);
+      const renamedSelection = [...selected];
       for (const p of plans) if (p.entry.folder) {
         const target = p.entry.path.slice(0, p.entry.path.length - p.entry.name.length) + p.name;
-        if (project?.path === p.entry.path) project = result.snapshot.projects.find((x) => x.path === target) || null;
+        if (project?.path === p.entry.path) project = [...(result.snapshot.rootEntries || []), ...result.snapshot.projects].find((x) => x.path === target) || null;
         if (current === p.entry.path || current.startsWith(p.entry.path + '\\') || current.startsWith(p.entry.path + '/')) current = target + current.slice(p.entry.path.length);
         if (sourcePreviewCurrent === p.entry.path || sourcePreviewCurrent.startsWith(p.entry.path + '\\') || sourcePreviewCurrent.startsWith(p.entry.path + '/')) sourcePreviewCurrent = target + sourcePreviewCurrent.slice(p.entry.path.length);
         if (sourceFolder?.path === p.entry.path) sourceFolder = { ...sourceFolder, path: target, name: p.name };
       }
-      apply(result); await load(); toast(`已重命名 ${result.result} 项`);
+      apply(result);
+      try { await load(); } catch (e) { toast(`命名已完成，列表刷新失败：${e.message}`, true); }
+      selected = new Set(renamedSelection.filter(p => visibleRows.some(e => e.path === p)));
+      syncSelection();
+      if (andArchive) {
+        if (!result.renamedItems?.length) throw Error("命名已完成，但未能取得归档文件信息，请关闭窗口后重新选择。");
+        modalElement.removeEventListener("cancel", preventPendingCancel);
+        await archiveDialog(result.renamedItems);
+      } else $("#modal").close();
+      if (result.result) toast(`已重命名 ${result.result} 项`);
     } catch (e) {
-      errorIn(e); if (/已完成\s*[1-9]\d*\s*项/.test(e.message)) confirm.dataset.partial = 'true';
-    } finally { if (confirm.dataset.partial !== 'true') confirm.disabled = !canSubmit(); }
-  };
+      errorIn(e); if (renamed || /已完成\s*[1-9]\d*\s*项/.test(e.message)) partial = true;
+    } finally {
+      submitting = false;
+      cancelButtons.forEach(b => b.disabled = false);
+      modalElement.removeEventListener("cancel", preventPendingCancel);
+      if (namingPanel.isConnected) updateEditor();
+    }
+  }
+  confirm.onclick = () => submit(false);
+  if (confirmArchive) confirmArchive.onclick = () => submit(true);
 }
 async function archiveDialog(items) {
   modal(
-    `<div class="dialog-body smart-dialog archive-dialog" style="height:620px">${smartHeader("智能归档", "⇩")}<div class="file-summary"><span class="summary-icon" aria-hidden="true">▤</span><span>${esc(items[0]?.name || "")}${items.length > 1 ? ` 等 ${items.length} 项` : ""}<small>${items.length} 项待归档</small></span></div><input id="archive-query" placeholder="搜索项目名、单位词或关键词" aria-label="搜索归档项目"><div class="scroll" id="archive-projects">正在查找推荐项目…</div>${actions("确认归档")}</div>`,
+    `<div class="dialog-body smart-dialog archive-dialog" style="height:620px">${smartHeader("智能归档", "⇩")}<div class="file-summary">${icon(items[0] || { name: "" })}<span>${esc(items[0]?.name || "")}${items.length > 1 ? ` 等 ${items.length} 项` : ""}<small>${items.length} 项待归档</small></span></div><input id="archive-query" placeholder="搜索项目名、单位词或关键词" aria-label="搜索归档项目"><div class="scroll" id="archive-projects">正在查找推荐项目…</div>${actions("确认归档")}</div>`,
   );
   $("#confirm").disabled = true;
   let results;
@@ -959,14 +1063,14 @@ async function archiveDialog(items) {
     target = null;
     $("#confirm").disabled = true;
     let q = $("#archive-query").value;
-    const filtered = results.projects.filter((p) => match(p.name, q));
+    const filtered = results.projects.filter(p => q.trim() ? match(p.name, q) : p.score >= 75);
     $("#archive-projects").innerHTML =
       filtered
         .map(
           (p, i) =>
             `${i === 0 ? `<h3>${q ? "搜索结果" : p.score > 0 ? "匹配项目" : "全部项目"}</h3>` : !q && p.score === 0 && filtered[i - 1]?.score > 0 ? "<h3>其他项目</h3>" : ""}<button class="archive-choice" aria-pressed="false" data-target="${esc(p.path)}" title="${esc(p.evidence)}">${folder}<span class="name-wrap"><span class="name">${esc(p.name)}</span><small>${esc(basename(p.directory))}</small></span><span class="choice-mark" aria-hidden="true"></span></button>`,
         )
-        .join("") || '<p class="muted">没有匹配的项目</p>';
+        .join("") || `<p class="muted">${q.trim() ? "没有搜索到符合名称的项目，请调整关键词。" : "暂无可靠推荐，请输入项目名或关键词自行搜索。"}</p>`;
     if (results.warnings.length)
       $("#dialog-error").textContent = results.warnings.join("\n");
   }
@@ -1003,7 +1107,7 @@ function drawSettings() {
   let s = data.settings,
     content = "";
   if (section === "文件位置") {
-    content = `<h3>项目总目录 <button id="settings-add-root">关联目录…</button></h3>${s.roots.map((r, i) => `<div class="setting-row">${folder}<span class="label">${esc(basename(r))}<small title="${esc(r)}">${esc(r)}</small></span><button data-remove-root="${i}" aria-label="移除关联 ${esc(basename(r))}">−</button></div>`).join("") || '<p class="muted">关联一个或多个项目总目录，开始浏览。</p>'}<p class="muted">左侧展示各总目录下的子文件夹。移除关联会保留原文件。</p><h3>可归档目录 <button id="settings-add-source">关联文件夹…</button></h3>${s.sources.map((r, i) => `<div class="setting-row"><span class="label">${esc(r.name)}<small>${esc(r.path || "Windows 最近访问的文件")}</small></span><button data-remove-source="${i}">移除关联</button></div>`).join("")}<p><button id="restore-sources">恢复默认入口</button></p><h3>资源管理器快捷入口</h3><p class="muted">右键文件或文件夹可直接使用智能命名、智能归档。移动应用目录后请重新安装入口。</p><button id="install-menu">安装右键入口</button> <button id="remove-menu">移除右键入口</button>`;
+    content = `<h3>项目总目录 <button id="settings-add-root">关联目录…</button></h3>${s.roots.map((r, i) => `<div class="setting-row">${folder}<span class="label">${esc(basename(r))}<small title="${esc(r)}">${esc(r)}</small></span><button data-remove-root="${i}" aria-label="移除关联 ${esc(basename(r))}">−</button></div>`).join("") || '<p class="muted">关联一个或多个项目总目录，开始浏览。</p>'}<p class="muted">可关联整个磁盘或文件夹；左侧显示其中的直接文件和文件夹。拖动分组或条目，横线出现后松手排序。移除关联保留原文件。</p><h3>可归档目录 <button id="settings-add-source">关联文件夹…</button></h3>${s.sources.map((r, i) => `<div class="setting-row"><span class="label">${esc(r.name)}<small>${esc(r.path || "关联文件夹")}</small></span><button data-remove-source="${i}">移除关联</button></div>`).join("")}<p><button id="restore-sources">恢复默认入口</button></p><h3>资源管理器快捷入口</h3><p class="muted">右键文件或文件夹可直接使用智能命名、智能归档。移动应用目录后请重新安装入口。</p><button id="install-menu">安装右键入口</button> <button id="remove-menu">移除右键入口</button>`;
   } else if (section === "文件分类") {
     content = `<form id="add-category" class="setting-form"><input id="category-name" placeholder="新分类名称" aria-label="分类名称" maxlength="40" required><button class="primary">添加分类</button></form><div class="workflow"><h3>分类设置后，请务必按一下操作。 <button id="guides" aria-label="查看操作图解">ⓘ</button></h3><div class="workflow-step"><span class="step-number">1</span><button id="copy-prompt" class="workflow-primary">复制提示词，去豆包官网</button><span id="copy-status"></span></div><div class="workflow-step"><span class="step-number">2</span><span>把提示词发给豆包，复制豆包的回复。</span></div><div class="workflow-step"><span class="step-number">3</span><button id="import-rules">录入豆包回复</button><span id="import-status"></span></div></div><div class="category-search"><span aria-hidden="true">⌕</span><input id="category-query" placeholder="搜索分类" aria-label="搜索分类"><span class="muted">${s.categories.length} 个分类</span></div><div id="category-list">${categoryList("")}</div>`;
   } else if (section === "命名规则") {
@@ -1145,20 +1249,29 @@ function drawSettings() {
   $$("[data-undo]").forEach(
     (b) => (b.onclick = () => update("undo", { id: b.dataset.undo })),
   );
-  $("#check-update").onclick = async () => {
-    const b = $("#check-update");
+  const updateButton = $("#check-update"), updateStatus = $("#update-status");
+  updateStatus.setAttribute("role", "status");
+  let updateAvailable = false, automaticUpdate = false, restarting = false;
+  updateButton.onclick = async () => {
+    const b = updateButton;
     b.disabled = true;
+    b.textContent = updateAvailable ? "正在准备更新…" : "正在检查…";
     try {
-      let r = await api("checkUpdate");
-      $("#update-status").textContent = r.message;
-      if (r.url) {
-        b.textContent = "立即更新";
-        b.onclick = () => api("downloadUpdate");
+      if (updateAvailable) {
+        const result = await api("downloadUpdate");
+        updateStatus.textContent = result?.message || "已打开 Windows 下载链接。";
+        restarting = Boolean(result?.automatic);
+      } else {
+        const r = await api("checkUpdate");
+        updateStatus.textContent = r.message;
+        updateAvailable = r.status === "available";
+        automaticUpdate = Boolean(r.automatic);
       }
     } catch (e) {
-      $("#update-status").textContent = e.message;
+      updateStatus.textContent = e.message;
     } finally {
-      b.disabled = false;
+      b.textContent = restarting ? "正在安装…" : updateAvailable ? automaticUpdate ? "更新并重启" : "下载更新" : "检查更新";
+      b.disabled = restarting;
     }
   };
 }
@@ -1273,7 +1386,9 @@ function guides() {
 $("#files").ondragstart = (e) => {
   const row = e.target.closest("[data-file]");
   if (!row) return;
-  let item = visibleRows.find((x) => x.path === row.dataset.file);
+  const item = fileRows.find((x) => x.path === row.dataset.file);
+  if (!item) return;
+  focusPane("files");
   dragItems = selected.has(item.path) ? selectedItems() : [item];
   e.dataTransfer.setData(
     "application/x-guiyu",
@@ -1295,7 +1410,7 @@ $("#files").ondrop = (e) => {
   if (!target || !dragItems.length) return;
   let id =
     target.dataset.group ||
-    category(visibleRows.find((x) => x.path === target.dataset.file));
+    category(fileRows.find((x) => x.path === target.dataset.file));
   if (!data.settings.categories.some((c) => c.id === id)) return;
   const items = dragItems;
   dragItems = [];
@@ -1306,26 +1421,52 @@ $("#files").ondragend = () => {
   render();
 };
 $("#directories").ondragstart = (e) => {
-  dragDir = e.target.closest("[data-dir]")?.dataset.dir;
-  e.dataTransfer.setData("application/x-guiyu-dir", dragDir || "");
+  if (working) { e.preventDefault(); return; }
+  const button = e.target.closest("[data-order-path]");
+  if (!button) return;
+  dragDir = { path: button.dataset.orderPath, root: button.dataset.orderRoot, kind: button.dataset.orderKind };
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("application/x-guiyu-dir", JSON.stringify(dragDir));
 };
+function clearRailDrop() {
+  $$("#directories .insert-before, #directories .insert-after").forEach(el => el.classList.remove("insert-before", "insert-after"));
+}
+function railDrop(e) {
+  if (!dragDir) return null;
+  const group = e.target.closest("[data-root-group]");
+  if (!group || (dragDir.kind === "entry" && group.dataset.rootGroup !== dragDir.root)) return null;
+  if (dragDir.kind === "root") {
+    if (group.dataset.rootGroup === dragDir.path) return null;
+    const bounds = group.getBoundingClientRect();
+    return { element: group, path: group.dataset.rootGroup, after: e.clientY >= bounds.top + bounds.height / 2 };
+  }
+  const choices = [...group.querySelectorAll('[data-order-kind="entry"]')];
+  // Nearest-row hit testing includes the visual gaps and space after the last row.
+  const button = choices.find(el => e.clientY < el.getBoundingClientRect().bottom) || choices.at(-1);
+  if (!button || button.dataset.orderPath === dragDir.path) return null;
+  const bounds = button.getBoundingClientRect();
+  return { element: button, path: button.dataset.orderPath, after: e.clientY >= bounds.top + bounds.height / 2 };
+}
 $("#directories").ondragover = (e) => {
-  if (dragDir) e.preventDefault();
+  clearRailDrop();
+  const target = railDrop(e);
+  if (!target) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = "move";
+  target.element.classList.add(target.after ? "insert-after" : "insert-before");
 };
 $("#directories").ondrop = (e) => {
   e.preventDefault();
-  let target = e.target.closest("[data-dir]")?.dataset.dir,
-    from = data.snapshot.directories.find((d) => d.path === dragDir),
-    to = data.snapshot.directories.find((d) => d.path === target);
+  const target = railDrop(e), from = dragDir;
+  clearRailDrop();
   dragDir = null;
-  if (!from || !to || from.root !== to.root || from === to) return;
-  let paths = data.snapshot.directories
-    .filter((d) => d.root === from.root)
-    .map((d) => d.path)
-    .filter((p) => p !== from.path);
-  paths.splice(paths.indexOf(to.path), 0, from.path);
-  action(async () => apply(await api("order", { root: from.root, paths })));
+  if (!target || !from) return;
+  const before = from.kind === "root" ? data.settings.roots : data.snapshot.rootEntries.filter(e => e.directory === from.root).map(e => e.path);
+  const paths = window.GuiyuRailOrder.moved(before, from.path, target.path, target.after);
+  if (!paths || paths.every((p, i) => p === before[i])) return;
+  action(async () => apply(await api(from.kind === "root" ? "orderRoots" : "order", { root: from.root, paths })));
 };
+$("#directories").ondragleave = e => { if (!e.currentTarget.contains(e.relatedTarget)) clearRailDrop(); };
+$("#directories").ondragend = () => { dragDir = null; clearRailDrop(); };
 function dragDivider(el, type) {
   el.addEventListener("pointerdown", (e) => {
     el.setPointerCapture(e.pointerId);
@@ -1413,7 +1554,7 @@ dragDivider($("#rail-divider"), "rail");
 dragDivider($("#left-divider"), "left");
 dragDivider($("#right-divider"), "right");
 document.addEventListener("keydown", (e) => {
-  if ($("#modal").open || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))
+  if ($("#modal").open || e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))
     return;
   if (e.key === "Escape") {
     selected.clear();
@@ -1439,13 +1580,18 @@ document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {
     e.preventDefault();
     selected = new Set(visibleRows.map((e) => e.path));
-    render();
+    if (selectionPane === "projects") showMiddleFolder(selectedItems().at(-1));
+    else render();
     return;
   }
   let items = selectedItems();
-  if (!items.length && !source && project && e.target.id === "projects")
-    items = [project];
-  if (e.key === " " && items.length) {
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c" && items.length) {
+    e.preventDefault();
+    action(async () => {
+      const result = await api("copyFiles", { items });
+      toast(`已复制 ${result.count} 项，可到资源管理器粘贴`);
+    });
+  } else if (e.key === " " && items.length) {
     e.preventDefault();
     action(() => api("preview", { path: items[0].path }));
   } else if (e.key === "F2" && items.length) {
@@ -1453,7 +1599,9 @@ document.addEventListener("keydown", (e) => {
     namingDialog(items, false);
   } else if (e.key === "Enter" && items.length) {
     e.preventDefault();
-    action(() => api("open", { path: items[0].path }));
+    if (items[0].folder && selectionPane === "projects") openMiddleFolder(items[0]);
+    else if (items[0].folder) openFileItem(items[0]);
+    else action(() => api("open", { path: items[0].path }));
   } else if (e.key === "Delete" && items.length) {
     e.preventDefault();
     action(async () => {
@@ -1467,7 +1615,8 @@ document.addEventListener("keydown", (e) => {
       0,
       Math.min(visibleRows.length - 1, i + (e.key === "ArrowUp" ? -1 : 1)),
     );
-    select(visibleRows[i], e);
+    if (selectionPane === "projects") selectMiddle(visibleRows[i], e);
+    else select(visibleRows[i], e);
     document
       .querySelector(
         `[data-file="${CSS.escape(visibleRows[i].path)}"], [data-project="${CSS.escape(visibleRows[i].path)}"]`,
@@ -1480,6 +1629,10 @@ window.guiyu?.onCommand?.((command) => {
   command.type === "--smart-name"
     ? namingDialog(command.items, true)
     : archiveDialog(command.items);
+});
+window.guiyu?.onUpdateProgress?.(value => {
+  const status = $("#update-status");
+  if (status) status.textContent = value.phase === "downloading" ? `正在下载更新 ${value.percent}%` : value.phase === "verifying" ? "正在校验更新包…" : "正在安装，完成后自动重新打开…";
 });
 api("state")
   .then((d) => {

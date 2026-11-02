@@ -28,7 +28,9 @@ func finderServiceRows(_ urls: [URL], settings: Settings) throws -> [BrowserRow]
 @MainActor final class FinderServices: NSObject, NSWindowDelegate {
     let store: Store
     private var window: NSWindow?
-    init(store: Store) { self.store = store }
+    private var archiveAfterNaming:QuickArchiveRequest?
+    private let presentWindow:((NSWindow)->Void)?
+    init(store: Store,presentWindow:((NSWindow)->Void)? = nil) { self.store = store;self.presentWindow = presentWindow }
 
     @objc func smartNaming(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>) {
         receive(pasteboard,archive:false,error:error)
@@ -53,21 +55,31 @@ func finderServiceRows(_ urls: [URL], settings: Settings) throws -> [BrowserRow]
                 content = AnyView(QuickArchiveDialog(store:store,request:QuickArchiveRequest(rows:rows),onClose:close))
             } else if rows.count == 1, let row = rows.first {
                 let project = store.settings.projects.filter { $0.shallow != true && (row.id == $0.path || row.id.hasPrefix($0.path+"/")) }.max { $0.path.count < $1.path.count }
-                content = AnyView(RenameDialog(store:store,target:NamingTarget(path:row.id,folder:row.folder,projectPath:project?.path ?? ""),onClose:close))
+                content = AnyView(RenameDialog(store:store,target:NamingTarget(path:row.id,folder:row.folder,projectPath:project?.path ?? ""),onClose:close,onArchive:{[weak self] in self?.archiveAfterNaming = $0}))
             } else {
                 content = AnyView(BatchRenameDialog(store:store,request:BatchNamingRequest(rows:rows,projectPath:"",recommended:true),onClose:close))
             }
-            let controller = NSHostingController(rootView:content.background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light))
-            let panel = NSWindow(contentViewController:controller)
-            panel.title = archive ? "归屿-智能归档" : "归屿-智能命名"
-            panel.styleMask = [.titled,.closable]; panel.isReleasedWhenClosed = false
-            panel.delegate = self; window = panel
-            panel.center(); NSApp.activate(ignoringOtherApps:true); panel.makeKeyAndOrderFront(nil)
+            present(content,archive:archive)
         } catch { errorPointer.pointee = error.localizedDescription as NSString }
+    }
+    private func present(_ content:AnyView,archive:Bool) {
+        let controller = NSHostingController(rootView:content.background(Color(nsColor:.windowBackgroundColor)).preferredColorScheme(.light))
+        let panel = NSWindow(contentViewController:controller)
+        panel.title = archive ? "归屿-智能归档" : "归屿-智能命名"
+        panel.styleMask = [.titled,.closable];panel.isReleasedWhenClosed = false;panel.delegate = self;window = panel
+        if let presentWindow { presentWindow(panel) }
+        else { panel.center();NSApp.activate(ignoringOtherApps:true);panel.makeKeyAndOrderFront(nil) }
     }
     func windowWillClose(_ notification: Notification) {
         // Releasing the host cancels asynchronous reads through the dialogs' onDisappear.
         window?.contentViewController = nil; window = nil
+        if let request = archiveAfterNaming {
+            archiveAfterNaming = nil
+            DispatchQueue.main.async { [weak self] in
+                guard let self,self.window == nil else { return }
+                self.present(AnyView(QuickArchiveDialog(store:self.store,request:request,onClose:{[weak self] in self?.window?.close()})),archive:true)
+            }
+        }
     }
 }
 

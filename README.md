@@ -2,7 +2,7 @@
 
 > 本仓库是 [tiduse1988/guiyu](https://github.com/tiduse1988/guiyu) 的定制构建。**原作者：tiduse1988**，许可证同上游（MIT），版权归原作者所有。
 
-**一款面向项目制工作的轻量本地文件管理工具。**
+一款本地文件整理工具，帮助你给文件命名、归档和快速查找。支持 Mac 与 Windows，免费开源。
 
 方案、招标文件、投标文件和报价表，常常散落在下载文件夹和层层项目目录里。归屿把真实项目目录、文件整理和快速查找放进一个原生 macOS 工作空间，让你更容易给文件起好名字、放对位置、再次找到。全程本地运行，文件不上传。
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 归屿能做什么
+## 核心功能
 
 | 能力 | 使用方式 |
 | --- | --- |
@@ -29,7 +29,7 @@
 | **定制更新通道** | 官方更新通道已停用，更新一律走本仓库 [Releases](https://github.com/CusuenEu/guiyu-custom/releases)，不会覆盖丢失定制功能 |
 | **侧栏目录正序** | 目录按数字升序排列（0-个人文件 … 9-收件箱），仍支持拖拽自定义 |
 
-## 下载与安装
+## 迭代记录
 
 1. 到 [Releases](https://github.com/CusuenEu/guiyu-custom/releases/latest) 下载 `guiyu-custom-macOS-arm64.zip`（附 `SHA256SUMS.txt` 与 `changelog.md`）
 2. 解压后把 **归屿.app** 拖进「应用程序」

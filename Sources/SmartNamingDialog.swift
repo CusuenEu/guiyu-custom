@@ -17,7 +17,9 @@ struct RenameDialog: View {
     @State var recognizedSelection = NSRange(location:0,length:0)
     @State var recognitionNotice = ""
     @State private var started = false
+    @State private var finishing = false
     var onClose: (() -> Void)? = nil
+    var onArchive: ((QuickArchiveRequest) -> Void)? = nil
     private var literalName:Bool { let format = store.namingFormat(for:target); return format == .category || format == .nameOnly }
     var finalName: String {
         if originalFallback && !edited { return URL(fileURLWithPath:target.path).lastPathComponent }
@@ -39,12 +41,19 @@ struct RenameDialog: View {
         }
         return cleanNamingTitle(smartNamingLiteralStem(value,target:target))
     }
-    var canConfirm: Bool { !cleanNamingTitle(smartNamingLiteralStem(base,target:target)).isEmpty && !store.busy }
+    var canConfirm: Bool { !cleanNamingTitle(smartNamingLiteralStem(base,target:target)).isEmpty && !store.busy && !finishing }
     private func close() { token.cancel();preview.cancel(); if let onClose { onClose() } else { dismiss() } }
     func confirm() {
         guard canConfirm else { return }
         if originalFallback && !edited { close();return }
         if store.confirmRename(target,newName:finalName,requireMonth:!originalFallback) { close() }
+    }
+    func confirmAndArchive() {
+        guard canConfirm,let onArchive else { return }
+        finishing = true
+        guard let request = store.renameForArchive(target,newName:finalName,requireMonth:!originalFallback) else { finishing = false;return }
+        onArchive(request)
+        close()
     }
     var compactBody: some View {
         VStack(spacing:0) {
@@ -102,6 +111,7 @@ struct RenameDialog: View {
             HStack {
                 Spacer()
                 Button("取消") { close() }.buttonStyle(SmartDialogActionStyle()).keyboardShortcut(.cancelAction)
+                NamingArchiveButton(enabled:canConfirm && onArchive != nil,action:confirmAndArchive).frame(width:106,height:34)
                 Button("确认重命名",action:confirm).buttonStyle(SmartDialogActionStyle(primary:true)).disabled(!canConfirm).keyboardShortcut(.defaultAction)
             }.padding(.horizontal,26).frame(height:68).background(WorkspaceTheme.projectCanvas)
         }.frame(width:700,height:460).background(WorkspaceTheme.canvas).foregroundStyle(WorkspaceTheme.ink).tint(accent)
@@ -158,6 +168,7 @@ struct RenameDialog: View {
                         Label("确认后才修改文件名",systemImage:"info.circle").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary)
                         Spacer(minLength:0)
                         Button("取消",action:close).buttonStyle(SmartDialogActionStyle()).keyboardShortcut(.cancelAction)
+                        NamingArchiveButton(enabled:canConfirm && onArchive != nil,action:confirmAndArchive).frame(width:106,height:34)
                         Button("确认重命名",action:confirm).buttonStyle(SmartDialogActionStyle(primary:true)).keyboardShortcut(.defaultAction).disabled(!canConfirm)
                     }.frame(height:38)
                 }

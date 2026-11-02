@@ -1,0 +1,170 @@
+"use strict";
+const { app, shell, ipcMain } = require("electron");
+const fs = require("node:fs/promises"), path = require("node:path"), assert = require("node:assert/strict");
+const temp = process.env.GUIYU_WORKSPACE_TEST;
+if (!temp || process.env.CI !== "true") throw Error("Isolated CI only");
+const downloads = path.join(temp, "下载"), root = path.join(downloads, "关联项目库"), empty = path.join(temp, "空关联目录");
+const year = path.join(root, "2026"), first = path.join(year, "甲项目"), second = path.join(year, "乙项目");
+const direct = path.join(downloads, "下载文件夹"), linkedSource = path.join(root, "空可归档目录");
+const desktop = path.join(temp, "桌面实际位置"), desktopAlias = path.join(temp, "桌面重定向"), desktopFolder = path.join(desktop, "桌面文件夹");
+const externalOpens = [];
+const copiedSelections = [];
+const iconSamples = [["图标演示.PPTX","powerpoint"],["网页说明.HTML","html"],["设备平面图.dwg","cad"],["技术路线.xmind","mindmap"],["现场照片.JPG","image"],["演示录像.mp4","video"],["施工进度.mpp","project"],["文档版式.ofd","ofd"],["未识别格式.zzz","unknown"]];
+shell.openPath = async p => { externalOpens.push(p); return ""; };
+const handle = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, handler) => handle(channel, (event, method, args) => {
+  if (channel === "guiyu" && method === "copyFiles") copiedSelections.push(args.items.map(e => e.path));
+  return handler(event, method, args);
+});
+async function prepare() {
+  for (const dir of [first, second, empty, direct, linkedSource, desktopFolder]) await fs.mkdir(dir, { recursive: true });
+  await fs.symlink(desktop, desktopAlias, "junction");
+  app.setPath("desktop", desktopAlias);
+  await fs.writeFile(path.join(desktopFolder, "桌面文档.txt"), "desktop");
+  await fs.writeFile(path.join(first, "甲文档.txt"), "first");
+  for(const [name] of iconSamples) await fs.writeFile(path.join(first,name),"isolated icon fixture");
+  await fs.writeFile(path.join(root, "根目录散放文档.txt"), "root document");
+  await fs.mkdir(path.join(first, "附件")); await fs.writeFile(path.join(first, "附件/内部.txt"), "nested");
+  await fs.writeFile(path.join(second, "乙文档.txt"), "second");
+  await fs.writeFile(path.join(direct, "下载文档.txt"), "download");
+  await fs.utimes(first, new Date("2026-11-02T00:00:02Z"), new Date("2026-11-02T00:00:02Z"));
+  await fs.utimes(second, new Date("2026-11-02T00:00:01Z"), new Date("2026-11-02T00:00:01Z"));
+  const stateDir = path.join(app.getPath("temp"), "Guiyu-windows-review");
+  await fs.mkdir(stateDir, { recursive: true });
+  await fs.writeFile(path.join(stateDir, "settings.json"), JSON.stringify({ roots: [root, empty],
+    sources: [{ id: "downloads", name: "下载", kind: "folder", path: downloads }, { id: "linked", name: "空可归档目录", kind: "folder", path: linkedSource }, { id: "desktop", name: "桌面", kind: "folder", path: desktopAlias }], categories: [] }));
+}
+async function check(win) {
+  const evalUI = script => win.webContents.executeJavaScript(script);
+  const row = (kind, value) => `[data-${kind}=${JSON.stringify(value)}]`;
+  const click = (selector, extra = {}) => evalUI(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('Missing '+${JSON.stringify(selector)});e.dispatchEvent(new MouseEvent('click',{bubbles:true,detail:1,...${JSON.stringify(extra)}}));})()`);
+  const wait = (condition, timeout = 15000) => evalUI(`new Promise((resolve,reject)=>{const until=Date.now()+${timeout};const poll=()=>{if(${condition})return resolve(true);if(Date.now()>until)return reject(Error('UI wait timed out: '+${JSON.stringify(condition)}));setTimeout(poll,20)};poll()})`);
+  const content = name => `document.querySelector('#files').textContent.includes(${JSON.stringify(name)})`;
+  await wait("document.querySelectorAll('[data-dir]').length>0");
+  const rootFile = path.join(root, "根目录散放文档.txt");
+  assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("rail-file",rootFile))})`), "Linked location must list its immediate files in the left rail");
+  const drag = (from, to, after) => evalUI(`(()=>{
+    const a=document.querySelector(${JSON.stringify(from)}),b=document.querySelector(${JSON.stringify(to)}), transfer=new DataTransfer();
+    if(!a||!b)throw Error('Missing drag row');
+    a.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+    const target=a.dataset.orderKind==='root'?b.closest('[data-root-group]'):b,rect=target.getBoundingClientRect();
+    b.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer,clientY:rect.top+rect.height*${after?0.8:0.2}}));
+    if(!target.classList.contains(${JSON.stringify(after?'insert-after':'insert-before')}))throw Error('Missing visible insertion line before drop');
+    b.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer,clientY:rect.top+rect.height*${after?0.8:0.2}}));
+    a.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));
+  })()`);
+  await drag(row('dir',root),row('dir',empty),true);
+  await wait(`document.querySelector('[data-root-group]').dataset.rootGroup===${JSON.stringify(empty)}`);
+  await drag(row('rail-file',rootFile),row('dir',year),false);
+  await wait(`document.querySelector(${JSON.stringify(row('root-group',root))}).querySelector('[data-order-kind="entry"]').dataset.orderPath===${JSON.stringify(rootFile)}`);
+  await click('#refresh');
+  await wait(`document.querySelector('[data-root-group]').dataset.rootGroup===${JSON.stringify(empty)}`);
+  assert(await evalUI(`document.querySelector(${JSON.stringify(row('root-group',root))}).querySelector('[data-order-kind="entry"]').dataset.orderPath===${JSON.stringify(rootFile)}`), "Mixed file/folder order must persist after refresh");
+  assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("dir", empty))})`), "Empty association must be visible");
+  await click(row("dir", empty));
+  assert(await evalUI("document.querySelector('#projects').textContent.includes('为空')"));
+  await click(row("dir", year));
+  await click(row("project", first)); await wait(content("甲文档.txt"));
+  for(const [name,type] of iconSamples) {
+    const selector=row("file",path.join(first,name))+' img[data-file-type='+JSON.stringify(type)+']';
+    await wait(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});return !!e&&e.complete&&e.naturalWidth>0})()`);
+  }
+  console.log("PASS file icons: actual packaged HTML, PPT, CAD, mind map, image, video, Project, OFD and unknown SVG assets load in the real renderer");
+  assert(await evalUI(`document.querySelector(${JSON.stringify(row("project", first))}).getAttribute('aria-selected')==='true'`));
+  // Unconfigured categories must never hide an already selected folder's files.
+  assert(!await evalUI("!!document.querySelector('#empty-categories')"));
+  await click(row("project", second), { ctrlKey: true }); await wait(content("乙文档.txt"));
+  assert.equal(await evalUI("document.querySelectorAll('#projects [aria-selected=true]').length"), 2, "Middle Ctrl multiselect");
+  await evalUI("document.querySelector('#projects').focus();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'c',ctrlKey:true,bubbles:true}))");
+  await wait("document.querySelector('#toast').textContent.includes('已复制 2 项')", 45000);
+  assert.deepEqual([...copiedSelections[0]].sort(), [first, second].sort(), "Middle copy must use middle folders, never right-side files");
+  await click(row("project", first)); await wait(content("甲文档.txt"));
+  await evalUI(`document.querySelector(${JSON.stringify(row("project", first))}).dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))`);
+  await wait("document.activeElement.id==='files'"); assert(await evalUI(content("甲文档.txt")));
+  await click(row("file", path.join(first, "附件")));
+  await evalUI(`document.querySelector(${JSON.stringify(row("file", path.join(first, "附件")))}).dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))`);
+  await wait(content("内部.txt"));
+  await click('#up'); await wait(content("甲文档.txt"));
+  await click(row("dir", year));
+  await click(row("project", first)); await wait(content("甲文档.txt"));
+  await evalUI("document.querySelector('#projects').focus();document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}))");
+  await wait(content("乙文档.txt"));
+  await click('[data-source="downloads"]');
+  await wait(`!!document.querySelector(${JSON.stringify(row("project", direct))})`);
+  await click(row("project", root)); await wait(content("空可归档目录"));
+  assert(await evalUI(content("2026")), "A linked project root inside Downloads must remain browsable as a source folder");
+  await click(row("project", direct)); await wait(content("下载文档.txt"));
+  await evalUI(`document.querySelector(${JSON.stringify(row("project", direct))}).dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))`);
+  await wait("document.activeElement.id==='files'");
+  assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("project", direct))})`), "Source double-click must keep middle folder list");
+  assert(await evalUI(content("下载文档.txt")));
+  await evalUI(`document.querySelector(${JSON.stringify(row("project", direct))}).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:100}))`);
+  await evalUI("[...document.querySelectorAll('#context button')].find(b=>b.textContent==='智能命名…').click()");
+  await wait("!!document.querySelector('#name-stem')", 45000);
+  await evalUI("const input=document.querySelector('#name-stem');input.value='下载新名称';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#confirm-archive').click()");
+  await wait("!!document.querySelector('#archive-query')", 45000);
+  assert(await evalUI("document.querySelector('.file-summary').textContent.includes('下载新名称')"));
+  await evalUI("document.querySelector('#modal [data-cancel]').click()");
+  const renamedSource = path.join(downloads, '下载新名称');
+  assert.equal(await fs.readFile(path.join(renamedSource, '下载文档.txt'), 'utf8'), 'download');
+  assert(await evalUI(`document.querySelector(${JSON.stringify(row("project", renamedSource))})?.getAttribute('aria-selected')==='true'`), "Rename/archive-cancel must preserve the selected middle folder");
+  await click('[data-source="linked"]');
+  await wait("document.querySelector('#status').textContent==='本地工作空间'");
+  assert(await evalUI("document.querySelector('#projects').textContent.includes('为空')"));
+  await click('[data-source="desktop"]');
+  await wait(`!!document.querySelector(${JSON.stringify(row("project", desktopFolder))})`);
+  await click(row("project", desktopFolder)); await wait(content("桌面文档.txt"));
+  await click(row("dir", root));
+  await click(row("project", year)); await wait(content("甲项目"));
+  await click(row("dir", empty));
+  await fs.mkdir(path.join(empty, "新文件夹"));
+  await click('#refresh'); await wait(`!!document.querySelector(${JSON.stringify(row("project", path.join(empty, "新文件夹")))})`);
+  assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("dir", empty))})`), "Association must remain when first child appears");
+  await click(row("project", path.join(empty, "新文件夹")));
+  await wait("document.querySelector('#files').textContent.includes('没有内容')");
+  // Exercise the actual Electron second-instance transport used by Explorer.
+  // The child bypasses fixture preparation so it cannot overwrite primary state.
+  const explorerFolder = path.join(temp, "右键 中文 & $1 文件夹");
+  await fs.mkdir(explorerFolder);
+  const originalFile = path.join(explorerFolder, "保留原件.txt");
+  await fs.writeFile(originalFile, "unchanged");
+  for (const type of ["--smart-name", "--smart-archive"]) {
+    await new Promise((resolve, reject) => {
+      const child = require("node:child_process").spawn(process.execPath,
+        [type, "--allow-file-access-from-files", explorerFolder],
+        { env: { ...process.env, GUIYU_EXPLORER_CHILD: "1" }, stdio: "ignore", windowsHide: true });
+      const timer = setTimeout(() => { child.kill(); reject(Error("Explorer second instance did not exit")); }, 30000);
+      child.once("error", error => { clearTimeout(timer); reject(error); });
+      child.once("exit", code => { clearTimeout(timer); code === 0 ? resolve() : reject(Error(`Explorer child exit ${code}`)); });
+    });
+    await wait(type === "--smart-name" ? "!!document.querySelector('#name-stem')" : "!!document.querySelector('#archive-query')", 45000);
+    assert(await evalUI("document.querySelector('#modal').textContent.includes('右键 中文 & $1 文件夹')"));
+    if(type==='--smart-archive') {
+      assert(await evalUI("document.querySelector('#archive-projects').textContent.includes('暂无可靠推荐')"));
+      await evalUI("document.querySelector('#archive-query').value='甲项目';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
+      await wait(`!!document.querySelector(${JSON.stringify(row('target',first))})`);
+      await click(row('target',first));
+      assert(await evalUI("!document.querySelector('#confirm').disabled"));
+      await evalUI("document.querySelector('#archive-query').value='';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
+      assert(await evalUI("document.querySelector('#confirm').disabled&&document.querySelector('#archive-projects').textContent.includes('暂无可靠推荐')"));
+    }
+    await evalUI("document.querySelector('#modal [data-cancel]').click()");
+    await wait("!document.querySelector('#modal').open");
+    assert.equal(await fs.readFile(originalFile, "utf8"), "unchanged");
+  }
+  assert.deepEqual(externalOpens, [], "Folder interactions must never launch Explorer");
+  console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, overlapping sources, redirected Desktop, rename/archive-cancel selection, empty association and refresh");
+  console.log("PASS Explorer: real second-instance smart naming/archive with Chromium switches and Chinese/space/special-character paths");
+  console.log("PASS rail/archive: immediate files, root and mixed child order, insertion lines before release, persisted refresh, empty recommendations and independent manual search");
+}
+let tested = false;
+app.on("browser-window-created", (event, win) => {
+  if (tested) return; tested = true;
+  win.webContents.once("did-finish-load", () => check(win).then(() => app.exit(0)).catch(async error => {
+    console.error(error.stack || error);
+    try { console.error(await win.webContents.executeJavaScript("document.body.innerText")); } catch {}
+    app.exit(1);
+  }));
+});
+if (process.env.GUIYU_EXPLORER_CHILD === "1") require(path.join(process.resourcesPath, "production.asar/src/main.cjs"));
+else prepare().then(() => require(path.join(process.resourcesPath, "production.asar/src/main.cjs"))).catch(error => { console.error(error); app.exit(1); });

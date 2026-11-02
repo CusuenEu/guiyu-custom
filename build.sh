@@ -20,6 +20,17 @@ if [[ -f "$logo_path" ]]; then
 fi
 cp Design/SoftWorkspace/GuiyuCompanion.png 'dist/归屿.app/Contents/Resources/GuiyuCompanion.png'
 ditto Resources/CategoryGuides 'dist/归屿.app/Contents/Resources/CategoryGuides'
+ditto Resources/FileTypeIcons.xcassets 'dist/归屿.app/Contents/Resources/FileTypeIcons.xcassets'
+ditto Resources/FileTypeIcons-Licenses 'dist/归屿.app/Contents/Resources/FileTypeIcons-Licenses'
+cp Resources/FileTypeIcons-manifest.json 'dist/归屿.app/Contents/Resources/FileTypeIcons-manifest.json'
+rm -f 'dist/归屿.app/Contents/Resources/Assets.car'
+if xcrun --find actool >/dev/null 2>&1; then
+  xcrun actool Resources/FileTypeIcons.xcassets --compile 'dist/归屿.app/Contents/Resources' \
+    --platform macosx --minimum-deployment-target 13.0 --target-device mac \
+    --output-format human-readable-text --warnings --errors
+else
+  print 'File icons: bundled Asset Catalog with 1x/2x/3x images (actool unavailable).'
+fi
 swift build -c release --product Guiyu --jobs 4
 binary_path=$(swift build -c release --show-bin-path)
 cp "$binary_path/Guiyu" 'dist/归屿.app/Contents/MacOS/Guiyu'
@@ -33,7 +44,12 @@ cp -f .build/checkouts/GRDB.swift/LICENSE 'dist/归屿.app/Contents/Resources/GR
 cat > 'dist/归屿.app/Contents/Info.plist' <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleExecutable</key><string>Guiyu</string><key>CFBundleIdentifier</key><string>local.guiyu.workspace</string><key>CFBundleName</key><string>归屿</string><key>CFBundleDisplayName</key><string>归屿</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleInfoDictionaryVersion</key><string>6.0</string><key>LSMinimumSystemVersion</key><string>13.0</string><key>NSHighResolutionCapable</key><true/><key>NSPrincipalClass</key><string>NSApplication</string></dict></plist>
 PLIST
-/usr/libexec/PlistBuddy -c 'Merge Resources/FinderServices.plist' 'dist/归屿.app/Contents/Info.plist'
+# Disable service declarations for a manual development build when requested.
+case "${GUIYU_FINDER_SERVICES:-1}" in
+  1) /usr/libexec/PlistBuddy -c 'Merge Resources/FinderServices.plist' 'dist/归屿.app/Contents/Info.plist' ;;
+  0) ;;
+  *) print -u2 'GUIYU_FINDER_SERVICES must be 0 or 1'; exit 1 ;;
+esac
 if [[ -f dist/AppIcon.icns ]]; then
 cp dist/AppIcon.icns 'dist/归屿.app/Contents/Resources/AppIcon.icns'
 /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon.icns' 'dist/归屿.app/Contents/Info.plist'
@@ -56,4 +72,4 @@ UPDATE_PLIST
 python3 scripts/test_version.py
 codesign --force --deep --sign - 'dist/归屿.app'
 codesign --verify --deep --strict 'dist/归屿.app' 
-'dist/归屿.app/Contents/MacOS/Guiyu' --self-test
+python3 scripts/run-isolated-self-tests.py 'dist/归屿.app'

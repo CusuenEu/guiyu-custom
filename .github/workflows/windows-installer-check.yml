@@ -1,0 +1,35 @@
+name: Inspect Windows installer
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Windows build artifact run ID
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Guiyu-Windows
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: Windows/out
+      - name: Verify both existing installers
+        shell: pwsh
+        run: ./Windows/tests/installer-smoke.ps1
+      - name: Expand existing app packages
+        shell: pwsh
+        run: Get-ChildItem Windows/out/*-Windows-*.zip | ForEach-Object { Expand-Archive -LiteralPath $_.FullName -DestinationPath Windows/out -Force }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --omit=optional --ignore-scripts
+        working-directory: Windows
+      - name: Verify existing packaged workspaces
+        run: node Windows/tests/workspace-native.cjs

@@ -1,4 +1,4 @@
-name: Windows preview validation
+name: Windows validation
 on:
   workflow_dispatch:
   push:
@@ -9,6 +9,7 @@ jobs:
   core:
     runs-on: windows-2022
     strategy:
+      fail-fast: false
       matrix:
         node-arch: [x86, x64]
     steps:
@@ -52,9 +53,19 @@ jobs:
           "GUIYU_MAKENSIS=$nsis" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: npm run package
         working-directory: Windows
+      - name: Verify installer integration
+        id: installer
+        shell: pwsh
+        run: ./Windows/tests/installer-smoke.ps1
+      - name: Packaged workspace regression (ia32 and x64)
+        run: node Windows/tests/workspace-native.cjs
+      - name: Automatic update installation and restart (ia32 and x64)
+        if: ${{ !cancelled() && steps.installer.outcome == 'success' }}
+        run: node Windows/tests/update-native.cjs
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: Guiyu-Windows-preview
+          name: Guiyu-Windows
           path: |
             Windows/out/*.zip
             Windows/out/*-setup.exe

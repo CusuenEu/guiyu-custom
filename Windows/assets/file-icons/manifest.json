@@ -1,0 +1,1037 @@
+{
+  "name": "Guiyu File Type Icons",
+  "version": "1.0.0",
+  "date": "2026-11-02",
+  "style": "approved color tile",
+  "canvas": 64,
+  "cornerRadius": 12,
+  "pngSizes": [
+    16,
+    24,
+    32,
+    48,
+    64,
+    72,
+    96,
+    128,
+    256
+  ],
+  "defaultType": "unknown",
+  "bundleExtensions": [
+    "app",
+    "pages",
+    "numbers",
+    "key",
+    "mindnode"
+  ],
+  "types": [
+    {
+      "id": "word",
+      "label": "Word",
+      "color": "#2563EB",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "doc",
+        "docx",
+        "docm",
+        "dot",
+        "dotx",
+        "dotm",
+        "rtf",
+        "odt",
+        "wps",
+        "pages"
+      ],
+      "svg": "svg/word.svg",
+      "macAsset": "file-type-word",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/microsoft-word.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "excel",
+      "label": "Excel",
+      "color": "#12833C",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "xls",
+        "xlsx",
+        "xlsm",
+        "xlsb",
+        "xlt",
+        "xltx",
+        "xltm",
+        "xlam",
+        "csv",
+        "tsv",
+        "ods",
+        "et",
+        "numbers"
+      ],
+      "svg": "svg/excel.svg",
+      "macAsset": "file-type-excel",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/microsoft-excel.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "powerpoint",
+      "label": "PowerPoint",
+      "color": "#F97316",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "ppt",
+        "pptx",
+        "pptm",
+        "pps",
+        "ppsx",
+        "ppsm",
+        "pot",
+        "potx",
+        "potm",
+        "odp",
+        "dps",
+        "key"
+      ],
+      "svg": "svg/powerpoint.svg",
+      "macAsset": "file-type-powerpoint",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/microsoft-powerpoint.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "pdf",
+      "label": "PDF",
+      "color": "#EF313F",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "pdf"
+      ],
+      "svg": "svg/pdf.svg",
+      "macAsset": "file-type-pdf",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/file-pdf-box.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "ofd",
+      "label": "OFD",
+      "color": "#D82D3F",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "ofd"
+      ],
+      "svg": "svg/ofd.svg",
+      "macAsset": "file-type-ofd",
+      "source": {
+        "library": "Guiyu typography",
+        "url": null,
+        "revision": "1.0.0"
+      }
+    },
+    {
+      "id": "mindmap",
+      "label": "思维导图",
+      "color": "#F04E60",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "xmind",
+        "mmap",
+        "mm",
+        "emmx",
+        "mindnode"
+      ],
+      "svg": "svg/mindmap.svg",
+      "macAsset": "file-type-mindmap",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/graph-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "visio",
+      "label": "Visio",
+      "color": "#2563D9",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "vsd",
+        "vsdx",
+        "vsdm",
+        "vss",
+        "vssx",
+        "vssm",
+        "vst",
+        "vstx",
+        "vstm",
+        "vdx"
+      ],
+      "svg": "svg/visio.svg",
+      "macAsset": "file-type-visio",
+      "source": {
+        "library": "Simple Icons",
+        "url": "https://github.com/simple-icons/simple-icons/blob/0af835e2949a9222965522780e5e0810d3c53382/icons/microsoftvisio.svg",
+        "revision": "0af835e2949a9222965522780e5e0810d3c53382"
+      }
+    },
+    {
+      "id": "drawio",
+      "label": "draw.io",
+      "color": "#F58A16",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "drawio"
+      ],
+      "svg": "svg/drawio.svg",
+      "macAsset": "file-type-drawio",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/sitemap.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "cad",
+      "label": "CAD",
+      "color": "#BD213C",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "dwg",
+        "dxf",
+        "dwf",
+        "dwfx",
+        "dgn",
+        "dwt"
+      ],
+      "svg": "svg/cad.svg",
+      "macAsset": "file-type-cad",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/ruler-square-compass.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "bim",
+      "label": "BIM",
+      "color": "#397FB4",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "rvt",
+        "rfa",
+        "rte",
+        "rft",
+        "ifc",
+        "ifczip",
+        "nwd",
+        "nwc",
+        "nwf"
+      ],
+      "svg": "svg/bim.svg",
+      "macAsset": "file-type-bim",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/office-building.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "model3d",
+      "label": "三维模型",
+      "color": "#4F46C8",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "obj",
+        "stl",
+        "stp",
+        "step",
+        "skp",
+        "fbx",
+        "blend",
+        "3ds",
+        "dae",
+        "glb",
+        "gltf",
+        "3mf",
+        "igs",
+        "iges",
+        "sldprt",
+        "sldasm",
+        "sat",
+        "max",
+        "c4d"
+      ],
+      "svg": "svg/model3d.svg",
+      "macAsset": "file-type-model3d",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/cube-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "project",
+      "label": "Project",
+      "color": "#16823A",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "mpp",
+        "mpt"
+      ],
+      "svg": "svg/project.svg",
+      "macAsset": "file-type-project",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/chart-gantt.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "photoshop",
+      "label": "Photoshop",
+      "color": "#0876D8",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "psd",
+        "psb"
+      ],
+      "svg": "svg/photoshop.svg",
+      "macAsset": "file-type-photoshop",
+      "source": {
+        "library": "Simple Icons",
+        "url": "https://github.com/simple-icons/simple-icons/blob/0af835e2949a9222965522780e5e0810d3c53382/icons/adobephotoshop.svg",
+        "revision": "0af835e2949a9222965522780e5e0810d3c53382"
+      }
+    },
+    {
+      "id": "illustrator",
+      "label": "Illustrator",
+      "color": "#F18A13",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "ai",
+        "eps",
+        "epsi"
+      ],
+      "svg": "svg/illustrator.svg",
+      "macAsset": "file-type-illustrator",
+      "source": {
+        "library": "Simple Icons",
+        "url": "https://github.com/simple-icons/simple-icons/blob/0af835e2949a9222965522780e5e0810d3c53382/icons/adobeillustrator.svg",
+        "revision": "0af835e2949a9222965522780e5e0810d3c53382"
+      }
+    },
+    {
+      "id": "coreldraw",
+      "label": "CorelDRAW",
+      "color": "#27A53A",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "cdr",
+        "cdt"
+      ],
+      "svg": "svg/coreldraw.svg",
+      "macAsset": "file-type-coreldraw",
+      "source": {
+        "library": "Simple Icons",
+        "url": "https://github.com/simple-icons/simple-icons/blob/0af835e2949a9222965522780e5e0810d3c53382/icons/coreldraw.svg",
+        "revision": "0af835e2949a9222965522780e5e0810d3c53382"
+      }
+    },
+    {
+      "id": "figma",
+      "label": "Figma",
+      "color": "#303740",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "fig",
+        "jam"
+      ],
+      "svg": "svg/figma.svg",
+      "macAsset": "file-type-figma",
+      "source": {
+        "library": "Simple Icons",
+        "url": "https://github.com/simple-icons/simple-icons/blob/0af835e2949a9222965522780e5e0810d3c53382/icons/figma.svg",
+        "revision": "0af835e2949a9222965522780e5e0810d3c53382"
+      }
+    },
+    {
+      "id": "sketch",
+      "label": "Sketch",
+      "color": "#F0B416",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "sketch"
+      ],
+      "svg": "svg/sketch.svg",
+      "macAsset": "file-type-sketch",
+      "source": {
+        "library": "Simple Icons",
+        "url": "https://github.com/simple-icons/simple-icons/blob/0af835e2949a9222965522780e5e0810d3c53382/icons/sketch.svg",
+        "revision": "0af835e2949a9222965522780e5e0810d3c53382"
+      }
+    },
+    {
+      "id": "svg",
+      "label": "SVG",
+      "color": "#11A4A6",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "svg",
+        "svgz"
+      ],
+      "svg": "svg/svg.svg",
+      "macAsset": "file-type-svg",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/vector-bezier.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "email",
+      "label": "邮件",
+      "color": "#2283DE",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "eml",
+        "msg",
+        "oft",
+        "mbox",
+        "pst",
+        "ost"
+      ],
+      "svg": "svg/email.svg",
+      "macAsset": "file-type-email",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/email-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "onenote",
+      "label": "OneNote",
+      "color": "#9B36D3",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "one",
+        "onepkg",
+        "onetoc2"
+      ],
+      "svg": "svg/onenote.svg",
+      "macAsset": "file-type-onenote",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/microsoft-onenote.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "html",
+      "label": "HTML",
+      "color": "#F06A19",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "html",
+        "htm",
+        "xhtml",
+        "mhtml",
+        "mht"
+      ],
+      "svg": "svg/html.svg",
+      "macAsset": "file-type-html",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/language-html5.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "css",
+      "label": "CSS",
+      "color": "#2177E9",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "css",
+        "scss",
+        "sass",
+        "less"
+      ],
+      "svg": "svg/css.svg",
+      "macAsset": "file-type-css",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/language-css3.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "javascript",
+      "label": "JavaScript",
+      "color": "#F0B91D",
+      "foreground": "#242424",
+      "extensions": [
+        "js",
+        "jsx",
+        "mjs",
+        "cjs"
+      ],
+      "svg": "svg/javascript.svg",
+      "macAsset": "file-type-javascript",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/language-javascript.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "typescript",
+      "label": "TypeScript",
+      "color": "#2979D9",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "ts",
+        "tsx",
+        "cts"
+      ],
+      "svg": "svg/typescript.svg",
+      "macAsset": "file-type-typescript",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/language-typescript.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "python",
+      "label": "Python",
+      "color": "#3276AA",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "py",
+        "pyw",
+        "pyi"
+      ],
+      "svg": "svg/python.svg",
+      "macAsset": "file-type-python",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/language-python.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "text",
+      "label": "TXT / LOG",
+      "color": "#7C858D",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "txt",
+        "log",
+        "text",
+        "nfo"
+      ],
+      "svg": "svg/text.svg",
+      "macAsset": "file-type-text",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/text-box-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "markdown",
+      "label": "Markdown",
+      "color": "#343A40",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "md",
+        "markdown",
+        "mdown",
+        "mkd"
+      ],
+      "svg": "svg/markdown.svg",
+      "macAsset": "file-type-markdown",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/language-markdown-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "data",
+      "label": "JSON / XML / YAML",
+      "color": "#EE9717",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "json",
+        "jsonc",
+        "json5",
+        "xml",
+        "yaml",
+        "yml",
+        "toml",
+        "ini",
+        "cfg",
+        "conf",
+        "properties",
+        "env",
+        "config",
+        "plist",
+        "parquet",
+        "arrow",
+        "avro"
+      ],
+      "svg": "svg/data.svg",
+      "macAsset": "file-type-data",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/code-json.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "script",
+      "label": "脚本",
+      "color": "#35495C",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "bat",
+        "cmd",
+        "ps1",
+        "psm1",
+        "psd1",
+        "vbs",
+        "vbe",
+        "wsf",
+        "ahk"
+      ],
+      "svg": "svg/script.svg",
+      "macAsset": "file-type-script",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/console-line.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "database",
+      "label": "数据库",
+      "color": "#6248D9",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "db",
+        "sqlite",
+        "sqlite3",
+        "db3",
+        "sql",
+        "mdb",
+        "accdb",
+        "accde",
+        "odb",
+        "dbf"
+      ],
+      "svg": "svg/database.svg",
+      "macAsset": "file-type-database",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/database.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "image",
+      "label": "图片",
+      "color": "#0FAFB2",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "png",
+        "jpg",
+        "jpeg",
+        "jpe",
+        "jfif",
+        "webp",
+        "gif",
+        "bmp",
+        "dib",
+        "tif",
+        "tiff",
+        "heic",
+        "heif",
+        "avif",
+        "ico",
+        "icns",
+        "cur"
+      ],
+      "svg": "svg/image.svg",
+      "macAsset": "file-type-image",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/image.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "video",
+      "label": "视频",
+      "color": "#8B43E6",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "mp4",
+        "m4v",
+        "mov",
+        "mkv",
+        "avi",
+        "wmv",
+        "flv",
+        "webm",
+        "mpg",
+        "mpeg",
+        "m2v",
+        "3gp",
+        "3g2",
+        "m2ts",
+        "mts",
+        "vob",
+        "rmvb",
+        "rm",
+        "asf",
+        "ogv"
+      ],
+      "svg": "svg/video.svg",
+      "macAsset": "file-type-video",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/movie-open-play-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "audio",
+      "label": "音频",
+      "color": "#D93687",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "mp3",
+        "wav",
+        "flac",
+        "m4a",
+        "aac",
+        "ogg",
+        "opus",
+        "wma",
+        "aif",
+        "aiff",
+        "ape",
+        "mid",
+        "midi",
+        "amr"
+      ],
+      "svg": "svg/audio.svg",
+      "macAsset": "file-type-audio",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/music-note.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "subtitle",
+      "label": "字幕",
+      "color": "#6754E8",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "srt",
+        "ass",
+        "ssa",
+        "vtt",
+        "sub",
+        "lrc"
+      ],
+      "svg": "svg/subtitle.svg",
+      "macAsset": "file-type-subtitle",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/closed-caption-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "ebook",
+      "label": "电子书",
+      "color": "#A56737",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "epub",
+        "mobi",
+        "azw",
+        "azw3",
+        "fb2",
+        "djvu"
+      ],
+      "svg": "svg/ebook.svg",
+      "macAsset": "file-type-ebook",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/book-open-variant.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "archive",
+      "label": "压缩包",
+      "color": "#EFAF18",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "zip",
+        "rar",
+        "7z",
+        "tar",
+        "gz",
+        "gzip",
+        "bz2",
+        "xz",
+        "tgz",
+        "tbz2",
+        "txz",
+        "zst",
+        "lzma",
+        "tar.gz",
+        "tar.bz2",
+        "tar.xz",
+        "tar.zst"
+      ],
+      "svg": "svg/archive.svg",
+      "macAsset": "file-type-archive",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/zip-box-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "application",
+      "label": "应用程序",
+      "color": "#5B85B5",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "exe",
+        "app",
+        "com",
+        "scr"
+      ],
+      "svg": "svg/application.svg",
+      "macAsset": "file-type-application",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/application-cog-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "installer",
+      "label": "安装包",
+      "color": "#177EE4",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "msi",
+        "msp",
+        "msix",
+        "msixbundle",
+        "appx",
+        "appxbundle",
+        "pkg",
+        "mpkg",
+        "apk",
+        "apks",
+        "aab",
+        "deb",
+        "rpm"
+      ],
+      "svg": "svg/installer.svg",
+      "macAsset": "file-type-installer",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/package-down.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "disk",
+      "label": "磁盘镜像",
+      "color": "#858D95",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "iso",
+        "dmg",
+        "img",
+        "vhd",
+        "vhdx",
+        "vmdk",
+        "qcow2"
+      ],
+      "svg": "svg/disk.svg",
+      "macAsset": "file-type-disk",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/disc.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "font",
+      "label": "字体",
+      "color": "#A44CD2",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "ttf",
+        "otf",
+        "ttc",
+        "woff",
+        "woff2",
+        "eot"
+      ],
+      "svg": "svg/font.svg",
+      "macAsset": "file-type-font",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/format-font.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "code",
+      "label": "通用代码",
+      "color": "#587FA7",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "c",
+        "h",
+        "cpp",
+        "hpp",
+        "cc",
+        "cxx",
+        "hxx",
+        "cs",
+        "java",
+        "go",
+        "rs",
+        "swift",
+        "m",
+        "php",
+        "rb",
+        "r",
+        "lua",
+        "kt",
+        "kts",
+        "scala",
+        "dart",
+        "vue",
+        "svelte",
+        "graphql",
+        "proto",
+        "ipynb",
+        "tex"
+      ],
+      "svg": "svg/code.svg",
+      "macAsset": "file-type-code",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/code-tags.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "shortcut",
+      "label": "快捷方式",
+      "color": "#2487E8",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "lnk",
+        "url",
+        "webloc",
+        "desktop"
+      ],
+      "svg": "svg/shortcut.svg",
+      "macAsset": "file-type-shortcut",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/arrow-top-right-bold-box-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "certificate",
+      "label": "证书",
+      "color": "#2E9E48",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "cer",
+        "crt",
+        "pem",
+        "der",
+        "pfx",
+        "p12",
+        "p7b",
+        "p7c",
+        "csr"
+      ],
+      "svg": "svg/certificate.svg",
+      "macAsset": "file-type-certificate",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/certificate-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "aimodel",
+      "label": "AI 模型",
+      "color": "#8C40DE",
+      "foreground": "#FFFFFF",
+      "extensions": [
+        "gguf",
+        "onnx",
+        "safetensors",
+        "pt",
+        "pth",
+        "ckpt",
+        "tflite"
+      ],
+      "svg": "svg/aimodel.svg",
+      "macAsset": "file-type-aimodel",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/chip.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    },
+    {
+      "id": "unknown",
+      "label": "未知文件",
+      "color": "#858D95",
+      "foreground": "#FFFFFF",
+      "extensions": [],
+      "svg": "svg/unknown.svg",
+      "macAsset": "file-type-unknown",
+      "source": {
+        "library": "Material Design Icons",
+        "url": "https://github.com/Templarian/MaterialDesign-SVG/blob/9e04201d4557e729822fb57f62a316c3dea1d4a8/svg/file-outline.svg",
+        "revision": "9e04201d4557e729822fb57f62a316c3dea1d4a8"
+      }
+    }
+  ]
+}

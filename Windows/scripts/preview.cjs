@@ -41,10 +41,10 @@ let projects = names.map((name) => ({ ...make(name, directory), directory })),
     directory,
   }));
 let settings = {
-  roots: [base],
+  roots: [base, "C:\\空关联目录"],
   sources: [
     { id: "downloads", name: "下载", path: "C:\\Downloads", kind: "folder" },
-    { id: "recent", name: "最近使用", kind: "recent" },
+    { id: "desktop", name: "桌面", kind: "folder", path: "C:\\Desktop" },
   ],
   categories: ["方案", "招标文件", "投标文件", "其他"].map((name) => ({
     id: name,
@@ -75,11 +75,13 @@ const folderContents = new Map([
   [projectSpecification.path, [make("项目资料.txt", projectSpecification.path, false)]],
 ]);
 const state = () => ({
-  version: require("../version.json").display + " Windows 测试版",
+  version: require("../version.json").display + " Windows",
   platform: "win32",
   arch: "x64",
   settings,
   snapshot: {
+    rootEntries: ["2026", "2025"].map(name => ({ ...make(name, base), directory: base })),
+    rootFiles: projects.map(p => ({ ...p, project: directory, projectName: "2026", directory: base })),
     directories: [
       { ...make("2026", base), root: base },
       { ...make("2025", base), root: base },
@@ -89,7 +91,7 @@ const state = () => ({
     unavailable: [],
   },
 });
-let lastRename = [];
+let lastRename = [], lastArchiveItems = [], renameCalls = 0, renameError = "", renameDelay = 0;
 const server = http.createServer(async (req, res) => {
   try {
     if (req.url === "/fixture-api") {
@@ -104,7 +106,7 @@ const server = http.createServer(async (req, res) => {
           break;
         case "list":
           if (process.env.GUIYU_PREVIEW_SLOW_LIST === "1") await new Promise((resolve) => setTimeout(resolve, 400));
-          result = folderContents.get(arg.path) || (arg.path === "C:\\Downloads\\示例文件夹"
+          result = folderContents.get(arg.path) || (arg.path === directory ? projects : null) || (arg.path === "C:\\Downloads\\示例文件夹"
             ? [make("示例文档.txt", arg.path, false), make("子文件夹", arg.path)]
             : arg.path === "C:\\Downloads\\第二个文件夹"
               ? [make("另一个文件.txt", arg.path, false)]
@@ -159,11 +161,21 @@ const server = http.createServer(async (req, res) => {
           });
           break;
         }
-        case "rename":
+        case "rename": {
           // Capture the production editor's exact confirmation payload in memory only.
-          lastRename = arg.plans; result = { ...state(), result: lastRename.length }; break;
+          renameCalls++; lastRename = arg.plans;
+          if (renameDelay) await new Promise(resolve => setTimeout(resolve, renameDelay));
+          if (renameError) throw Error(renameError);
+          result = { ...state(), result: lastRename.filter(p => p.name !== p.entry.name).length,
+            ...(arg.forArchive ? { renamedItems: lastRename.map(p => ({ ...p.entry,
+              name: p.name, path: path.win32.join(path.win32.dirname(p.entry.path), p.name) })) } : {}) };
+          break;
+        }
         case "reviewLastRename": result = lastRename; break;
+        case "reviewRenameMode": renameError = arg.error || ""; renameDelay = arg.delay || 0; renameCalls = 0; lastArchiveItems = []; result = true; break;
+        case "reviewRenameStatus": result = { renameCalls, lastRename, lastArchiveItems }; break;
         case "archiveSuggest":
+          lastArchiveItems = arg.items;
           result = {
             projects: projects.map((p, i) => ({
               ...p,

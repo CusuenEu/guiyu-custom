@@ -26,22 +26,40 @@ const {
 } = require("./core.cjs");
 const { naming, extract } = require("./documents.cjs");
 const namingFormat = require("./naming-format.cjs");
+const sourceDefaults = require("./source-defaults.cjs");
+const updater = require("./update.cjs").createUpdater({
+  fetch: (url, options) => net.fetch(url, options),
+  openExternal: (url) => shell.openExternal(url),
+  current: require("../version.json"),
+  arch: process.arch,
+  install: update => require("./install-update.cjs").createInstallerUpdater({
+    app, fetch: (url, options) => net.fetch(url, options),
+    progress: value => win?.webContents.send("guiyu-update-progress", value),
+  })(update),
+});
 let store,
   win,
   pendingCommand = null;
 async function incoming(args) {
-  let i = args.findIndex((a) =>
-    ["--smart-name", "--smart-archive"].includes(a),
-  );
-  if (i < 0 || !args[i + 1]) return;
+  if (!Array.isArray(args)) return;
+  const commands = args.filter(a => ["--smart-name", "--smart-archive"].includes(a));
+  if (!commands.length) return;
   try {
-    const p = await fs.realpath(args[i + 1]),
+    // Electron can reorder second-instance argv and insert Chromium switches.
+    // Explorer supplies one absolute file/folder path; never resolve a switch.
+    const paths = args.slice(process.defaultApp ? 2 : 1).filter(a =>
+      typeof a === "string" && !a.startsWith("-") &&
+      (path.isAbsolute(a) || path.win32.isAbsolute(a)),
+    );
+    if (commands.length !== 1 || paths.length !== 1)
+      throw Error("未能识别唯一的所选文件路径，请重新从资源管理器选择文件。");
+    const p = await fs.realpath(paths[0]),
       e = await entry(p);
     store.externalAllowed ??= new Set();
     store.externalAllowed.add(
       process.platform === "win32" ? p.toLowerCase() : p,
     );
-    pendingCommand = { type: args[i], items: [e] };
+    pendingCommand = { type: commands[0], items: [e] };
     win?.webContents.send("guiyu-command", pendingCommand);
   } catch (e) {
     dialog.showErrorBox("无法打开所选文件", e.message);
@@ -84,7 +102,7 @@ function state() {
   return {
     settings: store.settings,
     snapshot: store.snapshot,
-    version: require("../version.json").display + " Windows 测试版",
+    version: require("../version.json").display + " Windows",
     platform: process.platform,
     arch: process.arch,
     pendingCommand,
@@ -98,6 +116,19 @@ async function dispatch(method, arg = {}) {
     case "consumeCommand":
       pendingCommand = null;
       return true;
+    case "copyFiles": {
+      if (process.platform !== "win32") throw Error("文件复制仅适用于 Windows。");
+      if (!Array.isArray(arg.items) || !arg.items.length) throw Error("请选择要复制的文档或文件夹。");
+      const paths = [];
+      for (const item of arg.items) {
+        const current = await store.guard(item.path);
+        await verify(item);
+        if (!paths.includes(current.path)) paths.push(current.path);
+      }
+      const script = await fs.readFile(path.join(__dirname, "../scripts/copy-files.ps1"), "utf8");
+      await runPS(script, { GUIYU_COPY_PATHS: JSON.stringify(paths) }, 45000);
+      return { count: paths.length };
+    }
     case "explorerMenu": {
       if (process.platform !== "win32") throw Error("此功能仅适用于 Windows。");
       const script = await fs.readFile(
@@ -114,8 +145,7 @@ async function dispatch(method, arg = {}) {
       await store.refresh();
       return state();
     case "list": {
-      const item = await store.guard(arg.path);
-      if (!item.folder) throw Error("请选择文件夹。");
+      await store.browse(arg.path);
       if (store.recentAllowed?.has(path.resolve(arg.path).toLowerCase()))
         store.recentBrowseRoots = [arg.path];
       return list(arg.path);
@@ -134,22 +164,7 @@ async function dispatch(method, arg = {}) {
     }
     case "addSource": {
       let r = await choose();
-      if (!r.canceled) {
-        let next = structuredClone(store.settings);
-        for (const p of r.filePaths) {
-          const real = await fs.realpath(p);
-          if (next.roots.some((root) => overlap(real, root)))
-            throw Error("可归档目录不能与项目总目录重叠。");
-          if (!next.sources.some((s) => s.path === real))
-            next.sources.push({
-              id: crypto.randomUUID(),
-              name: path.basename(real),
-              path: real,
-              kind: "folder",
-            });
-        }
-        await store.save(next);
-      }
+      if (!r.canceled) await store.addSources(r.filePaths);
       return state();
     }
     case "removeSource": {
@@ -168,23 +183,7 @@ async function dispatch(method, arg = {}) {
     case "source": {
       const s = store.settings.sources.find((x) => x.id === arg.id);
       if (!s) throw Error("来源不存在。");
-      if (s.kind !== "recent") return list(s.path);
-      if (process.platform !== "win32")
-        throw Error("最近使用需要 Windows 系统。");
-      let output = await runPS(
-        `$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.Encoding]::UTF8;$sh=New-Object -ComObject WScript.Shell;$d=Join-Path $env:APPDATA 'Microsoft\\Windows\\Recent';$a=@(Get-ChildItem -LiteralPath $d -Filter *.lnk | Sort-Object LastWriteTime -Descending | Select-Object -First 500 | ForEach-Object {$sh.CreateShortcut($_.FullName).TargetPath} | Where-Object {$_ -and (Test-Path -LiteralPath $_)});ConvertTo-Json -InputObject $a -Compress`,
-      );
-      let paths = JSON.parse(output);
-      if (!Array.isArray(paths)) paths = [paths];
-      store.recentAllowed = new Set(
-        paths.map((p) => path.resolve(p).toLowerCase()),
-      );
-      store.recentBrowseRoots = [];
-      return (
-        await Promise.all(
-          [...new Set(paths)].map((p) => entry(p).catch(() => null)),
-        )
-      ).filter(Boolean);
+      return list(s.path);
     }
     case "layout": {
       let next = structuredClone(store.settings);
@@ -198,15 +197,25 @@ async function dispatch(method, arg = {}) {
       await store.save(next);
       return true;
     }
+    case "orderRoots": {
+      if (!Array.isArray(arg.paths) || arg.paths.length !== store.settings.roots.length ||
+          new Set(arg.paths).size !== arg.paths.length || arg.paths.some(p => !store.settings.roots.includes(p)))
+        throw Error("项目总目录顺序无效，请刷新后重试。");
+      await store.save({ ...store.settings, roots: arg.paths });
+      await store.refresh();
+      return state();
+    }
     case "order": {
       let next = structuredClone(store.settings);
       if (
         !next.roots.includes(arg.root) ||
         !Array.isArray(arg.paths) ||
+        new Set(arg.paths).size !== arg.paths.length ||
+        arg.paths.length !== store.snapshot.rootEntries.filter(e => e.directory === arg.root).length ||
         arg.paths.some(
           (p) =>
-            !store.snapshot.directories.some(
-              (d) => d.root === arg.root && d.path === p,
+            !store.snapshot.rootEntries.some(
+              (d) => d.directory === arg.root && d.path === p,
             ),
         )
       )
@@ -332,53 +341,43 @@ async function dispatch(method, arg = {}) {
       }
     }
     case "archiveSuggest": {
-      let texts = arg.items.map((e) => e.name).join(" "),
-        projects = store.snapshot.projects.filter((p) => p.folder);
-      function ranked() {
-        return projects
-          .map((p) => {
-            let words =
-              p.name
-                .replace(/^\d+月\s*/, "")
-                .match(/[\p{Script=Han}]{2,}|[a-zA-Z]{3,}/gu) || [];
-            let score = words.reduce(
-              (s, w) => s + (texts.includes(w) ? w.length : 0),
-              0,
-            );
-            for (const w of texts.match(/[\p{Script=Han}]{2,}/gu) || [])
-              for (let i = 0; i < w.length - 1; i++)
-                if (p.name.includes(w.slice(i, i + 2))) score++;
-            return {
-              ...p,
-              score,
-              evidence: score ? "名称／文档开头关键词匹配" : "可手动选择",
-            };
-          })
-          .sort((a, b) => b.score - a.score);
-      }
-      let result = ranked(),
-        warnings = [];
-      if (!result[0]?.score || result[0].score === result[1]?.score) {
+      const texts = arg.items.map(e => e.name);
+      const projects = [...new Map([...store.snapshot.rootEntries, ...store.snapshot.projects]
+        .filter(p => p.folder).map(p => [p.path, p])).values()];
+      const { rank } = require("./archive-match.cjs");
+      let result = rank(projects, texts);
+      const warnings = [];
+      if (!result.some(p => p.score >= 75)) {
         for (const e of arg.items) {
-          await store.guard(e.path);
-          await verify(e);
+          await store.guard(e.path); await verify(e);
           try {
-            let docs = e.folder
-              ? (await list(e.path)).filter((x) => !x.folder).slice(0, 2)
-              : [e];
-            for (const d of docs) texts += " " + (await extract(d, 2));
-          } catch (err) {
-            warnings.push(err.message);
-          }
+            const docs = e.folder ? (await list(e.path)).filter(x => !x.folder).slice(0, 2) : [e];
+            for (const d of docs) texts.push(await extract(d, 2));
+          } catch (error) { warnings.push(error.message); }
         }
-        result = ranked();
+        result = rank(projects, texts);
       }
       return { projects: result, warnings };
     }
     case "rename": {
       const result = await store.rename(arg.plans);
+      let renamedItems;
+      if (arg.forArchive) {
+        try {
+          renamedItems = [];
+          for (const plan of arg.plans) {
+            const target = path.join(path.dirname(plan.entry.path), plan.name);
+            const arrived = await store.guard(target);
+            if (arrived.identity !== plan.entry.identity)
+              throw Error("重命名后的文件已被替换，请重新选择。");
+            renamedItems.push(arrived);
+          }
+        } catch (e) {
+          throw Error(`已完成 ${result} 项，无法准备归档，请关闭窗口后重新选择：${e.message}`);
+        }
+      }
       await store.refresh();
-      return { result, ...state() };
+      return { result, ...state(), ...(arg.forArchive ? { renamedItems } : {}) };
     }
     case "archive": {
       const result = await store.archive(arg.items, arg.destination);
@@ -402,6 +401,8 @@ async function dispatch(method, arg = {}) {
       return true;
     case "trash": {
       for (const e of arg.items) {
+        if (store.settings.roots.some(root => path.resolve(root).toLowerCase() === path.resolve(e.path).toLowerCase()))
+          throw Error("关联的项目总目录本身不能移到回收站。");
         await store.guard(e.path);
         await verify(e);
       }
@@ -470,34 +471,10 @@ async function dispatch(method, arg = {}) {
       }
       return true;
     }
-    case "checkUpdate": {
-      const response = await net.fetch(
-        "https://api.github.com/repos/tiduse1988/guiyu/releases/latest",
-        {
-          headers: { Accept: "application/vnd.github+json" },
-          signal: AbortSignal.timeout(15000),
-        },
-      );
-      if (!response.ok)
-        throw Error("更新服务暂不可用（" + response.status + "）。");
-      const data = await response.json();
-      let asset = data.assets?.find(
-        (a) =>
-          a.name.includes("Windows-" + process.arch) && a.name.endsWith(".zip"),
-      );
-      return asset
-        ? {
-            url: data.html_url,
-            version: data.tag_name,
-            message: "发现 Windows 安装包，请下载并手动替换。",
-          }
-        : { message: "当前发布中尚无 Windows 更新包。" };
-    }
+    case "checkUpdate":
+      return updater.check();
     case "downloadUpdate":
-      await shell.openExternal(
-        "https://github.com/tiduse1988/guiyu/releases/latest",
-      );
-      return true;
+      return updater.download();
     case "demo": {
       const root = await fs.mkdtemp(
         path.join(app.getPath("temp"), "Guiyu-demo-"),
@@ -537,23 +514,19 @@ async function dispatch(method, arg = {}) {
 }
 const crypto = require("node:crypto");
 function defaults() {
-  return [
-    {
-      id: "downloads",
-      name: "下载",
-      kind: "folder",
-      path: app.getPath("downloads"),
-    },
-    { id: "recent", name: "最近使用", kind: "recent" },
-  ];
+  return sourceDefaults.defaults(name => app.getPath(name));
 }
-app.whenReady().then(async () => {
+const initialized = app.whenReady().then(async () => {
   try {
     store = await new Store(
       review
         ? path.join(app.getPath("temp"), "Guiyu-windows-review")
         : path.join(app.getPath("appData"), "Guiyu-Windows"),
     ).init(defaults());
+    const desktop = defaults()[1];
+    desktop.path = await fs.realpath(desktop.path).catch(() => desktop.path);
+    const sources = sourceDefaults.migrate(store.settings.sources, desktop);
+    if (sources !== store.settings.sources) await store.save({ ...store.settings, sources });
     await store.refresh();
     ipcMain.on("guiyu-cancel-naming", (event) => {
       if (event.sender === win?.webContents) namingCancellation?.abort();
@@ -582,10 +555,13 @@ app.whenReady().then(async () => {
     app.quit();
   }
 });
-if (!app.requestSingleInstanceLock()) app.quit();
-app.on("second-instance", async (event, args) => {
+// Preserve the original argv: Electron does not preserve its order in the event.
+if (!app.requestSingleInstanceLock({ argv: process.argv })) app.quit();
+app.on("second-instance", async (event, args, workingDirectory, additionalData) => {
+  await initialized;
+  if (!store || !win) return;
   win?.show();
   win?.focus();
-  await incoming(args);
+  await incoming(Array.isArray(additionalData?.argv) ? additionalData.argv : args);
 });
 app.on("window-all-closed", () => app.quit());

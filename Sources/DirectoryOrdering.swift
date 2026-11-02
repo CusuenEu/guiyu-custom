@@ -65,6 +65,7 @@ final class DirectoryOrderRowView: NSView, NSDraggingSource {
     var title = ""
     var selected = false
     var select: () -> Void = {}
+    var copyPasteboard:NSPasteboard = .general
     private let icon = NSImageView()
     private var pressPoint: NSPoint?
     private var isDragging = false
@@ -88,8 +89,18 @@ final class DirectoryOrderRowView: NSView, NSDraggingSource {
     override func layout() {
         super.layout(); icon.frame = NSRect(x:12,y:(bounds.height-28)/2,width:29,height:28)
     }
-    override func accessibilityPerformPress() -> Bool { select(); return true }
+    override func accessibilityPerformPress() -> Bool { window?.makeFirstResponder(self);select(); return true }
+    @objc func copy(_ sender:Any?) {
+        guard let window,window.firstResponder === self,window.attachedSheet == nil,selected,let payload else { return }
+        copyFilePaths([payload.path],to:copyPasteboard)
+    }
+    private func performCopyShortcut(_ event:NSEvent) -> Bool {
+        guard let window,window.firstResponder === self,window.attachedSheet == nil,selected,payload != nil,fileShortcut(for:event) == .copy else { return false }
+        copy(nil);return true
+    }
+    override func performKeyEquivalent(with event:NSEvent) -> Bool { performCopyShortcut(event) || super.performKeyEquivalent(with:event) }
     override func keyDown(with event:NSEvent) {
+        if performCopyShortcut(event) { return }
         if event.keyCode == 36 || event.keyCode == 49 { select() } else { super.keyDown(with:event) }
     }
     override func draw(_ dirtyRect:NSRect) {
@@ -115,6 +126,7 @@ final class DirectoryOrderRowView: NSView, NSDraggingSource {
     override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
     override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
     override func mouseDown(with event:NSEvent) {
+        window?.makeFirstResponder(self)
         pressPoint = convert(event.locationInWindow,from:nil); isDragging = false
     }
     override func mouseDragged(with event:NSEvent) {

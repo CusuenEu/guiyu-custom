@@ -9,9 +9,9 @@ struct ArchiveSource: Identifiable, Codable, Equatable {
 }
 func browserEntry(_ path: String, used: Date? = nil) -> BrowserRow? {
     let url = URL(fileURLWithPath:path)
-    guard !url.lastPathComponent.hasPrefix("."), !url.lastPathComponent.hasPrefix("~$"), !url.lastPathComponent.hasPrefix("#"), !url.lastPathComponent.hasPrefix("@"), let v = try? url.resourceValues(forKeys:[.isRegularFileKey,.isDirectoryKey,.isSymbolicLinkKey,.contentModificationDateKey,.fileSizeKey]), v.isSymbolicLink != true, v.isRegularFile == true || v.isDirectory == true else { return nil }
+    guard !url.lastPathComponent.hasPrefix("."), !url.lastPathComponent.hasPrefix("~$"), !url.lastPathComponent.hasPrefix("#"), !url.lastPathComponent.hasPrefix("@"), let v = try? url.resourceValues(forKeys:[.isRegularFileKey,.isDirectoryKey,.isSymbolicLinkKey,.isAliasFileKey,.contentModificationDateKey,.fileSizeKey]), v.isSymbolicLink != true, v.isRegularFile == true || v.isDirectory == true else { return nil }
     let folder = v.isDirectory == true
-    return BrowserRow(id:path,title:url.lastPathComponent,date:used ?? v.contentModificationDate,file:folder ? nil : FileItem(path:path,project:"",text:"",size:Int64(v.fileSize ?? 0),date:v.contentModificationDate ?? .distantPast),folder:folder)
+    return BrowserRow(id:path,title:url.lastPathComponent,date:used ?? v.contentModificationDate,file:folder ? nil : FileItem(path:path,project:"",text:"",size:Int64(v.fileSize ?? 0),date:v.contentModificationDate ?? .distantPast),folder:folder,isAlias:v.isAliasFile == true)
 }
 @MainActor final class RecentFilesQuery {
     private let query = NSMetadataQuery(); private var observer: NSObjectProtocol?; private var timeout: DispatchWorkItem?; private var finished = false
@@ -96,6 +96,7 @@ struct ArchiveSourcePane: View {
     @State private var rows: [BrowserRow] = []; @State private var selected: String?; @State private var selections = Set<String>()
     @State private var folder = ""; @State private var loading = false; @State private var error = ""; @State private var generation = UUID(); @State private var recent: RecentFilesQuery?
     @State private var quick: QuickArchiveRequest?; @State private var rename: NamingTarget?; @State private var manual: NamingTarget?; @State private var batch: BatchNamingRequest?
+    @State private var archiveAfterNaming:QuickArchiveRequest?
     var filtered: [BrowserRow] { rows }
     var body: some View {
         VStack(alignment:.leading,spacing:0) {
@@ -120,7 +121,9 @@ struct ArchiveSourcePane: View {
         .onChange(of:store.settings.renames?.count) { _ in load() }
         .alert("操作未完成",isPresented:Binding(get:{!store.error.isEmpty && quick == nil && rename == nil && manual == nil && batch == nil},set:{if !$0 { store.error = "" }})) { Button("知道了") { store.error = "" } } message: { Text(store.error) }
         .sheet(item:$quick) { QuickArchiveDialog(store:store,request:$0) }
-        .sheet(item:$rename) { RenameDialog(store:store,target:$0) }
+        .sheet(item:$rename,onDismiss:{
+            if let request = archiveAfterNaming { archiveAfterNaming = nil;quick = request }
+        }) { RenameDialog(store:store,target:$0,onArchive:{archiveAfterNaming = $0}) }
         .sheet(item:$manual) { DirectRenameDialog(store:store,target:$0) }
         .sheet(item:$batch) { BatchRenameDialog(store:store,request:$0) }
     }
