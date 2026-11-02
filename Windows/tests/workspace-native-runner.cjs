@@ -6,6 +6,7 @@ if (!temp || process.env.CI !== "true") throw Error("Isolated CI only");
 const downloads = path.join(temp, "下载"), root = path.join(downloads, "关联项目库"), empty = path.join(temp, "空关联目录");
 const year = path.join(root, "2026"), first = path.join(year, "甲项目"), second = path.join(year, "乙项目");
 const direct = path.join(downloads, "下载文件夹"), linkedSource = path.join(root, "空可归档目录");
+const desktop = path.join(temp, "桌面实际位置"), desktopAlias = path.join(temp, "桌面重定向"), desktopFolder = path.join(desktop, "桌面文件夹");
 const externalOpens = [];
 const copiedSelections = [];
 shell.openPath = async p => { externalOpens.push(p); return ""; };
@@ -15,7 +16,10 @@ ipcMain.handle = (channel, handler) => handle(channel, (event, method, args) => 
   return handler(event, method, args);
 });
 async function prepare() {
-  for (const dir of [first, second, empty, direct, linkedSource]) await fs.mkdir(dir, { recursive: true });
+  for (const dir of [first, second, empty, direct, linkedSource, desktopFolder]) await fs.mkdir(dir, { recursive: true });
+  await fs.symlink(desktop, desktopAlias, "junction");
+  app.setPath("desktop", desktopAlias);
+  await fs.writeFile(path.join(desktopFolder, "桌面文档.txt"), "desktop");
   await fs.writeFile(path.join(first, "甲文档.txt"), "first");
   await fs.mkdir(path.join(first, "附件")); await fs.writeFile(path.join(first, "附件/内部.txt"), "nested");
   await fs.writeFile(path.join(second, "乙文档.txt"), "second");
@@ -25,7 +29,7 @@ async function prepare() {
   const stateDir = path.join(app.getPath("temp"), "Guiyu-windows-review");
   await fs.mkdir(stateDir, { recursive: true });
   await fs.writeFile(path.join(stateDir, "settings.json"), JSON.stringify({ roots: [root, empty],
-    sources: [{ id: "downloads", name: "下载", kind: "folder", path: downloads }, { id: "linked", name: "空可归档目录", kind: "folder", path: linkedSource }], categories: [] }));
+    sources: [{ id: "downloads", name: "下载", kind: "folder", path: downloads }, { id: "linked", name: "空可归档目录", kind: "folder", path: linkedSource }, { id: "desktop", name: "桌面", kind: "folder", path: desktopAlias }], categories: [] }));
 }
 async function check(win) {
   const evalUI = script => win.webContents.executeJavaScript(script);
@@ -80,6 +84,9 @@ async function check(win) {
   await click('[data-source="linked"]');
   await wait("document.querySelector('#status').textContent==='本地工作空间'");
   assert(await evalUI("document.querySelector('#projects').textContent.includes('为空')"));
+  await click('[data-source="desktop"]');
+  await wait(`!!document.querySelector(${JSON.stringify(row("project", desktopFolder))})`);
+  await click(row("project", desktopFolder)); await wait(content("桌面文档.txt"));
   await click(row("dir", root));
   await click(row("project", year)); await wait(content("甲项目"));
   await click(row("dir", empty));
@@ -89,7 +96,7 @@ async function check(win) {
   await click(row("project", path.join(empty, "新文件夹")));
   await wait("document.querySelector('#files').textContent.includes('没有内容')");
   assert.deepEqual(externalOpens, [], "Folder interactions must never launch Explorer");
-  console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, overlapping sources, rename/archive-cancel selection, empty association and refresh");
+  console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, overlapping sources, redirected Desktop, rename/archive-cancel selection, empty association and refresh");
 }
 let tested = false;
 app.on("browser-window-created", (event, win) => {

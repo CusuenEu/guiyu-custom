@@ -528,7 +528,9 @@ app.whenReady().then(async () => {
         ? path.join(app.getPath("temp"), "Guiyu-windows-review")
         : path.join(app.getPath("appData"), "Guiyu-Windows"),
     ).init(defaults());
-    const sources = sourceDefaults.migrate(store.settings.sources, defaults()[1]);
+    const desktop = defaults()[1];
+    desktop.path = await fs.realpath(desktop.path).catch(() => desktop.path);
+    const sources = sourceDefaults.migrate(store.settings.sources, desktop);
     if (sources !== store.settings.sources) await store.save({ ...store.settings, sources });
     await store.refresh();
     ipcMain.on("guiyu-cancel-naming", (event) => {
