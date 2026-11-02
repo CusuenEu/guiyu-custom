@@ -36,10 +36,10 @@
 | 系统 | 已发布版本 | 安装包 |
 | --- | --- | --- |
 | macOS 13+ · Apple Silicon（M 系列） | 20261102(01) | [下载 DMG](https://github.com/tiduse1988/guiyu/releases/download/v20261102-01/Guiyu-20261102-01-macOS-arm64.dmg) |
-| Windows 10 / 11 · 64 位 | 20261102(07) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-07/Guiyu-20261102-07-Windows-x64-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-07/Guiyu-20261102-07-Windows-x64.zip) |
-| Windows 10 · 32 位 | 20261102(07) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-07/Guiyu-20261102-07-Windows-ia32-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-07/Guiyu-20261102-07-Windows-ia32.zip) |
+| Windows 10 / 11 · 64 位 | 20261102(08) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-08/Guiyu-20261102-08-Windows-x64-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-08/Guiyu-20261102-08-Windows-x64.zip) |
+| Windows 10 · 32 位 | 20261102(08) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-08/Guiyu-20261102-08-Windows-ia32-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-08/Guiyu-20261102-08-Windows-ia32.zip) |
 
-Windows 07 修复自动更新的进程交接，点击“更新并重启”后在程序内下载、校验、安装并重新打开，无需自行运行安装包；双架构的测试、安装卸载、界面回归和实际自动安装重启均已通过。04／06 请先手动安装一次 07，后续新版才可使用修复后的自动更新。[07 发行说明与校验文件](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-07) · [历史版本](https://github.com/tiduse1988/guiyu/releases)。
+Windows 08 新增 45 类彩色文件图标，覆盖 334 个扩展名，包含 HTML、CAD、思维导图、Project、PSD 等；双架构测试、安装卸载、实际图标加载及自动升级回归均通过。已装 07 可点击“更新并重启”升级到 08；04／06 请先手动安装一次新版。[08 发行说明与校验文件](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261102-08) · [历史版本](https://github.com/tiduse1988/guiyu/releases)。
 
 Mac 打开 DMG 后拖入“应用程序”；Windows 双击安装包。ZIP 解压版及历史版本见[全部发行版本](https://github.com/tiduse1988/guiyu/releases)。
 
