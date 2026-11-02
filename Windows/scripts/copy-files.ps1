@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
-$paths = @(ConvertFrom-Json $env:GUIYU_COPY_PATHS)
+[string[]]$paths = ConvertFrom-Json -InputObject $env:GUIYU_COPY_PATHS
 if (!$paths.Count) { throw '请选择要复制的文档或文件夹。' }
 $files = New-Object System.Collections.Specialized.StringCollection
 foreach ($path in $paths) {
