@@ -56,7 +56,8 @@ func projectArchiveChoices(input: String, projects: [Project], references: [File
     func confirmQuickArchive(_ request: QuickArchiveRequest, to project: Project) -> (completed: Set<String>, failure: String?) {
         var completed = Set<String>(); error = ""
         do {
-            guard !busy, settings.projects.contains(where:{$0.path == project.path && $0.shallow != true}), settings.hasProjectRoots else { throw namingError("项目已变化或仍在读取，请刷新后重试。") }
+            if busy { scanCancellation?.cancel(); busy = false }
+            guard settings.projects.contains(where:{$0.path == project.path && $0.shallow != true}), settings.hasProjectRoots else { throw namingError("项目已变化或仍在读取，请刷新后重试。") }
             let destinationRoot = canonicalPath(project.path)
             var isDirectory: ObjCBool = false
             guard fm.fileExists(atPath:destinationRoot,isDirectory:&isDirectory), isDirectory.boolValue else { throw namingError("目标文件夹不存在（NAS 未挂载或路径已变）：" + destinationRoot) }

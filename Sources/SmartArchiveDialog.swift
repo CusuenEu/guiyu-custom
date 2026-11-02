@@ -68,12 +68,12 @@ struct QuickArchiveDialog: View {
             }.padding(.horizontal,26).padding(.top,20).padding(.bottom,18)
             Divider().overlay(WorkspaceTheme.line)
             HStack {
-                if store.busy && destination != nil {
-                    Text("正在读取文件，完成后可确认归档…").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary)
+                if store.busy {
+                    Text("后台索引进行中，不影响归档").font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary)
                 }
                 Spacer()
                 Button("取消") { close() }.buttonStyle(SmartDialogActionStyle()).keyboardShortcut(.cancelAction)
-                Button("确认归档",action:confirm).buttonStyle(SmartDialogActionStyle(primary:true)).disabled(destination == nil || store.busy || requiresReselection).keyboardShortcut(.defaultAction)
+                Button("确认归档",action:confirm).buttonStyle(SmartDialogActionStyle(primary:true)).disabled(destination == nil || requiresReselection).keyboardShortcut(.defaultAction)
             }.padding(.horizontal,26).frame(height:68).background(WorkspaceTheme.projectCanvas)
         }.frame(width:700,height:620).background(WorkspaceTheme.canvas).foregroundStyle(WorkspaceTheme.ink).tint(accent)
         .onAppear {
