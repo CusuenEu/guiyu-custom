@@ -1,30 +1,42 @@
 import AppKit
 
-// Cached presentation assets; drawing an icon never opens or parses a document.
+// Presentation only: use the shared suffix map, never open the user's document.
 enum WorkspaceFileIcons {
     private static var cache: [String:NSImage] = [:]
-    static func image(for file:FileItem?) -> NSImage? {
-        guard let file else { return nil }
-        let key: String
-        switch file.ext {
-        case "doc", "docx": key = "W"
-        case "xls", "xlsx": key = "X"
-        case "pdf": key = "PDF"
-        default: return NSImage(systemSymbolName:file.symbol,accessibilityDescription:"文件")
+    static func assetName(for row: BrowserRow) -> String? {
+        FileTypeIcons.assetName(for:URL(fileURLWithPath:row.id),isDirectory:row.folder,isAlias:row.isAlias)
+    }
+    static func image(for row: BrowserRow) -> NSImage? {
+        guard !row.header else { return nil }
+        guard let name = assetName(for:row) else { return WorkspaceTheme.folder }
+        if let image = cache[name] { return image }
+        // Xcode builds use Assets.car. Command Line Tools builds load the same
+        // catalog's 1x/2x/3x representations, with no separate extension table.
+        guard let image = NSImage(named:NSImage.Name(name)) ?? catalogImage(named:name) else {
+            return NSImage(systemSymbolName:"doc",accessibilityDescription:"文件")
         }
-        if let image = cache[key] { return image }
-        let color: NSColor = key == "W" ? .systemBlue : key == "X" ? NSColor(calibratedRed:0.02,green:0.55,blue:0.28,alpha:1) : .systemRed
-        let image = NSImage(size:NSSize(width:24,height:28),flipped:false) { _ in
-            let body = NSBezierPath(roundedRect:NSRect(x:1,y:1,width:22,height:26),xRadius:3,yRadius:3)
-            NSGradient(starting:color.blended(withFraction:0.12,of:.white) ?? color,ending:color)?.draw(in:body,angle:-90)
-            let fold = NSBezierPath(); fold.move(to:NSPoint(x:16,y:27)); fold.line(to:NSPoint(x:23,y:20)); fold.line(to:NSPoint(x:16,y:20)); fold.close()
-            NSColor.white.withAlphaComponent(0.3).setFill(); fold.fill()
-            let label = key as NSString
-            let attributes: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:key == "PDF" ? 8 : 16,weight:.semibold),.foregroundColor:NSColor.white]
-            let size = label.size(withAttributes:attributes)
-            label.draw(at:NSPoint(x:(24-size.width)/2,y:(28-size.height)/2-1),withAttributes:attributes)
-            return true
+        image.isTemplate = false
+        cache[name] = image
+        return image
+    }
+    static func catalogImage(named name: String) -> NSImage? {
+        guard name.hasPrefix("file-type-"), !name.contains("/"),
+              let root = Bundle.main.resourceURL else { return nil }
+        let set = root.appendingPathComponent("FileTypeIcons.xcassets").appendingPathComponent(name+".imageset")
+        guard let data = try? Data(contentsOf:set.appendingPathComponent("Contents.json")),
+              let contents = try? JSONDecoder().decode(ImageSet.self,from:data) else { return nil }
+        let image = NSImage(size:NSSize(width:32,height:32))
+        for item in contents.images {
+            guard let filename = item.filename, !filename.contains("/"), !filename.contains("\\"),
+                  let data = try? Data(contentsOf:set.appendingPathComponent(filename)),
+                  let representation = NSBitmapImageRep(data:data) else { continue }
+            representation.size = image.size
+            image.addRepresentation(representation)
         }
-        image.isTemplate = false; cache[key] = image; return image
+        return image.representations.isEmpty ? nil : image
+    }
+    private struct ImageSet: Decodable {
+        struct Item: Decodable { let filename: String? }
+        let images: [Item]
     }
 }

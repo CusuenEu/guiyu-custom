@@ -9,9 +9,9 @@ struct ArchiveSource: Identifiable, Codable, Equatable {
 }
 func browserEntry(_ path: String, used: Date? = nil) -> BrowserRow? {
     let url = URL(fileURLWithPath:path)
-    guard !url.lastPathComponent.hasPrefix("."), !url.lastPathComponent.hasPrefix("~$"), let v = try? url.resourceValues(forKeys:[.isRegularFileKey,.isDirectoryKey,.isSymbolicLinkKey,.contentModificationDateKey,.fileSizeKey]), v.isSymbolicLink != true, v.isRegularFile == true || v.isDirectory == true else { return nil }
+    guard !url.lastPathComponent.hasPrefix("."), !url.lastPathComponent.hasPrefix("~$"), let v = try? url.resourceValues(forKeys:[.isRegularFileKey,.isDirectoryKey,.isSymbolicLinkKey,.isAliasFileKey,.contentModificationDateKey,.fileSizeKey]), v.isSymbolicLink != true, v.isRegularFile == true || v.isDirectory == true else { return nil }
     let folder = v.isDirectory == true
-    return BrowserRow(id:path,title:url.lastPathComponent,date:used ?? v.contentModificationDate,file:folder ? nil : FileItem(path:path,project:"",text:"",size:Int64(v.fileSize ?? 0),date:v.contentModificationDate ?? .distantPast),folder:folder)
+    return BrowserRow(id:path,title:url.lastPathComponent,date:used ?? v.contentModificationDate,file:folder ? nil : FileItem(path:path,project:"",text:"",size:Int64(v.fileSize ?? 0),date:v.contentModificationDate ?? .distantPast),folder:folder,isAlias:v.isAliasFile == true)
 }
 @MainActor final class RecentFilesQuery {
     private let query = NSMetadataQuery(); private var observer: NSObjectProtocol?; private var timeout: DispatchWorkItem?; private var finished = false

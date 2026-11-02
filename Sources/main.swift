@@ -338,6 +338,7 @@ struct Preview: NSViewRepresentable {
     ("PROJECT ALPHA 2026" as NSString).draw(at:NSPoint(x:40,y:75),withAttributes:[.font:NSFont.systemFont(ofSize:64),.foregroundColor:NSColor.black]); image.unlockFocus()
     let png = root.appendingPathComponent("ocr.png"); try NSBitmapImageRep(data:image.tiffRepresentation!)!.representation(using:.png,properties:[:])!.write(to:png)
     precondition(extract(png).contains("ALPHA"))
+    try fileTypeIconsTests(root:root)
     try directoryPresentationTest(root:root)
     try directoryBreadcrumbTest(root:root)
     try namingTest(root:root)
@@ -367,7 +368,8 @@ struct Preview: NSViewRepresentable {
     try automationTest(root:root)
     print("PASS: extraction + OCR; explicit-click routing, no unrequested moves, ambiguity, stable downloads, undo suppression, time sorting, persisted records")
 }
-if CommandLine.arguments.contains("--self-test") { do { try MainActor.assumeIsolated { try selfTest() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+if CommandLine.arguments.contains("--file-icons-review") { do { try MainActor.assumeIsolated { try fileTypeIconsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--self-test") { do { try MainActor.assumeIsolated { try selfTest() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if let index = CommandLine.arguments.firstIndex(of:"--window-frame-read-test"), CommandLine.arguments.indices.contains(index+1) { do { try MainActor.assumeIsolated { try windowFrameReadTest(CommandLine.arguments[index+1]) } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--project-roots-review") { do { try MainActor.assumeIsolated { try projectRootsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--finder-services-review") { do { try MainActor.assumeIsolated { try finderServicesUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }

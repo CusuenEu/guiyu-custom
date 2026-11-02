@@ -3,7 +3,7 @@ import AppKit
 import QuickLookUI
 
 struct BrowserRow: Identifiable, Equatable {
-    var id: String; var title: String; var subtitle: String? = nil; var date: Date? = nil; var file: FileItem? = nil; var folder = false; var header = false; var count = 0; var expanded = true; var categoryID: String? = nil
+    var id: String; var title: String; var subtitle: String? = nil; var date: Date? = nil; var file: FileItem? = nil; var folder = false; var header = false; var count = 0; var expanded = true; var categoryID: String? = nil; var isAlias = false
 }
 enum BrowserTableAppearance { case files, projects }
 
@@ -132,7 +132,7 @@ struct BrowserTable: NSViewRepresentable {
             cell.title.maximumNumberOfLines = projectStyle ? 2 : 1
             cell.title.lineBreakMode = projectStyle ? .byWordWrapping : .byTruncatingMiddle
             cell.titleHeight.constant = projectStyle ? projectTitleHeight(row,width:tableColumn?.width ?? tableView.bounds.width) : value.header ? 18 : 22
-            cell.iconWidth.constant = value.header ? 12 : 22
+            cell.iconWidth.constant = value.header ? 12 : value.folder && !value.isAlias && WorkspaceFileIcons.assetName(for:value) == nil ? 22 : 24
             cell.iconHeight.constant = value.header ? 12 : 24
             if value.header {
                 let title = NSMutableAttributedString(string:value.title + "  ",attributes:[.font:NSFont.systemFont(ofSize:14,weight:.semibold),.foregroundColor:NSColor(WorkspaceTheme.ink)])
@@ -145,7 +145,7 @@ struct BrowserTable: NSViewRepresentable {
             cell.date.stringValue = value.header ? "" : value.date?.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).hour().minute()) ?? ""
             let symbol = value.folder ? "folder.fill" : value.file?.symbol ?? "doc"
             cell.icon.imageScaling = value.header ? .scaleNone : .scaleProportionallyUpOrDown
-            cell.icon.image = value.header ? CategoryDisclosureImages.image(expanded:value.expanded) : value.folder ? WorkspaceTheme.folder : WorkspaceFileIcons.image(for:value.file) ?? NSImage(systemSymbolName:symbol,accessibilityDescription:"文件")
+            cell.icon.image = value.header ? CategoryDisclosureImages.image(expanded:value.expanded) : WorkspaceFileIcons.image(for:value) ?? NSImage(systemSymbolName:symbol,accessibilityDescription:"文件")
             cell.icon.contentTintColor = value.header ? NSColor(WorkspaceTheme.secondary) : nil
             cell.toolTip = value.title + (value.subtitle.map { "\n所属项目："+$0 } ?? ""); return cell
         }

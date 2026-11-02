@@ -20,6 +20,17 @@ if [[ -f "$logo_path" ]]; then
 fi
 cp Design/SoftWorkspace/GuiyuCompanion.png 'dist/归屿.app/Contents/Resources/GuiyuCompanion.png'
 ditto Resources/CategoryGuides 'dist/归屿.app/Contents/Resources/CategoryGuides'
+ditto Resources/FileTypeIcons.xcassets 'dist/归屿.app/Contents/Resources/FileTypeIcons.xcassets'
+ditto Resources/FileTypeIcons-Licenses 'dist/归屿.app/Contents/Resources/FileTypeIcons-Licenses'
+cp Resources/FileTypeIcons-manifest.json 'dist/归屿.app/Contents/Resources/FileTypeIcons-manifest.json'
+rm -f 'dist/归屿.app/Contents/Resources/Assets.car'
+if xcrun --find actool >/dev/null 2>&1; then
+  xcrun actool Resources/FileTypeIcons.xcassets --compile 'dist/归屿.app/Contents/Resources' \
+    --platform macosx --minimum-deployment-target 13.0 --target-device mac \
+    --output-format human-readable-text --warnings --errors
+else
+  print 'File icons: bundled Asset Catalog with 1x/2x/3x images (actool unavailable).'
+fi
 swift build -c release --product Guiyu --jobs 4
 binary_path=$(swift build -c release --show-bin-path)
 cp "$binary_path/Guiyu" 'dist/归屿.app/Contents/MacOS/Guiyu'

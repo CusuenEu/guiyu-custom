@@ -1,12 +1,12 @@
 import Foundation
 
 func directoryEntries(path: String, project: String) throws -> [BrowserRow] {
-    let urls = try fm.contentsOfDirectory(at:URL(fileURLWithPath:path),includingPropertiesForKeys:[.isDirectoryKey,.isRegularFileKey,.fileSizeKey,.contentModificationDateKey],options:.skipsHiddenFiles)
+    let urls = try fm.contentsOfDirectory(at:URL(fileURLWithPath:path),includingPropertiesForKeys:[.isDirectoryKey,.isRegularFileKey,.isAliasFileKey,.fileSizeKey,.contentModificationDateKey],options:.skipsHiddenFiles)
     return urls.compactMap { url in
-        guard !url.lastPathComponent.hasPrefix("~$"), let value = try? url.resourceValues(forKeys:[.isDirectoryKey,.isRegularFileKey,.fileSizeKey,.contentModificationDateKey]) else { return nil }
+        guard !url.lastPathComponent.hasPrefix("~$"), let value = try? url.resourceValues(forKeys:[.isDirectoryKey,.isRegularFileKey,.isAliasFileKey,.fileSizeKey,.contentModificationDateKey]) else { return nil }
         let folder = value.isDirectory == true
         let file = folder ? nil : FileItem(path:url.path,project:project,text:"",size:Int64(value.fileSize ?? 0),date:value.contentModificationDate ?? .distantPast)
-        return BrowserRow(id:url.path,title:url.lastPathComponent,date:value.contentModificationDate,file:file,folder:folder)
+        return BrowserRow(id:url.path,title:url.lastPathComponent,date:value.contentModificationDate,file:file,folder:folder,isAlias:value.isAliasFile == true)
     }.sorted { a,b in a.folder == b.folder ? a.title.localizedStandardCompare(b.title) == .orderedAscending : a.folder }
 }
 func categoryForEntry(_ row: BrowserRow) -> DocumentCategory {
