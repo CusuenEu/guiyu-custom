@@ -3,6 +3,9 @@ const { app, shell, ipcMain } = require("electron");
 const fs = require("node:fs/promises"), path = require("node:path"), assert = require("node:assert/strict");
 const temp = process.env.GUIYU_WORKSPACE_TEST;
 if (!temp || process.env.CI !== "true") throw Error("Isolated CI only");
+app.setPath("temp", temp);
+for (const event of ["before-quit", "will-quit", "quit"])
+  app.on(event, () => console.log(`WORKSPACE ${process.arch} ${event}, pid=${process.pid}`));
 const downloads = path.join(temp, "下载"), root = path.join(downloads, "关联项目库"), empty = path.join(temp, "空关联目录");
 const year = path.join(root, "2026"), first = path.join(year, "甲项目"), second = path.join(year, "乙项目");
 const direct = path.join(downloads, "下载文件夹"), linkedSource = path.join(root, "空可归档目录");
@@ -277,10 +280,16 @@ async function check(win) {
 let tested = false;
 app.on("browser-window-created", (event, win) => {
   if (tested) return; tested = true;
-  win.webContents.once("did-finish-load", () => check(win).then(() => app.exit(0)).catch(async error => {
+  win.webContents.once("did-finish-load", () => check(win).then(async () => {
+    await win.webContents.executeJavaScript("apiQueue.then(() => true)");
+    console.log(`WORKSPACE ${process.arch} all assertions complete; requesting normal application quit`);
+    // Leave the executeJavaScript completion callback before closing Chromium.
+    // A stuck shutdown still fails the parent timeout; it is never a success.
+    setImmediate(() => app.quit());
+  }).catch(async error => {
     console.error(error.stack || error);
     try { console.error(await win.webContents.executeJavaScript("document.body.innerText")); } catch {}
-    app.exit(1);
+    setImmediate(() => app.exit(1));
   }));
 });
 if (process.env.GUIYU_EXPLORER_CHILD === "1") require(path.join(process.resourcesPath, "production.asar/src/main.cjs"));
