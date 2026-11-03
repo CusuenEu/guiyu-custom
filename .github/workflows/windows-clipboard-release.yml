@@ -49,9 +49,11 @@ jobs:
       - name: Check requested Windows version
         id: version
         run: |
+          export MAIN_WINDOWS_TREE="$(gh api "repos/$GH_REPO/git/trees/main" --jq '.tree[] | select(.path=="Windows") | .sha')"
+          export SOURCE_WINDOWS_TREE="$(git rev-parse HEAD:Windows)"
           node - <<'JS'
           const fs=require('node:fs'),v=require('./Windows/version.json');
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,'eligible='+(v.date==='20261103'&&v.sequence===1)+'\n');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'eligible='+(v.date==='20261103'&&v.sequence===1&&process.env.MAIN_WINDOWS_TREE===process.env.SOURCE_WINDOWS_TREE)+'\n');
           JS
       - uses: actions/download-artifact@v4
         if: steps.version.outputs.eligible == 'true'
@@ -81,6 +83,11 @@ jobs:
       - name: Publish each package as a separate release asset
         if: steps.version.outputs.eligible == 'true'
         run: |
+          current_tree="$(gh api "repos/$GH_REPO/git/trees/main" --jq '.tree[] | select(.path=="Windows") | .sha')"
+          if [ "$current_tree" != "$(git rev-parse HEAD:Windows)" ]; then
+            echo 'A newer Windows source is awaiting validation; skip this older build.'
+            exit 0
+          fi
           gh release create "$RELEASE_TAG" --target "$SOURCE_SHA" --draft --latest=false --title "$RELEASE_TITLE" --notes-file release-notes.md release-assets/*
           test "$(gh release view "$RELEASE_TAG" --json assets --jq '.assets | length')" = '5'
           if [ "$VALIDATION_RESULT" = 'success' ]; then
