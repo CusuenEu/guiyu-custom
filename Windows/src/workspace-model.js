@@ -26,9 +26,8 @@
   function pasteTarget({ pane, source, dir, current, sourcePreviewCurrent, active, selected, middleRows }) {
     if (pane === "files") return active ? (source ? sourcePreviewCurrent : current) : "";
     if (pane === "directories") return dir || "";
-    if (active?.folder && selected.has(active.path)) return active.path;
-    const selectedFolder = [...middleRows].reverse().find(e => e.folder && selected.has(e.path));
-    if (selectedFolder) return selectedFolder.path;
+    const chosen = middleRows.filter(e => selected.has(e.path));
+    if (chosen.length === 1 && chosen[0].folder) return chosen[0].path;
     return source ? (source.kind === "folder" ? current || source.path : "") : dir || "";
   }
   const api = { category, fallbackID, pasteTarget };

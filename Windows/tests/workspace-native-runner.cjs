@@ -152,6 +152,10 @@ async function check(win) {
     assert.equal(await evalUI("document.querySelectorAll('#projects [aria-selected=true]').length"),2);
     await click('#refresh'); await settled();
     assert.equal(await evalUI("document.querySelector('#projects [data-project]').dataset.project"),copiedFile);
+    await key("v",'#projects'); await settled();
+    assert.equal(await fs.readFile(path.join(empty,"外来合同 (2).pdf"),"utf8"),"original contract");
+    assert.equal(await fs.readFile(path.join(empty,"外来项目 (2)/原件.txt"),"utf8"),"folder original");
+    assert.equal(await evalUI("document.querySelectorAll('#projects [aria-selected=true]').length"),2);
     await writeClipboard([document]);
     await click(row("project",copiedFolder)); await wait(content("原件.txt"));
     await context(row("project",copiedFolder)); await menuClick("粘贴"); await settled();
@@ -225,6 +229,11 @@ async function check(win) {
     assert.equal(await evalUI("document.querySelectorAll('#files [data-file]').length"),4);
     await click('[data-mode="源文档"]'); await click('#up'); await settled();
     assert(await evalUI("document.querySelector('[data-mode=\"按类别\"]').getAttribute('aria-selected')==='true'"));
+    await click('[data-source="downloads"]');
+    await wait(`!!document.querySelector(${JSON.stringify(row('project',renamedSource))})`);
+    await click(row('project',renamedSource)); await wait(content('下载文档.txt'));
+    assert(await evalUI("document.querySelector('[data-mode=\"按类别\"]').getAttribute('aria-selected')==='true'"));
+    assert.equal(await evalUI("document.querySelectorAll('#files [data-file]').length"),1);
     assert.equal(await fs.readFile(document,'utf8'),'original contract');
     assert.equal(await fs.readFile(path.join(folder,'原件.txt'),'utf8'),'folder original');
     console.log('PASS copy/paste: native clipboard both directions, Ctrl+V, right menus, A/B/nested empty targets, order/selection/refresh, numbered duplicates, disabled text clipboard and actual input text paste');

@@ -1336,8 +1336,7 @@ function categoryEvents() {
     (b) =>
       (b.onclick = () => {
         const target = data.settings.categories.find((c) => c.id === b.dataset.deleteCategory);
-        const fallback = data.settings.categories.find((c) => c.id !== target.id && (c.id === "其他" || c.name === "其他")) || data.settings.categories.find((c) => c.id !== target.id);
-        modal(`<div class="dialog-body confirm-dialog"><h2>删除分类？</h2><p>删除「${esc(target.name)}」后，其中的条目显示在「${esc(fallback?.name || "其他")}」。源文件和文件夹保留。</p>${actions("删除分类")}</div>`);
+        modal(`<div class="dialog-body confirm-dialog"><h2>删除分类？</h2><p>删除「${esc(target.name)}」后，源文件和文件夹保留；未匹配的条目显示在「其他」。</p>${actions("删除分类")}</div>`);
         $("[data-cancel]").onclick = drawSettings;
         $("#confirm").onclick = () => save(data.settings.categories.filter((c) => c.id !== target.id));
       }),
