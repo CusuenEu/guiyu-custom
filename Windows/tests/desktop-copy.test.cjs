@@ -85,8 +85,9 @@ test("Ctrl+C copies file selections, leaving text fields, editable text and dial
   let callback, modalOpen = false, calls = [], prevented = 0;
   const context = { document: { activeElement: { id: "files" }, addEventListener: (name, fn) => { callback = fn; } },
     $: () => ({ open: modalOpen }), action: fn => fn(), api: async (method, arg) => { calls.push({ method, arg }); return { count: 2 }; },
-    toast() {}, selectedItems: () => [{ path: "file" }, { path: "folder" }], source: null, project: null };
-  vm.runInNewContext(src.slice(start, end), context);
+    toast() {}, operationPane: "projects", pasteSelection: () => calls.push({method:"pasteFiles"}),
+    selectedItems: () => [{ path: "file" }, { path: "folder" }], source: null, project: null };
+  vm.runInNewContext(src.slice(src.indexOf('function copySelection('), src.indexOf('function pasteSelection(')) + src.slice(start, end), context);
   const event = target => ({ key: "c", ctrlKey: true, target, preventDefault: () => { prevented++; } });
   callback(event({ tagName: "DIV", closest: () => null }));
   await new Promise(resolve => setImmediate(resolve));
@@ -96,6 +97,12 @@ test("Ctrl+C copies file selections, leaving text fields, editable text and dial
   callback(event({ tagName: "DIV", isContentEditable: true }));
   modalOpen = true; callback(event({ tagName: "DIV" }));
   assert.equal(calls.length, 1); assert.equal(prevented, 1);
+  callback({...event({ tagName:"INPUT" }),key:"v"});
+  callback({...event({ tagName:"DIV" }),key:"v"});
+  assert.equal(calls.length, 1);
+  modalOpen=false;
+  callback({...event({tagName:"DIV"}),key:"v"});
+  assert.equal(calls[1].method,"pasteFiles");
 });
 
 test("native clipboard retains a file/folder list and Copy effect after writer exits", { skip: process.platform !== "win32" }, async t => {

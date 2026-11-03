@@ -109,6 +109,12 @@ function state() {
   };
 }
 let busy = false;
+async function clipboardFiles() {
+  if (process.platform !== "win32") return [];
+  const script = await fs.readFile(path.join(__dirname, "../scripts/read-file-clipboard.ps1"), "utf8");
+  const paths = JSON.parse(await runPS(script, {}, 15000));
+  return Array.isArray(paths) ? paths.filter(p => typeof p === "string" && path.isAbsolute(p)) : [];
+}
 async function dispatch(method, arg = {}) {
   switch (method) {
     case "state":
@@ -121,13 +127,24 @@ async function dispatch(method, arg = {}) {
       if (!Array.isArray(arg.items) || !arg.items.length) throw Error("请选择要复制的文档或文件夹。");
       const paths = [];
       for (const item of arg.items) {
-        const current = await store.guard(item.path);
-        await verify(item);
+        const current = await store.guard(item.path).catch(() => store.browse(item.path));
+        if (item.identity) await verify(item);
         if (!paths.includes(current.path)) paths.push(current.path);
       }
       const script = await fs.readFile(path.join(__dirname, "../scripts/copy-files.ps1"), "utf8");
       await runPS(script, { GUIYU_COPY_PATHS: JSON.stringify(paths) }, 45000);
       return { count: paths.length };
+    }
+    case "clipboardFiles": {
+      if (arg.destination) {
+        try { await store.browse(arg.destination); }
+        catch { return { count: 0 }; }
+      }
+      return { count: (await clipboardFiles()).length };
+    }
+    case "pasteFiles": {
+      await store.browse(arg.destination);
+      return require("./file-paste.cjs").pasteFiles(await clipboardFiles(), arg.destination);
     }
     case "explorerMenu": {
       if (process.platform !== "win32") throw Error("此功能仅适用于 Windows。");
@@ -250,11 +267,11 @@ async function dispatch(method, arg = {}) {
       for (const c of arg.categories) validateRule(c.rule || ruleFor(c.name));
       next.categories = arg.categories;
       const fallback =
-        next.categories.find((c) => c.id === "其他" || c.name === "其他") ||
-        next.categories[0];
-      for (const a of Object.values(next.assignments))
+        next.categories.find((c) => c.id === "其他" || c.name === "其他");
+      for (const [p, a] of Object.entries(next.assignments))
         if (!next.categories.some((c) => c.id === a.categoryID))
-          a.categoryID = fallback?.id;
+          if (fallback) a.categoryID = fallback.id;
+          else delete next.assignments[p];
       await store.save(next);
       return state();
     }

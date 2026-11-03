@@ -22,7 +22,7 @@ async function run() {
         const child = spawn(path.join(runtime, "Guiyu.exe"), [], {
           env: { ...process.env, GUIYU_REVIEW: "1", GUIYU_WORKSPACE_TEST: temp }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
         });
-        const timer = setTimeout(() => { child.kill(); reject(Error(`${arch} native workspace check timed out`)); }, 120000);
+        const timer = setTimeout(() => { child.kill(); reject(Error(`${arch} native workspace check timed out`)); }, 240000);
         child.stdout.on("data", data => process.stdout.write(data));
         child.stderr.on("data", data => process.stderr.write(data));
         child.once("error", error => { clearTimeout(timer); reject(error); });

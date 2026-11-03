@@ -99,6 +99,7 @@ async function check(win) {
   assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("project", direct))})`), "Source double-click must keep middle folder list");
   assert(await evalUI(content("下载文档.txt")));
   await evalUI(`document.querySelector(${JSON.stringify(row("project", direct))}).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:100}))`);
+  await wait("!document.querySelector('#context').hidden&&[...document.querySelectorAll('#context button')].some(b=>b.textContent==='智能命名…')");
   await evalUI("[...document.querySelectorAll('#context button')].find(b=>b.textContent==='智能命名…').click()");
   await wait("!!document.querySelector('#name-stem')", 45000);
   await evalUI("const input=document.querySelector('#name-stem');input.value='下载新名称';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#confirm-archive').click()");
@@ -122,6 +123,113 @@ async function check(win) {
   assert(await evalUI(`!!document.querySelector(${JSON.stringify(row("dir", empty))})`), "Association must remain when first child appears");
   await click(row("project", path.join(empty, "新文件夹")));
   await wait("document.querySelector('#files').textContent.includes('没有内容')");
+  await checkPasteAndCategories();
+
+  async function checkPasteAndCategories() {
+    const {runPS, entry} = require(path.join(process.resourcesPath,"production.asar/src/core.cjs"));
+    const {clipboard} = require("electron");
+    const external = path.join(temp,"资源管理器文件 中文 $1"), document = path.join(external,"外来合同.pdf"), folder=path.join(external,"外来项目");
+    await fs.mkdir(path.join(folder,"空子目录"),{recursive:true});
+    await fs.writeFile(document,"original contract"); await fs.writeFile(path.join(folder,"原件.txt"),"folder original");
+    const writeClipboard = paths => runPS("$ErrorActionPreference='Stop';Add-Type -AssemblyName System.Windows.Forms;$files=New-Object System.Collections.Specialized.StringCollection;foreach($p in (ConvertFrom-Json $env:GUIYU_TEST_FILES)){[void]$files.Add($p)};$d=New-Object System.Windows.Forms.DataObject;$d.SetFileDropList($files);[Windows.Forms.Clipboard]::SetDataObject($d,$true,10,100)", {GUIYU_TEST_FILES:JSON.stringify(paths)});
+    const key = async (key, selector) => {
+      await evalUI(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.focus();e.dispatchEvent(new KeyboardEvent('keydown',{key:${JSON.stringify(key)},ctrlKey:true,bubbles:true,cancelable:true}))})()`);
+    };
+    const context = async selector => {
+      await evalUI(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:200,clientY:200}))`);
+      await wait("!document.querySelector('#context').hidden&&[...document.querySelectorAll('#context button')].some(b=>b.textContent==='粘贴')");
+    };
+    const menuClick = label => evalUI(`[...document.querySelectorAll('#context button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);
+    const settled = () => wait("document.querySelector('#status').textContent==='本地工作空间'",45000);
+    await writeClipboard([document,folder]);
+    // A was clicked with old B still shown beforehand. Target must now be A.
+    await click(row("dir",empty));
+    await key("v",row("dir",empty)); await settled();
+    const copiedFolder=path.join(empty,"外来项目"), copiedFile=path.join(empty,"外来合同.pdf");
+    assert.equal(await fs.readFile(copiedFile,"utf8"),"original contract");
+    assert.equal(await fs.readFile(path.join(copiedFolder,"原件.txt"),"utf8"),"folder original");
+    assert.equal(await evalUI("document.querySelector('#projects [data-project]').dataset.project"),copiedFile);
+    assert.equal(await evalUI("document.querySelectorAll('#projects [aria-selected=true]').length"),2);
+    await click('#refresh'); await settled();
+    assert.equal(await evalUI("document.querySelector('#projects [data-project]').dataset.project"),copiedFile);
+    await writeClipboard([document]);
+    await click(row("project",copiedFolder)); await wait(content("原件.txt"));
+    await context(row("project",copiedFolder)); await menuClick("粘贴"); await settled();
+    const inB=path.join(copiedFolder,"外来合同.pdf");
+    assert.equal(await fs.readFile(inB,"utf8"),"original contract");
+    assert.equal(await evalUI("document.querySelector('#files [data-file]').dataset.file"),inB);
+    assert(await evalUI(`document.querySelector(${JSON.stringify(row('file',inB))}).getAttribute('aria-selected')==='true'`));
+    const sub=path.join(copiedFolder,"空子目录");
+    await evalUI(`document.querySelector(${JSON.stringify(row('file',sub))}).dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))`);
+    await wait("document.querySelector('#files').textContent.includes('没有内容')");
+    await context('#files'); await menuClick("粘贴"); await settled();
+    assert.equal(await fs.readFile(path.join(sub,"外来合同.pdf"),"utf8"),"original contract");
+    await key("v",'#files'); await settled();
+    const duplicate=path.join(sub,"外来合同 (2).pdf");
+    assert.equal(await fs.readFile(duplicate,"utf8"),"original contract");
+    assert.equal(await evalUI("document.querySelector('#files [data-file]').dataset.file"),duplicate);
+    // Our file copy is a native CF_HDROP list, readable by Explorer's API.
+    await context(row('file',duplicate)); await menuClick("复制"); await settled();
+    const native=JSON.parse(await runPS("[Console]::OutputEncoding=[Text.Encoding]::UTF8;Add-Type -AssemblyName System.Windows.Forms;ConvertTo-Json -InputObject @([Windows.Forms.Clipboard]::GetFileDropList()|ForEach-Object{[string]$_}) -Compress"));
+    assert.deepEqual(native,[duplicate]);
+    clipboard.writeText("ordinary text"); await context('#files');
+    assert(await evalUI("[...document.querySelectorAll('#context button')].find(b=>b.textContent==='粘贴').disabled"));
+    await click('#settings'); await click('[data-section="文件分类"]');
+    await wait("!!document.querySelector('#category-name')");
+    await evalUI("document.querySelector('#category-name').focus()");
+    win.webContents.sendInputEvent({type:"keyDown",keyCode:"V",modifiers:["control"]});
+    win.webContents.sendInputEvent({type:"keyUp",keyCode:"V",modifiers:["control"]});
+    await wait("document.querySelector('#category-name').value==='ordinary text'");
+    assert.deepEqual((await fs.readdir(sub)).sort(),["外来合同 (2).pdf","外来合同.pdf"].sort());
+    await evalUI("document.querySelector('#modal [data-cancel]').click()");
+    // First category immediately replaces the prior source/time view; no reload.
+    const note=path.join(sub,"普通说明.txt"); await fs.writeFile(note,"unmatched");
+    await click('#refresh'); await settled();
+    // Toolbar is hidden before the first category; retain a prior raw view state.
+    await evalUI("mode='源文档';render()");
+    await click('#settings'); await click('[data-section="文件分类"]');
+    await evalUI("document.querySelector('#category-name').value='合同';document.querySelector('#add-category').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}))");
+    await wait("document.querySelector('#category-list').textContent.includes('合同')");
+    await evalUI("document.querySelector('#modal [data-cancel]').click()");
+    assert(await evalUI("document.querySelector('[data-mode=\"按类别\"]').getAttribute('aria-selected')==='true'"));
+    assert.deepEqual(await evalUI("[...document.querySelectorAll('#files [data-group]')].map(e=>e.textContent.replace(/\\d+$/,''))"),["合同","其他"]);
+    assert.equal(await evalUI("document.querySelectorAll('#files [data-file]').length"),3);
+    const settingsPath=path.join(app.getPath('temp'),'Guiyu-windows-review/settings.json');
+    let saved=JSON.parse(await fs.readFile(settingsPath,"utf8"));
+    assert.equal(saved.categories.length,1,"Display-only Other never changes saved categories");
+    const contract=saved.categories[0];
+    // Real assignment IPC remains authoritative across automatic rule changes.
+    await evalUI(`api('assign',{items:[${JSON.stringify(await entry(note))}],id:${JSON.stringify(contract.id)}}).then(apply)`);
+    await click('[data-mode="按时间"]');
+    await click('#settings'); await click('[data-section="文件分类"]');
+    await click('[data-rule]');
+    await evalUI("document.querySelector('#rule-keywords').value='不存在的词';document.querySelector('#rule-extensions').value='';document.querySelector('#confirm').click()");
+    await wait("!!document.querySelector('#category-list')");
+    await evalUI("document.querySelector('#modal [data-cancel]').click()");
+    assert(await evalUI("document.querySelector('[data-mode=\"按类别\"]').getAttribute('aria-selected')==='true'"));
+    assert.equal(await evalUI("document.querySelector('#files [data-group]').textContent"),"合同1");
+    assert.equal(await evalUI("document.querySelector('#files [data-file]').dataset.file"),note);
+    // A real UUID Other is the sole fallback, and rule conflicts stay visible.
+    saved=JSON.parse(await fs.readFile(settingsPath,"utf8"));
+    const cats=[...saved.categories,{id:'uuid-other',name:'其他',rule:{...contract.rule,enabled:false}},
+      {id:'tie1',name:'一',rule:contract.rule},{id:'tie2',name:'二',rule:contract.rule}];
+    await evalUI(`api('categories',{categories:${JSON.stringify(cats)}}).then(apply)`);
+    assert.equal(await evalUI("document.querySelector('[data-group=\"uuid-other\"]').textContent"),"其他2");
+    assert.equal(await evalUI("document.querySelectorAll('#files [data-file]').length"),3);
+    await writeClipboard([document]); await key('v','#files'); await settled();
+    assert(await evalUI("document.querySelector('#files [data-group]').textContent==='刚复制1'"));
+    await click('#refresh'); await settled();
+    assert(await evalUI("document.querySelector('#files [data-group]').textContent==='刚复制1'"));
+    await click('[data-mode="按类别"]');
+    assert(!await evalUI("!!document.querySelector('[data-group=\"__just_copied__\"]')"));
+    assert.equal(await evalUI("document.querySelectorAll('#files [data-file]').length"),4);
+    await click('[data-mode="源文档"]'); await click('#up'); await settled();
+    assert(await evalUI("document.querySelector('[data-mode=\"按类别\"]').getAttribute('aria-selected')==='true'"));
+    assert.equal(await fs.readFile(document,'utf8'),'original contract');
+    assert.equal(await fs.readFile(path.join(folder,'原件.txt'),'utf8'),'folder original');
+    console.log('PASS copy/paste: native clipboard both directions, Ctrl+V, right menus, A/B/nested empty targets, order/selection/refresh, numbered duplicates, disabled text clipboard and actual input text paste');
+    console.log('PASS automatic categories: first add and rule edits reclassify immediately, default on navigation, manual assignment, UUID Other, conflicting rules, no omissions/duplicates, display-only fallback and copied-group reset');
+  }
   // Exercise the actual Electron second-instance transport used by Explorer.
   // The child bypasses fixture preparation so it cannot overwrite primary state.
   const explorerFolder = path.join(temp, "右键 中文 & $1 文件夹");
