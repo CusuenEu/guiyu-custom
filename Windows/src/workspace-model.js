@@ -26,6 +26,7 @@
   function pasteTarget({ pane, source, dir, current, sourcePreviewCurrent, active, selected, middleRows }) {
     if (pane === "files") return active ? (source ? sourcePreviewCurrent : current) : "";
     if (pane === "directories") return dir || "";
+    if (active?.folder && selected.has(active.path)) return active.path;
     const selectedFolder = [...middleRows].reverse().find(e => e.folder && selected.has(e.path));
     if (selectedFolder) return selectedFolder.path;
     return source ? (source.kind === "folder" ? current || source.path : "") : dir || "";

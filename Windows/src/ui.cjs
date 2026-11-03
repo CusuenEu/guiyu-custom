@@ -83,12 +83,14 @@ function pasteSelection(destination = pasteTarget()) {
     recentCopies.set(destination, [...paths, ...(recentCopies.get(destination) || []).filter(p => !paths.includes(p))]);
     await refresh();
     if (paths.length) {
-      if (rightLocation() === destination && activeFolder()) focusPane("files");
-      else if ((source ? current || source.path : dir) === destination) focusPane("projects");
-      else return toast(`已复制 ${paths.length} 项到 ${basename(destination)}`);
-      selected = new Set(paths); anchor = null; render();
-      $(selectionPane === "files" ? "#files" : "#projects").focus({ preventScroll: true });
-      $(selectionPane === "files" ? "#files" : "#projects").scrollTop = 0;
+      const right = rightLocation() === destination && activeFolder();
+      const middle = (source ? current || source.path : dir) === destination;
+      if (right || middle) {
+        focusPane(right ? "files" : "projects");
+        selected = new Set(paths); anchor = null; render();
+        $(selectionPane === "files" ? "#files" : "#projects").focus({ preventScroll: true });
+        $(selectionPane === "files" ? "#files" : "#projects").scrollTop = 0;
+      }
     }
     toast(result.errors.length
       ? `已完成 ${paths.length} 项，${result.errors.length} 项失败：${result.errors.map(e => basename(e.path) + "：" + e.message).join("；")}`

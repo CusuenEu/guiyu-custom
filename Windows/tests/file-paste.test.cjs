@@ -65,6 +65,8 @@ test("three-pane targets ignore stale right contents and handle nested/empty/sou
   state.pane = "projects"; assert.equal(pasteTarget(state), "A");
   state.middleRows = [{path:"B",folder:true}]; state.selected.add("B");
   assert.equal(pasteTarget(state), "B");
+  state.middleRows.push({path:"Z",folder:true}); state.selected.add("Z"); state.active={path:"B",folder:true};
+  assert.equal(pasteTarget(state), "B");
   state.pane = "files"; state.current = "B/C"; assert.equal(pasteTarget(state), "B/C");
   state.source = {kind:"folder",path:"Downloads"}; state.sourcePreviewCurrent="Downloads/B/empty";
   assert.equal(pasteTarget(state), "Downloads/B/empty");
