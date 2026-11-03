@@ -110,8 +110,12 @@ import AppKit
                 (view as? NSTableView).map { [$0] } ?? view.subviews.flatMap { tables($0) }
             }
             let counts = tables(host).map(\.numberOfRows).sorted()
-            let expected = name == "search-no-results.png" ? [] : [1,6]
+            let expected = name == "search-no-results.png" ? [0] : [1,6]
             try verify(counts == expected,"Native indexed search must render the expected project and third-level rows: \(name) \(counts)")
+            if name == "search-no-results.png" {
+                let empty = tables(host).first as? BrowserNSTable
+                try verify(empty?.canPaste != nil,"Empty results retain the native project table so its blank space supports paste")
+            }
             print("PASS: native indexed search \(name), table row counts \(counts)")
         }
         if !name.hasPrefix("project-row-alignment-") { try saveRaster() }

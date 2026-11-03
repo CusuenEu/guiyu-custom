@@ -216,7 +216,7 @@ struct WorkspaceSearchOutput: Equatable {
     private var cancellation: IndexCancellation?
     private var generation = UUID()
     private let thirdLevelCache = ThirdLevelSearchCache()
-    func submit(index:FilenameSearchIndex,query:String,scope:String,projects:[Project],files:[FileItem],sourceRows:[BrowserRow],byMonth:Bool,mode:String = "按类别",collapsed:Set<String> = [],categories:[WorkspaceCategory] = WorkspaceCategory.defaults,assignments:[String:CategoryAssignment] = [:],aggregateThirdLevel:Bool = false,metadataRevision:Int = 0) {
+    func submit(index:FilenameSearchIndex,query:String,scope:String,projects:[Project],files:[FileItem],sourceRows:[BrowserRow],byMonth:Bool,mode:String = "按类别",collapsed:Set<String> = [],categories:[WorkspaceCategory] = WorkspaceCategory.defaults,assignments:[String:CategoryAssignment] = [:],aggregateThirdLevel:Bool = false,metadataRevision:Int = 0,pastedPaths:[String] = [],pasteScope:String = "") {
         pending?.cancel(); cancellation?.cancel(); isSearching = true
         let ticket = UUID(); generation = ticket
         let token = IndexCancellation(); cancellation = token
@@ -260,7 +260,7 @@ struct WorkspaceSearchOutput: Equatable {
                 let entries = snapshot?.rows ?? sourceRows
                 let matchingSource = searching ? entries.filter { parsed.matches($0.title) } : entries
                 let ids = searching ? Set(matchingSource.map(\.id)) : nil
-                let presented = presentDirectory(matchingSource,mode:mode,query:"",collapsed:collapsed,categories:categories,assignments:assignments)
+                let presented = presentDirectoryWithPastes(matchingSource,mode:mode,collapsed:collapsed,categories:categories,assignments:assignments,paths:pastedPaths,scope:pasteScope)
                 guard !token.isCancelled else { return }
                 DispatchQueue.main.async {
                     guard let self, self.generation == ticket, !token.isCancelled else { return }
