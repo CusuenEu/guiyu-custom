@@ -372,7 +372,8 @@ struct Preview: NSViewRepresentable {
     try automationTest(root:root)
     print("PASS: extraction + OCR; explicit-click routing, no unrequested moves, ambiguity, stable downloads, undo suppression, time sorting, persisted records")
 }
-if CommandLine.arguments.contains("--file-paste-review") { do { try MainActor.assumeIsolated { try filePasteUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+if CommandLine.arguments.contains("--automatic-categories-review") { do { try MainActor.assumeIsolated { try automaticCategoryUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--file-paste-review") { do { try MainActor.assumeIsolated { try filePasteUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--file-icons-review") { do { try MainActor.assumeIsolated { try fileTypeIconsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--self-test") { do { try MainActor.assumeIsolated { try selfTest() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if let index = CommandLine.arguments.firstIndex(of:"--window-frame-read-test"), CommandLine.arguments.indices.contains(index+1) { do { try MainActor.assumeIsolated { try windowFrameReadTest(CommandLine.arguments[index+1]) } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }

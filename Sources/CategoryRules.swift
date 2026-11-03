@@ -151,7 +151,7 @@ struct CategoryClassifier {
     init(categories:[WorkspaceCategory]) { self.categories = categories; matchers = categories.map { CategoryRuleMatcher($0.effectiveRule) } }
     func resolve(_ row:BrowserRow,assignments:[String:CategoryAssignment]) -> WorkspaceCategory? {
         if let assignment = assignments[row.id], let category = categories.first(where:{$0.id == assignment.categoryID}), assignment.identity == fileIdentity(row.id) { return category }
-        let fallback = categories.first(where:{$0.id == DocumentCategory.other.rawValue}) ?? categories.first
+        let fallback = categories.first { $0.id == DocumentCategory.other.rawValue || ["其他","其它"].contains(FilenameQuery.normalize($0.name)) }
         let name = FilenameQuery.normalize(row.title)
         let legacy = matchers.contains(where:{$0.rule.legacyCategory != nil}) ? categoryForEntry(row).rawValue : nil
         let candidates = categories.indices.compactMap { index -> (WorkspaceCategory,Int)? in

@@ -361,6 +361,7 @@ struct ProjectWorkspace: View {
     @State var projectDirectoryGeneration = UUID()
     @State var projectDirectoryEntriesPath = ""
     @State var pendingPasteSelection: FilePasteResult?
+    @State var preferCategoryGrouping = false
     var isScopeSearch: Bool { archiveSourceID == nil && !FilenameQuery(query).tokens.isEmpty }
     var activeSourceRows: [BrowserRow] { isScopeSearch ? search.output.searchEntries : sourceRows }
     var activeDragScope: String { isScopeSearch ? "search:"+(selectedDirectory?.path ?? year) : sourceFolder }
@@ -375,7 +376,8 @@ struct ProjectWorkspace: View {
     }
     var fileRows: [BrowserRow] { search.output.fileRows }
     func refreshSearch() {
-        search.submit(index:store.filenameIndex,query:query,scope:year,projects:store.settings.projects,files:store.files,sourceRows:sourceRows,byMonth:projectOrder == "月份倒序",mode:mode,collapsed:collapsed,categories:store.workspaceCategories,assignments:store.workspaceAssignments,aggregateThirdLevel:isScopeSearch,metadataRevision:store.searchRevision+store.fileOperationRevision,pastedPaths:store.pastedPathsByDirectory[sourceFolder] ?? [],pasteScope:sourceFolder)
+        let copied = mode == "按类别" && preferCategoryGrouping ? [] : store.pastedPathsByDirectory[sourceFolder] ?? []
+        search.submit(index:store.filenameIndex,query:query,scope:year,projects:store.settings.projects,files:store.files,sourceRows:sourceRows,byMonth:projectOrder == "月份倒序",mode:mode,collapsed:collapsed,categories:store.workspaceCategories,assignments:store.workspaceAssignments,aggregateThirdLevel:isScopeSearch,metadataRevision:store.searchRevision+store.fileOperationRevision,pastedPaths:copied,pasteScope:sourceFolder)
     }
     var body: some View { workspacePresentation }
     var workspaceContent: some View {
@@ -399,12 +401,12 @@ struct ProjectWorkspace: View {
     }
     var workspaceSearchObservers: some View {
         workspaceContent
-        .onAppear { processedRenameCount = store.settings.renames?.count ?? 0; if !years.contains(year) { year = years.first ?? "" }; loadProjectDirectory(); refreshSearch() }
+        .onAppear { processedRenameCount = store.settings.renames?.count ?? 0; if !years.contains(year) { year = years.first ?? "" }; preferCategoryGrouping = mode == "按类别"; loadProjectDirectory(); refreshSearch() }
         .onChange(of:query) { _ in fileSelections = []; filePath = nil; refreshSearch() }
         .onChange(of:store.searchRevision) { _ in refreshSearch() }
         .onChange(of:sourceRows) { _ in refreshSearch() }
         .onChange(of:collapsed) { _ in refreshSearch() }
-        .onChange(of:store.workspaceCategories) { _ in refreshSearch() }
+        .onChange(of:store.workspaceCategories) { _ in useAutomaticCategories() }
         .onChange(of:store.workspaceAssignments) { _ in refreshSearch() }
         .onChange(of:projectOrder) { _ in refreshSearch() }
     }
@@ -415,6 +417,7 @@ struct ProjectWorkspace: View {
         .onChange(of:store.lastFilePaste?.id) { _ in
             guard let result = store.lastFilePaste, archiveSourceID == nil else { return }
             if (result.destination == selectedDirectory?.path && project == nil) || result.destination == sourceFolder {
+                if result.destination == sourceFolder { preferCategoryGrouping = false }
                 pendingPasteSelection = result; query = ""; loadProjectDirectory(); loadSource(); refreshSearch()
             }
         }
@@ -432,7 +435,10 @@ struct ProjectWorkspace: View {
         workspacePasteObservers
         .onChange(of:year) { _ in pendingPasteSelection = nil; projectPath = nil; filePath = nil; fileSelections = []; sourceRows = []; sourceFolder = ""; loadProjectDirectory(); loadSource(); refreshSearch() }
         .onChange(of:projectPath) { path in pendingPasteSelection = nil; if path != nil { archiveSourceID = nil }; filePath = nil; fileSelections = []; sourceRows = []; sourceFolder = searchFolderToOpen ?? projectPath ?? ""; searchFolderToOpen = nil; loadSource() }
-        .onChange(of:sourceFolder) { path in if let pending = pendingPasteSelection, pending.destination != path && pending.destination != selectedDirectory?.path { pendingPasteSelection = nil } }
+        .onChange(of:sourceFolder) { path in
+            if let pending = pendingPasteSelection, pending.destination != path && pending.destination != selectedDirectory?.path { pendingPasteSelection = nil }
+            if !path.isEmpty, archiveSourceID == nil { useAutomaticCategories() }
+        }
         .onChange(of:mode) { _ in filePath = nil; fileSelections = []; collapsed = []; refreshSearch() }
     }
     var workspaceFileObservers: some View {
@@ -586,7 +592,7 @@ struct ProjectWorkspace: View {
         VStack(alignment:.leading,spacing:0) {
             HStack(spacing:2) {
                 ForEach(["按类别","按时间","源文档"],id:\.self) { value in
-                    Button { mode = value } label: {
+                    Button { if value == "按类别" { useAutomaticCategories() } else { mode = value } } label: {
                         Text(value).font(.system(size:13,weight:mode == value ? .semibold : .medium))
                             .foregroundStyle(mode == value ? accent : WorkspaceTheme.ink)
                             .frame(width:76,height:32)
@@ -629,6 +635,11 @@ struct ProjectWorkspace: View {
         }
     }
     var selectedRows: [BrowserRow] { activeSourceRows.filter { fileSelections.contains($0.id) } }
+    func useAutomaticCategories() {
+        guard !store.workspaceCategories.isEmpty else { refreshSearch(); return }
+        mode = "按类别"; preferCategoryGrouping = true; collapsed = []
+        refreshSearch()
+    }
     func loadProjectDirectory() {
         let ticket = UUID(); projectDirectoryGeneration = ticket
         guard let directory = selectedDirectory else { projectDirectoryEntries = []; return }
