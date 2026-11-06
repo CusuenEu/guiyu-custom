@@ -53,6 +53,10 @@ jobs:
       - name: Check requested Windows version
         id: version
         run: |
+          if [[ "$(gh release view windows-20261106-01 --json isDraft --jq '.isDraft' 2>/dev/null)" == 'false' ]]; then
+            echo 'eligible=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           export MAIN_WINDOWS_TREE="$(gh api "repos/$GH_REPO/git/trees/main" --jq '.tree[] | select(.path=="Windows") | .sha')"
           export SOURCE_WINDOWS_TREE="$(git rev-parse HEAD:Windows)"
           node - <<'JS'

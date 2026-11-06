@@ -133,7 +133,7 @@ async function verifyArchitecture(exe) {
 async function run() {
   assert(process.platform === "win32" && process.env.CI === "true" && process.env.RUNNER_TEMP, "Disposable Windows CI only");
   assert(["ia32", "x64"].includes(arch), "Expected ia32 or x64");
-  const { extractFile } = await import("@electron/asar");
+  const { extractFile, uncache } = await import("@electron/asar");
   const temp = await fs.mkdtemp(path.join(process.env.RUNNER_TEMP, `guiyu-public-${arch}-`));
   const installDir = path.join(temp, "归屿 正式安装");
   const executable = path.join(installDir, exeName);
@@ -222,6 +222,7 @@ async function run() {
       return window.toLowerCase() === executable.toLowerCase();
     });
     assert.equal(productVersion(executable), version.packageVersion);
+    uncache(asar); // NSIS replaced the archive at the same path.
     assert.equal(JSON.parse(extractFile(asar, "version.json")).display, version.display);
     assert.notEqual(await sha256(asar), oldHash);
     await verifyArchitecture(executable);

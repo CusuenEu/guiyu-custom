@@ -1,0 +1,29 @@
+name: Verify published Windows update
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/windows-published-update-verification.yml', 'Windows/tests/published-update.cjs']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 22
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ia32, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Windows/package-lock.json
+      - run: npm ci --omit=optional --ignore-scripts
+        working-directory: Windows
+      - name: Update the official old client through its settings window
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node Windows/tests/published-update.cjs ${{ matrix.arch }}
