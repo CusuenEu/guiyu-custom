@@ -23,6 +23,25 @@ jobs:
           cache-dependency-path: Windows/package-lock.json
       - run: npm ci --omit=optional --ignore-scripts
         working-directory: Windows
+      - name: Check the public installer response before opening the client
+        env:
+          GUIYU_UPDATE_ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          node - <<'JS'
+          const {assetPrefix}=require('./Windows/version.json');
+          const tag='windows-'+assetPrefix.slice('Guiyu-'.length);
+          const url='https://github.com/tiduse1988/guiyu/releases/download/'+tag+'/'+assetPrefix+'-Windows-'+process.env.GUIYU_UPDATE_ARCH+'-setup.exe';
+          (async()=>{
+            const response=await fetch(url,{signal:AbortSignal.timeout(20000)});
+            console.log('Public installer response:',response.status,new URL(response.url).hostname);
+            if(!response.ok||!response.body)throw Error('Public installer request failed');
+            const reader=response.body.getReader();
+            const {value}=await reader.read();
+            await reader.cancel();
+            if(!value||value[0]!==0x4d||value[1]!==0x5a)throw Error('Public download did not return a Windows installer');
+          })().catch(error=>{console.error(error);process.exitCode=1;});
+          JS
       - name: Update the official old client through its settings window
         env:
           GH_TOKEN: ${{ github.token }}
