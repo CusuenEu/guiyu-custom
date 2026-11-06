@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: Successful Windows validation run for 20261106(01)
+        description: Successful Windows validation run for 20261106(02)
         required: true
         type: string
 permissions:
@@ -53,7 +53,7 @@ jobs:
       - name: Check requested Windows version
         id: version
         run: |
-          if [[ "$(gh release view windows-20261106-01 --json isDraft --jq '.isDraft' 2>/dev/null)" == 'false' ]]; then
+          if [[ "$(gh release view windows-20261106-02 --json isDraft --jq '.isDraft' 2>/dev/null)" == 'false' ]]; then
             echo 'eligible=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -61,7 +61,7 @@ jobs:
           export SOURCE_WINDOWS_TREE="$(git rev-parse HEAD:Windows)"
           node - <<'JS'
           const fs=require('node:fs'),v=require('./Windows/version.json');
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,'eligible='+(v.date==='20261106'&&v.sequence===1&&process.env.MAIN_WINDOWS_TREE===process.env.SOURCE_WINDOWS_TREE)+'\n');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'eligible='+(v.date==='20261106'&&v.sequence===2&&process.env.MAIN_WINDOWS_TREE===process.env.SOURCE_WINDOWS_TREE)+'\n');
           JS
       - uses: actions/download-artifact@v4
         if: steps.version.outputs.eligible == 'true'
@@ -76,7 +76,7 @@ jobs:
           node - <<'JS'
           const fs=require('node:fs'),v=require('./Windows/version.json');
           const {metadata}=require('./Windows/scripts/version.cjs');
-          if(v.date!=='20261106'||v.sequence!==1||JSON.stringify(v)!==JSON.stringify(metadata(v)))throw Error('Expected Windows 20261106(01)');
+          if(v.date!=='20261106'||v.sequence!==2||JSON.stringify(v)!==JSON.stringify(metadata(v)))throw Error('Expected Windows 20261106(02)');
           const wanted=['ia32','x64'].flatMap(a=>[`${v.assetPrefix}-Windows-${a}.zip`,`${v.assetPrefix}-Windows-${a}-setup.exe`]).sort();
           const actual=fs.readdirSync('release-assets').sort();
           if(JSON.stringify(actual)!==JSON.stringify(wanted)||actual.some(n=>!fs.statSync('release-assets/'+n).size))throw Error('Expected exactly four nonempty Windows assets');
@@ -84,7 +84,7 @@ jobs:
           const results=jobs.map(j=>'- '+j.name+': '+j.conclusion+(j.steps||[]).filter(s=>s.conclusion==='failure'||s.conclusion==='skipped').map(s=>'\n  - '+s.name+': '+s.conclusion).join('')).join('\n');
           const status='该提交 Windows 完整 CI 已通过。';
           fs.writeFileSync('release-notes.md',fs.readFileSync('Windows/RELEASE-NOTES.md','utf8')+'\n## 本次构建验证\n\n'+status+'\n\n'+results+'\n\n构建记录：'+r.html_url+'\n源码：'+r.head_sha+'\n\n正式旧版客户端在线升级验证：https://github.com/'+process.env.GH_REPO+'/actions/runs/'+process.env.GITHUB_RUN_ID+'\n');
-          fs.appendFileSync(process.env.GITHUB_ENV,'RELEASE_TAG=windows-20261106-01\nRELEASE_TITLE=归屿 '+v.display+' Windows\n');
+          fs.appendFileSync(process.env.GITHUB_ENV,'RELEASE_TAG=windows-20261106-02\nRELEASE_TITLE=归屿 '+v.display+' Windows\n');
           JS
           cd release-assets
           sha256sum * > SHA256SUMS.txt

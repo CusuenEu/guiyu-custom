@@ -316,6 +316,30 @@ async function check(win) {
   await assert.rejects(fs.stat(unmatched), { code: "ENOENT" });
   assert.equal(await fs.readFile(path.join(archiveProjects[3], "待办.txt"), "utf8"), "惠水加油站");
   console.log("PASS archive: filename-only ranking, selected highlight, independent empty/search lists, and actual move after confirmation");
+
+  async function openArchiveMenu(selector) {
+    await evalUI(`document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:100,clientY:100}))`);
+    await wait("!document.querySelector('#context').hidden");
+    assert(await evalUI("[...document.querySelectorAll('#context button')].some(b=>b.textContent==='智能归档…')"), "Expected archive in the file's right-click menu");
+    await evalUI("[...document.querySelectorAll('#context button')].find(b=>b.textContent==='智能归档…').click()");
+    await wait("!!document.querySelector('#archive-query')?.oninput");
+  }
+  await click(row("dir", year));
+  await click(row("project", first));
+  await wait(content("甲文档.txt"));
+  await openArchiveMenu(row("file", path.join(first, "甲文档.txt")));
+  await click("#modal [data-cancel]");
+  await click(row("dir", root));
+  await wait(`!!document.querySelector(${JSON.stringify(row("project", rootFile))})`);
+  await openArchiveMenu(row("project", rootFile));
+  await evalUI("document.querySelector('#archive-query').value='无纸化';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
+  await click(row("target", archiveProjects[0]));
+  assert.equal(await fs.readFile(rootFile, "utf8"), "root document");
+  await click("#confirm");
+  await wait("!document.querySelector('#modal').open");
+  await assert.rejects(fs.stat(rootFile), { code: "ENOENT" });
+  assert.equal(await fs.readFile(path.join(archiveProjects[0], path.basename(rootFile)), "utf8"), "root document");
+  console.log("PASS archive menus: ordinary middle and right project files offer Smart Archive, with actual movement after confirmation");
   assert.deepEqual(externalOpens, [], "Folder interactions must never launch Explorer");
   console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, overlapping sources, redirected Desktop, rename/archive-cancel selection, empty association and refresh");
   console.log("PASS Explorer: real second-instance smart naming/archive with Chromium switches and Chinese/space/special-character paths");

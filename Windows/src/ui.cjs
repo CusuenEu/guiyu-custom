@@ -710,7 +710,7 @@ function menu(event, items) {
   };
   el.querySelector("button")?.focus();
 }
-async function fileMenu(ev, items, archive = false) {
+async function fileMenu(ev, items, canArchive = true) {
   $("#context").hidden = true;
   if (!items.length) return;
   let actions = [
@@ -723,9 +723,9 @@ async function fileMenu(ev, items, archive = false) {
       fn: () => namingDialog(items, false),
     },
   ];
-  if (archive)
+  if (canArchive)
     actions.push({ label: "智能归档…", fn: () => archiveDialog(items) });
-  else
+  if (!source)
     for (const c of data.settings.categories)
       if (!items.every((e) => category(e) === c.id))
         actions.push({
@@ -759,7 +759,7 @@ $("#files").oncontextmenu = async (e) => {
   if (p) {
     if (!selected.has(p)) selected = new Set([p]);
     render();
-    fileMenu(e, selectedItems(), !!source);
+    fileMenu(e, selectedItems());
   } else menu(e, await clipboardActions());
 };
 $("#projects").oncontextmenu = async event => {
@@ -771,9 +771,10 @@ $("#projects").oncontextmenu = async event => {
   if (!item) { selected.clear(); render(); return menu(event, await clipboardActions()); }
   if (!selected.has(item.path)) selected = new Set([item.path]);
   render();
-  fileMenu(event, selectedItems(), !!source);
+  const items = selectedItems();
+  fileMenu(event, items, Boolean(source) || items.every(item => !item.folder));
 };
-$("#batch-menu").onclick = (e) => fileMenu(e, selectedItems(), !!source);
+$("#batch-menu").onclick = (e) => fileMenu(e, selectedItems());
 document.addEventListener("pointerdown", (e) => {
   if (!e.target.closest("#context")) $("#context").hidden = true;
 });
