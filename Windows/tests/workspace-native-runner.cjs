@@ -268,13 +268,14 @@ async function check(win) {
     await explorer(type, explorerFolder);
     assert(await evalUI("document.querySelector('#modal').textContent.includes('右键 中文 & $1 文件夹')"));
     if(type==='--smart-archive') {
-      assert(await evalUI("document.querySelector('#archive-projects').textContent.includes('未找到匹配项目，可输入项目名搜索')"));
+      assert.equal(await evalUI("document.querySelector('#archive-projects [data-target] .name').textContent"), "新文件夹");
+      assert.equal(await evalUI("document.querySelector('#archive-projects mark').textContent"), "文件夹");
       await evalUI("document.querySelector('#archive-query').value='甲项目';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
       await wait(`!!document.querySelector(${JSON.stringify(row('target',first))})`);
       await click(row('target',first));
       assert(await evalUI("!document.querySelector('#confirm').disabled"));
       await evalUI("document.querySelector('#archive-query').value='';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
-      assert(await evalUI("document.querySelector('#confirm').disabled&&document.querySelector('#archive-projects').textContent.includes('未找到匹配项目，可输入项目名搜索')"));
+      assert(await evalUI("document.querySelector('#confirm').disabled&&document.querySelector('#archive-projects mark').textContent==='文件夹'"));
     }
     await evalUI("document.querySelector('#modal [data-cancel]').click()");
     await wait("!document.querySelector('#modal').open");
