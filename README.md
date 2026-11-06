@@ -36,10 +36,10 @@
 | 系统 | 已发布版本 | 安装包 |
 | --- | --- | --- |
 | macOS 13+ · Apple Silicon（M 系列） | 20261106(02) | [下载 DMG](https://github.com/tiduse1988/guiyu/releases/download/v20261106-02/Guiyu-20261106-02-macOS-arm64.dmg) |
-| Windows 10 / 11 · 64 位 | 20261106(02) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-02/Guiyu-20261106-02-Windows-x64-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-02/Guiyu-20261106-02-Windows-x64.zip) |
-| Windows 10 · 32 位 | 20261106(02) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-02/Guiyu-20261106-02-Windows-ia32-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-02/Guiyu-20261106-02-Windows-ia32.zip) |
+| Windows 10 / 11 · 64 位 | 20261106(03) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-03/Guiyu-20261106-03-Windows-x64-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-03/Guiyu-20261106-03-Windows-x64.zip) |
+| Windows 10 · 32 位 | 20261106(03) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-03/Guiyu-20261106-03-Windows-ia32-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-03/Guiyu-20261106-03-Windows-ia32.zip) |
 
-Windows 20261106(02) 修复项目目录中栏和右栏文件右键菜单的智能归档入口。可在设置中检查更新，点击“更新并重启”。[发行说明、全部安装包与校验文件](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261106-02) · [历史版本](https://github.com/tiduse1988/guiyu/releases)。
+Windows 20261106(03) 修复自动更新下载途中断开的问题。新版支持自动重试和断点续传。若已安装的旧版反复下载失败，可使用同架构的正式安装包覆盖升级一次。[发行说明、全部安装包与校验文件](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261106-03) · [历史版本](https://github.com/tiduse1988/guiyu/releases)。
 
 Mac 打开 DMG 后拖入“应用程序”；Windows 双击安装包。ZIP 解压版及历史版本见[全部发行版本](https://github.com/tiduse1988/guiyu/releases)。
 
