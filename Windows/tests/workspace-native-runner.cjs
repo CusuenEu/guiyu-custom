@@ -8,6 +8,7 @@ for (const event of ["before-quit", "will-quit", "quit"])
   app.on(event, () => console.log(`WORKSPACE ${process.arch} ${event}, pid=${process.pid}`));
 const downloads = path.join(temp, "下载"), root = path.join(downloads, "关联项目库"), empty = path.join(temp, "空关联目录");
 const year = path.join(root, "2026"), first = path.join(year, "甲项目"), second = path.join(year, "乙项目");
+const archiveProjects = ["无纸化办公系统项目", "办公设备采购", "化工", "惠水加油站"].map(name => path.join(year, name));
 const direct = path.join(downloads, "下载文件夹"), linkedSource = path.join(root, "空可归档目录");
 const desktop = path.join(temp, "桌面实际位置"), desktopAlias = path.join(temp, "桌面重定向"), desktopFolder = path.join(desktop, "桌面文件夹");
 const externalOpens = [];
@@ -32,6 +33,10 @@ async function prepare() {
   await fs.writeFile(path.join(direct, "下载文档.txt"), "download");
   await fs.utimes(first, new Date("2026-11-02T00:00:02Z"), new Date("2026-11-02T00:00:02Z"));
   await fs.utimes(second, new Date("2026-11-02T00:00:01Z"), new Date("2026-11-02T00:00:01Z"));
+  for (const project of archiveProjects) {
+    await fs.mkdir(project);
+    await fs.utimes(project, new Date("2020-01-01"), new Date("2020-01-01"));
+  }
   const stateDir = path.join(app.getPath("temp"), "Guiyu-windows-review");
   await fs.mkdir(stateDir, { recursive: true });
   await fs.writeFile(path.join(stateDir, "settings.json"), JSON.stringify({ roots: [root, empty],
@@ -248,30 +253,68 @@ async function check(win) {
   await fs.mkdir(explorerFolder);
   const originalFile = path.join(explorerFolder, "保留原件.txt");
   await fs.writeFile(originalFile, "unchanged");
-  for (const type of ["--smart-name", "--smart-archive"]) {
+  async function explorer(type, item) {
     await new Promise((resolve, reject) => {
       const child = require("node:child_process").spawn(process.execPath,
-        [type, "--allow-file-access-from-files", explorerFolder],
+        [type, "--allow-file-access-from-files", item],
         { env: { ...process.env, GUIYU_EXPLORER_CHILD: "1" }, stdio: "ignore", windowsHide: true });
       const timer = setTimeout(() => { child.kill(); reject(Error("Explorer second instance did not exit")); }, 30000);
       child.once("error", error => { clearTimeout(timer); reject(error); });
       child.once("exit", code => { clearTimeout(timer); code === 0 ? resolve() : reject(Error(`Explorer child exit ${code}`)); });
     });
-    await wait(type === "--smart-name" ? "!!document.querySelector('#name-stem')" : "!!document.querySelector('#archive-query')", 45000);
+    await wait(type === "--smart-name" ? "!!document.querySelector('#name-stem')" : "!!document.querySelector('#archive-query')?.oninput", 45000);
+  }
+  for (const type of ["--smart-name", "--smart-archive"]) {
+    await explorer(type, explorerFolder);
     assert(await evalUI("document.querySelector('#modal').textContent.includes('右键 中文 & $1 文件夹')"));
     if(type==='--smart-archive') {
-      assert(await evalUI("document.querySelector('#archive-projects').textContent.includes('暂无可靠推荐')"));
+      assert(await evalUI("document.querySelector('#archive-projects').textContent.includes('未找到匹配项目，可输入项目名搜索')"));
       await evalUI("document.querySelector('#archive-query').value='甲项目';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
       await wait(`!!document.querySelector(${JSON.stringify(row('target',first))})`);
       await click(row('target',first));
       assert(await evalUI("!document.querySelector('#confirm').disabled"));
       await evalUI("document.querySelector('#archive-query').value='';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
-      assert(await evalUI("document.querySelector('#confirm').disabled&&document.querySelector('#archive-projects').textContent.includes('暂无可靠推荐')"));
+      assert(await evalUI("document.querySelector('#confirm').disabled&&document.querySelector('#archive-projects').textContent.includes('未找到匹配项目，可输入项目名搜索')"));
     }
     await evalUI("document.querySelector('#modal [data-cancel]').click()");
     await wait("!document.querySelector('#modal').open");
     assert.equal(await fs.readFile(originalFile, "utf8"), "unchanged");
   }
+  const matched = path.join(explorerFolder, "法律意见书暨仲裁预案-无纸化办公.docx");
+  await fs.writeFile(matched, "filename-only fixture");
+  await explorer("--smart-archive", matched);
+  const choices = await evalUI(`[...document.querySelectorAll('#archive-projects [data-target]')].map(button => ({
+    path: button.dataset.target, marks: [...button.querySelectorAll('mark')].map(mark => mark.textContent)
+  }))`);
+  assert.deepEqual(choices, [
+    { path: archiveProjects[0], marks: ["无纸化办公"] },
+    { path: archiveProjects[1], marks: ["办公"] },
+  ]);
+  const selectedChoice = row("target", archiveProjects[0]);
+  const markStyle = selector => evalUI(`(()=>{const mark = document.querySelector(${JSON.stringify(selector + " mark")}); const style = getComputedStyle(mark); return [style.backgroundColor,style.color];})()`);
+  const expectedMark = ["rgb(249, 218, 221)", "rgb(49, 27, 29)"];
+  assert.deepEqual(await markStyle(selectedChoice), expectedMark);
+  await click(selectedChoice);
+  assert.deepEqual(await markStyle(selectedChoice), expectedMark, "Selecting a project must preserve its matching highlight");
+  assert.equal(await fs.readFile(matched, "utf8"), "filename-only fixture");
+  assert.deepEqual(await fs.readdir(archiveProjects[0]), []);
+  await click('#modal [data-cancel]');
+
+  const unmatched = path.join(explorerFolder, "待办.txt");
+  await fs.writeFile(unmatched, "惠水加油站");
+  await explorer("--smart-archive", unmatched);
+  assert.equal(await evalUI("document.querySelector('#archive-projects').textContent"), "未找到匹配项目，可输入项目名搜索");
+  await evalUI("document.querySelector('#archive-query').value='惠水';document.querySelector('#archive-query').dispatchEvent(new Event('input',{bubbles:true}))");
+  assert.equal(await evalUI("document.querySelector('#archive-projects h3').textContent"), "搜索结果");
+  assert.equal(await evalUI("document.querySelectorAll('#archive-projects mark').length"), 0);
+  await click(row("target", archiveProjects[3]));
+  assert.equal(await fs.readFile(unmatched, "utf8"), "惠水加油站");
+  assert.deepEqual(await fs.readdir(archiveProjects[3]), []);
+  await click('#confirm');
+  await wait("!document.querySelector('#modal').open");
+  await assert.rejects(fs.stat(unmatched), { code: "ENOENT" });
+  assert.equal(await fs.readFile(path.join(archiveProjects[3], "待办.txt"), "utf8"), "惠水加油站");
+  console.log("PASS archive: filename-only ranking, selected highlight, independent empty/search lists, and actual move after confirmation");
   assert.deepEqual(externalOpens, [], "Folder interactions must never launch Explorer");
   console.log("PASS renderer: selection, Ctrl multiselect, middle Ctrl+C IPC/clipboard, keyboard, category-free contents, nested browse, overlapping sources, redirected Desktop, rename/archive-cancel selection, empty association and refresh");
   console.log("PASS Explorer: real second-instance smart naming/archive with Chromium switches and Chinese/space/special-character paths");

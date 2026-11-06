@@ -1,32 +1,87 @@
 "use strict";
-// Broad organization/geography/document words are not project identity evidence.
-const generic = /招投标文件|招标文件|投标文件|采购文件|技术方案|实施方案|有限责任公司|股份有限公司|有限公司|中国|贵州省|贵州|集团|公司|项目|合同|方案|文件|服务|采购|建设|租赁|年度|运维|维护|工程|报告|资料/g;
-function identity(text) {
-  return String(text).normalize("NFKC").toLowerCase().replace(/\.[a-z0-9]{1,8}$/i, "")
-    .replace(generic, "").replace(/\d{4}[-年/.]?\d{1,2}(?:[-月/.]?\d{1,2}日?)?/g, "")
-    .replace(/[^\p{L}\p{N}]/gu, "");
+const path = require("node:path");
+const segmenter = new Intl.Segmenter();
+
+function characters(name) {
+  return Array.from(segmenter.segment(name), ({ segment, index }) => ({
+    index,
+    value: /^[\p{L}\p{N}]/u.test(segment)
+      ? segment.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase()
+      : null,
+  }));
 }
-function codes(text) { return String(text).toUpperCase().match(/\b[A-Z]{2,}(?:[-_]\d{2,}){2,}\b/g) || []; }
-function score(name, text) {
-  if (/^[\d\s年月日月.\-_/]+$/.test(name)) return { score: 0 };
-  if (codes(name).some(code => codes(text).includes(code))) return { score: 100, evidence: "项目编号完全一致" };
-  const a = identity(name), b = identity(text);
-  if (a.length < 4 || b.length < 4 || !/\p{L}/u.test(a) || !/\p{L}/u.test(b)) return { score: 0 };
-  if (a === b || a.includes(b) || b.includes(a)) return { score: 95, evidence: "明确的项目名称一致" };
-  const grams = value => new Set(Array.from({ length: Math.max(0, value.length - 2) }, (_, i) => value.slice(i, i + 3)));
-  const x = grams(a), y = grams(b), common = [...x].filter(g => y.has(g)).length;
-  const confidence = Math.floor(200 * common / (x.size + y.size));
-  return common >= 3 && confidence >= 75 ? { score: confidence, evidence: "项目名称高度一致" } : { score: 0 };
+
+// Track the longest matching suffix ending at each position. Only runs of
+// two or more characters contribute to coverage, even if runs overlap.
+function coveredPositions(ends) {
+  const covered = Array(ends.length).fill(false);
+  let leftmost = ends.length;
+  for (let index = ends.length - 1; index >= 0; index--) {
+    if (ends[index] >= 2) leftmost = Math.min(leftmost, index + 1 - ends[index]);
+    covered[index] = index >= leftmost;
+  }
+  return covered;
 }
-function rank(projects, texts) {
-  return projects.map(project => {
-    let best = { score: 0, evidence: "可手动搜索选择" };
-    // Weak hits from different files/lines must never accumulate into a match.
-    for (const text of texts) for (const line of String(text).split(/[\r\n]+/)) {
-      const candidate = score(project.name, line);
-      if (candidate.score > best.score) best = candidate;
+
+function continuousMatch(filename, project) {
+  const suffixes = Array(project.length + 1).fill(0);
+  const fileEnds = Array(filename.length).fill(0);
+  const projectEnds = Array(project.length).fill(0);
+  let longest = 0;
+  for (let fileIndex = 0; fileIndex < filename.length; fileIndex++) {
+    const value = filename[fileIndex].value;
+    for (let index = project.length - 1; index >= 0; index--) {
+      const length = value !== null && value === project[index].value ? suffixes[index] + 1 : 0;
+      suffixes[index + 1] = length;
+      fileEnds[fileIndex] = Math.max(fileEnds[fileIndex], length);
+      projectEnds[index] = Math.max(projectEnds[index], length);
+      longest = Math.max(longest, length);
     }
-    return { ...project, ...best };
-  }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "zh"));
+  }
+  if (longest < 2) return null;
+  const covered = coveredPositions(projectEnds);
+  const count = Math.min(covered.filter(Boolean).length, coveredPositions(fileEnds).filter(Boolean).length);
+  return { longest, count, covered };
 }
-module.exports = { rank, identity, score };
+
+function matchingRanges(name, project, covered) {
+  const ranges = [];
+  for (let index = 0; index < covered.length; index++) {
+    if (!covered[index]) continue;
+    const start = project[index].index, end = project[index + 1]?.index ?? name.length;
+    const previous = ranges.at(-1);
+    if (previous && previous[1] === start) previous[1] = end;
+    else ranges.push([start, end]);
+  }
+  return ranges;
+}
+
+function rank(projects, items) {
+  const filenames = items.map(({ name, folder }) => {
+    const extension = folder ? "" : path.extname(name);
+    return characters(name.slice(0, name.length - extension.length));
+  }).filter(name => name.length >= 2);
+  const recommendations = [];
+  for (const project of projects) {
+    const name = characters(project.name);
+    const covered = Array(name.length).fill(false);
+    let longest = 0, total = 0;
+    for (const filename of filenames) {
+      const match = continuousMatch(filename, name);
+      if (!match) continue;
+      longest = Math.max(longest, match.longest);
+      total += match.count;
+      for (let index = 0; index < covered.length; index++) covered[index] ||= match.covered[index];
+    }
+    if (longest < 2) continue;
+    recommendations.push({
+      ...project, longest, total,
+      evidence: `最长连续匹配 ${longest} 个字符，累计匹配 ${total} 个字符`,
+      matchingRanges: matchingRanges(project.name, name, covered),
+    });
+  }
+  return recommendations.sort((a, b) =>
+    b.longest - a.longest || b.total - a.total || a.name.localeCompare(b.name, "zh", { numeric: true }));
+}
+
+module.exports = { rank };

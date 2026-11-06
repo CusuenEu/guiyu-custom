@@ -52,13 +52,36 @@ test("root and mixed file/folder order survive refresh/reopen; main rejects miss
   for (const paths of [[file], [file,file], [file,b]]) await assert.rejects(dispatch("order", { root:a, paths }), /无效/);
   assert.equal(await fs.readFile(file, "utf8"), "original");
 });
-test("archive recommendations reject screenshot false positives, generic words and numeric containers", () => {
-  const names = ["招投标文件-中国烟草总公司贵州省公司-省烟草科学研究院2026年-2028年度网络信息安全运维服务采购项目", "DICT-852-202308-0001贵州茅台酒厂（集团）物流有限责任公司2023年至2024年监控运维服务合同", "202210", "7"];
-  const result = rank(names.map(name => ({ name })), ["贵州省外经贸集团云资源服务租赁项目.pdf"]);
-  assert(result.every(p => p.score === 0));
-  assert(rank([{name:"外经贸消防项目"}], ["外经贸云资源", "消防服务项目"]).every(p => p.score === 0), "Weak per-document hits cannot accumulate");
-  assert(rank([{name:"智慧工地建设项目"}], ["智慧工地建设项目技术方案.pdf"])[0].score >= 75);
-  assert.equal(rank([{name:names[1]}], ["DICT-852-202308-0001验收报告.pdf"])[0].score, 100);
+test("archive recommendations use consecutive name characters and highlight original text", () => {
+  const projects = ["化工", "办公设备采购", "无纸化办公系统项目"].map(name => ({ name }));
+  const matches = rank(projects, [{ name: "法律意见书暨仲裁预案-无纸化办公.docx" }]);
+  assert.deepEqual(matches.map(p => [p.name, p.longest, p.total]), [
+    ["无纸化办公系统项目", 5, 5],
+    ["办公设备采购", 2, 2],
+  ]);
+  assert.deepEqual(matches.map(p => p.matchingRanges.map(([a, b]) => p.name.slice(a, b))), [["无纸化办公"], ["办公"]]);
+  const [unicode] = rank([{ name: "🪴Ａe\u0301甲" }], [{ name: "aé甲.txt" }]);
+  assert.deepEqual(unicode.matchingRanges, [[2, 6]]);
+  assert.equal(unicode.longest, 3);
+});
+
+test("archive ranking prefers the longest run, then unique covered characters summed per item", () => {
+  const projects = ["甲乙丙、丁戊己、庚辛", "甲乙丙丁"].map(name => ({ name }));
+  const matches = rank(projects, [{ name: "甲乙丙丁戊己庚辛" }]);
+  assert.deepEqual(matches.map(p => [p.longest, p.total]), [[4, 4], [3, 8]]);
+  const batch = rank(["甲乙丙、庚辛", "甲乙丙", "己庚"].map(name => ({ name })),
+    [{ name: "甲乙丙.docx" }, { name: "庚辛.pdf" }, { name: "己" }]);
+  assert.deepEqual(batch.map(p => [p.name, p.longest, p.total]), [
+    ["甲乙丙、庚辛", 3, 5], ["甲乙丙", 3, 3],
+  ]);
+  assert.equal(rank([{ name: "甲乙、甲乙" }], [{ name: "甲乙" }])[0].total, 2);
+});
+
+test("archive runs stop at spaces and punctuation and strip only file extensions", () => {
+  const names = ["乙甲", "甲-乙", "甲 乙", "docx"].map(name => ({ name }));
+  assert.deepEqual(rank(names, [{ name: "甲乙" }, { name: "报告.docx" }]), []);
+  assert.deepEqual(rank([{ name: "甲乙" }], [{ name: "甲-乙" }, { name: "甲 乙" }]), []);
+  assert.equal(rank([{ name: "docx资料" }], [{ name: "报告.docx", folder: true }])[0].longest, 4);
 });
 test("an in-flight refresh never restores an old selection over newer directory navigation", async () => {
   const source = await fs.readFile(path.join(__dirname, "../src/ui.cjs"), "utf8");

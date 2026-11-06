@@ -1082,37 +1082,46 @@ async function namingDialog(items, smart) {
   confirm.onclick = () => submit(false);
   if (confirmArchive) confirmArchive.onclick = () => submit(true);
 }
+function archiveName(name, ranges = []) {
+  let markup = "", offset = 0;
+  for (const [start, end] of ranges) {
+    markup += esc(name.slice(offset, start)) + `<mark>${esc(name.slice(start, end))}</mark>`;
+    offset = end;
+  }
+  return markup + esc(name.slice(offset));
+}
 async function archiveDialog(items) {
   modal(
     `<div class="dialog-body smart-dialog archive-dialog" style="height:620px">${smartHeader("智能归档", "⇩")}<div class="file-summary">${icon(items[0] || { name: "" })}<span>${esc(items[0]?.name || "")}${items.length > 1 ? ` 等 ${items.length} 项` : ""}<small>${items.length} 项待归档</small></span></div><input id="archive-query" placeholder="搜索项目名、单位词或关键词" aria-label="搜索归档项目"><div class="scroll" id="archive-projects">正在查找推荐项目…</div>${actions("确认归档")}</div>`,
   );
   $("#confirm").disabled = true;
+  const input = $("#archive-query");
   let results;
   try {
     results = await api("archiveSuggest", { items });
   } catch (e) {
-    errorIn(e);
+    if ($("#modal").open && $("#archive-query") === input) errorIn(e);
     return;
   }
-  if (!$("#modal").open) return;
+  if (!$("#modal").open || $("#archive-query") !== input) return;
   let target = null;
   function draw() {
     target = null;
     $("#confirm").disabled = true;
-    let q = $("#archive-query").value;
-    const filtered = results.projects.filter(p => q.trim() ? match(p.name, q) : p.score >= 75);
+    const query = input.value.trim();
+    const filtered = query
+      ? results.projects.filter(p => match(p.name, query))
+      : results.recommendations;
     $("#archive-projects").innerHTML =
-      filtered
+      (filtered.length ? `<h3>${query ? "搜索结果" : "匹配项目"}</h3>` + filtered
         .map(
-          (p, i) =>
-            `${i === 0 ? `<h3>${q ? "搜索结果" : p.score > 0 ? "匹配项目" : "全部项目"}</h3>` : !q && p.score === 0 && filtered[i - 1]?.score > 0 ? "<h3>其他项目</h3>" : ""}<button class="archive-choice" aria-pressed="false" data-target="${esc(p.path)}" title="${esc(p.evidence)}">${folder}<span class="name-wrap"><span class="name">${esc(p.name)}</span><small>${esc(basename(p.directory))}</small></span><span class="choice-mark" aria-hidden="true"></span></button>`,
+          p =>
+            `<button class="archive-choice" aria-pressed="false" data-target="${esc(p.path)}" title="${esc(p.evidence)}">${folder}<span class="name-wrap"><span class="name">${archiveName(p.name, query ? [] : p.matchingRanges)}</span><small>${esc(basename(p.directory))}</small></span><span class="choice-mark" aria-hidden="true"></span></button>`,
         )
-        .join("") || `<p class="muted">${q.trim() ? "没有搜索到符合名称的项目，请调整关键词。" : "暂无可靠推荐，请输入项目名或关键词自行搜索。"}</p>`;
-    if (results.warnings.length)
-      $("#dialog-error").textContent = results.warnings.join("\n");
+        .join("") : `<p class="muted">${query ? "没有搜索到符合名称的项目，请调整关键词。" : "未找到匹配项目，可输入项目名搜索"}</p>`);
   }
   draw();
-  $("#archive-query").oninput = draw;
+  input.oninput = draw;
   $("#archive-projects").onclick = (e) => {
     let b = e.target.closest("[data-target]");
     if (!b) return;

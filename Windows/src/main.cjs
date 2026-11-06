@@ -358,23 +358,10 @@ async function dispatch(method, arg = {}) {
       }
     }
     case "archiveSuggest": {
-      const texts = arg.items.map(e => e.name);
       const projects = [...new Map([...store.snapshot.rootEntries, ...store.snapshot.projects]
         .filter(p => p.folder).map(p => [p.path, p])).values()];
       const { rank } = require("./archive-match.cjs");
-      let result = rank(projects, texts);
-      const warnings = [];
-      if (!result.some(p => p.score >= 75)) {
-        for (const e of arg.items) {
-          await store.guard(e.path); await verify(e);
-          try {
-            const docs = e.folder ? (await list(e.path)).filter(x => !x.folder).slice(0, 2) : [e];
-            for (const d of docs) texts.push(await extract(d, 2));
-          } catch (error) { warnings.push(error.message); }
-        }
-        result = rank(projects, texts);
-      }
-      return { projects: result, warnings };
+      return { projects, recommendations: rank(projects, arg.items) };
     }
     case "rename": {
       const result = await store.rename(arg.plans);

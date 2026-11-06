@@ -993,6 +993,7 @@ p {
 .archive-dialog #archive-query { min-height: 36px; }
 .archive-dialog .archive-choice { padding: 12px; border-radius: 8px; }
 .archive-dialog .archive-choice .name { white-space: normal; }
+.archive-dialog .archive-choice mark { background: #f9dadd; color: #311b1d; border-radius: 3px; }
 .archive-dialog .scroll h3 { margin: 12px 0 8px; }
 .batch-dialog { width: 760px; }
 .batch-description { margin: 0 0 12px; }
