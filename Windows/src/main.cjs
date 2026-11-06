@@ -9,6 +9,11 @@ const {
   net,
   screen,
 } = require("electron");
+// Keep Chromium's system proxy support while using HTTP/1.1 for release requests.
+if (process.platform === "win32") {
+  app.commandLine?.appendSwitch("disable-http2");
+  app.commandLine?.appendSwitch("disable-quic");
+}
 const fs = require("node:fs/promises"),
   path = require("node:path"),
   { pathToFileURL } = require("node:url");

@@ -1681,7 +1681,12 @@ window.guiyu?.onCommand?.((command) => {
 });
 window.guiyu?.onUpdateProgress?.(value => {
   const status = $("#update-status");
-  if (status) status.textContent = value.phase === "downloading" ? `正在下载更新 ${value.percent}%` : value.phase === "verifying" ? "正在校验更新包…" : "正在安装，完成后自动重新打开…";
+  if (status) {
+    if (value.phase === "retrying") status.textContent = `正在重试下载（已下载 ${value.percent}%）…`;
+    else if (value.phase === "downloading") status.textContent = `正在下载更新 ${value.percent}%`;
+    else if (value.phase === "verifying") status.textContent = "正在校验更新包…";
+    else status.textContent = "正在安装，完成后自动重新打开…";
+  }
 });
 api("state")
   .then((d) => {

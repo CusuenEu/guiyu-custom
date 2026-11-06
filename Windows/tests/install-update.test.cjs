@@ -22,6 +22,63 @@ test("verified streaming download prepares the real helper before graceful exit 
   assert.equal(result.automatic,true); assert.equal(f.calls.length,1); assert.equal(await fs.readFile(f.exe,"utf8"),"old app");
   assert(f.progress.some(p=>p.phase==='verifying')); await f.exited; assert.equal(f.calls.at(-1),'quit');
 });
+function brokenDownload(prefix) {
+  let sent = false;
+  return new Response(new ReadableStream({
+    pull(controller) {
+      if (sent) controller.error(Error("net::ERR_HTTP2_PROTOCOL_ERROR"));
+      else {
+        sent = true;
+        controller.enqueue(prefix);
+      }
+    },
+  }));
+}
+test("HTTP 400 then a broken stream retries with a fresh URL and resumes the verified package", async t => {
+  const requests = [];
+  const split = 9;
+  const f = await fixture(t, { fetch: async (url, options) => {
+    requests.push({ url, range: options.headers.Range });
+    if (requests.length === 1) return new Response(null, { status: 400 });
+    if (requests.length === 2) return brokenDownload(bytes.subarray(0, split));
+    return new Response(bytes.subarray(split), {
+      status: 206, headers: { "Content-Range": `bytes ${split}-${bytes.length - 1}/${bytes.length}` },
+    });
+  } });
+  await f.install(update);
+  await f.exited;
+  assert.deepEqual(requests.map(request => request.range), [undefined, undefined, "bytes=9-"]);
+  assert.equal(requests[0].url, update.url);
+  for (const { url } of requests.slice(1)) {
+    const retry = new URL(url);
+    assert(retry.searchParams.has("guiyu-retry"));
+    retry.search = "";
+    assert.equal(retry.href, update.url);
+  }
+  assert(f.progress.some(value => value.phase === "retrying" && value.percent > 0));
+});
+test("an ignored range restarts cleanly and an inconsistent partial response never installs", async t => {
+  const split = 9;
+  for (const valid of [true, false]) {
+    let requests = 0;
+    const f = await fixture(t, { fetch: async (_url, options) => {
+      if (++requests === 1) return brokenDownload(bytes.subarray(0, split));
+      assert.equal(options.headers.Range, "bytes=9-");
+      return valid ? new Response(bytes) : new Response(bytes.subarray(split), {
+        status: 206, headers: { "Content-Range": `bytes 0-${bytes.length - 1}/${bytes.length}` },
+      });
+    } });
+    if (valid) {
+      await f.install(update);
+      await f.exited;
+    } else {
+      await assert.rejects(f.install(update), /续传范围异常/);
+      assert.equal(f.calls.length, 0);
+      assert.deepEqual((await fs.readdir(f.dir)).filter(name => name.startsWith("Guiyu-update-")), []);
+    }
+    assert.equal(requests, 2);
+  }
+});
 test("bad hash, size, source and download failure keep the old app running and clean temporary installers", async t => {
   for(const bad of [{...update,digest:'sha256:'+'0'.repeat(64)}, {...update,size:bytes.length-1}, {...update,url:'https://example.com/setup.exe'}]) {
     const f=await fixture(t); await assert.rejects(f.install(bad),/校验|大小|来源/); assert.equal(f.calls.length,0);

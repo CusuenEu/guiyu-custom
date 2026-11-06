@@ -9,15 +9,29 @@ const path = require("node:path");
 const { createReadStream } = require("node:fs");
 const { execFileSync, spawn } = require("node:child_process");
 const { setTimeout: delay } = require("node:timers/promises");
-const version = require("../version.json");
-
-const previous = "windows-20261103-01";
-const previousVersion = "2026.1103.1";
-const previousDisplay = "20261103(01)";
+const { metadata } = require("../scripts/version.cjs");
+const configuredVersion = require("../version.json");
+const previous = process.env.GUIYU_UPDATE_BASELINE || "windows-20261103-01";
 const arch = process.argv[2];
 const repository = "tiduse1988/guiyu";
-const current = "windows-" + version.assetPrefix.slice("Guiyu-".length);
 const exeName = "Guiyu.exe";
+
+function versionForTag(tag) {
+  const match = /^windows-(\d{8})-(\d{2})$/.exec(tag);
+  assert(match, `Invalid Windows release tag: ${tag}`);
+  return metadata({ date: match[1], sequence: Number(match[2]) });
+}
+
+function targetTag(baseline) {
+  if (process.env.GUIYU_UPDATE_TARGET !== "latest")
+    return "windows-" + configuredVersion.assetPrefix.slice("Guiyu-".length);
+  const { selectUpdate } = require("../src/update.cjs");
+  const releases = JSON.parse(execFileSync("gh", ["api", `repos/${repository}/releases?per_page=100`], { encoding: "utf8" }));
+  const selected = selectUpdate(releases, baseline, arch);
+  assert.equal(selected.status, "available");
+  assert.equal(selected.automatic, true);
+  return new URL(selected.url).pathname.split("/").at(-2);
+}
 
 function powershell(script) {
   const command = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; " + script;
@@ -133,6 +147,11 @@ async function verifyArchitecture(exe) {
 async function run() {
   assert(process.platform === "win32" && process.env.CI === "true" && process.env.RUNNER_TEMP, "Disposable Windows CI only");
   assert(["ia32", "x64"].includes(arch), "Expected ia32 or x64");
+  const baseline = versionForTag(previous);
+  const { packageVersion: previousVersion, display: previousDisplay } = baseline;
+  const current = targetTag(baseline), version = versionForTag(current);
+  const launchSwitches = process.env.GUIYU_UPDATE_HTTP1 === "1" ? ["--disable-http2", "--disable-quic"] : [];
+  if (launchSwitches.length) console.log("Official baseline launched with HTTP/1.1 compatibility switches");
   const { extractFile, uncache } = await import("@electron/asar");
   const temp = await fs.mkdtemp(path.join(process.env.RUNNER_TEMP, `guiyu-public-${arch}-`));
   const installDir = path.join(temp, "归屿 正式安装");
@@ -140,7 +159,7 @@ async function run() {
   const asar = path.join(installDir, "resources", "app.asar");
   let old, client, status, updateDir, helperPid, oldExit, oldError, updateText = "";
   try {
-    const oldName = `Guiyu-20261103-01-Windows-${arch}-setup.exe`;
+    const oldName = `${baseline.assetPrefix}-Windows-${arch}-setup.exe`;
     const oldAsset = releaseAsset(previous, oldName);
     const newAsset = releaseAsset(current, `${version.assetPrefix}-Windows-${arch}-setup.exe`);
     execFileSync("gh", ["release", "download", previous, "--repo", repository, "--pattern", oldName, "--dir", temp],
@@ -160,7 +179,7 @@ async function run() {
     delete env.GH_TOKEN;
     delete env.GITHUB_TOKEN;
     delete env.GUIYU_REVIEW;
-    old = spawn(executable, [`--remote-debugging-port=${port}`, "--remote-debugging-address=127.0.0.1",
+    old = spawn(executable, [...launchSwitches, `--remote-debugging-port=${port}`, "--remote-debugging-address=127.0.0.1",
       `--user-data-dir=${path.join(temp, "browser-profile")}`], {
       cwd: installDir, env, windowsHide: true, stdio: "ignore",
     });
