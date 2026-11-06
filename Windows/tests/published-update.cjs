@@ -144,14 +144,39 @@ async function verifyArchitecture(exe) {
   }
 }
 
+async function verifyDownload(asset, version, temp) {
+  const { createInstallerUpdater, createReleaseDownloadFetch } = require("../src/install-update.cjs");
+  const download = createReleaseDownloadFetch({
+    resolveProxy: async () => "DIRECT",
+    chromiumFetch: () => { throw Error("Expected a direct download on this runner"); },
+  });
+  const app = {
+    isPackaged: true,
+    getPath: name => name === "exe" ? path.join(temp, exeName) : temp,
+    quit() {},
+  };
+  const install = createInstallerUpdater({
+    app, fetch: download,
+    launch: async (_helper, manifestFile) => {
+      const manifest = await readJSON(manifestFile);
+      assert.equal(await sha256(manifest.installer), asset.digest.slice(7));
+      assert.equal((await fs.stat(manifest.installer)).size, asset.size);
+    },
+  });
+  const result = await install({
+    kind: "installer", url: asset.browser_download_url, size: asset.size,
+    digest: asset.digest, packageVersion: version.packageVersion,
+  });
+  assert.equal(result.automatic, true);
+  console.log(`PASS ${arch}: downloaded the complete official ${version.display} installer with the new HTTP/1.1 transport and verified ${asset.size} bytes and SHA256`);
+}
+
 async function run() {
   assert(process.platform === "win32" && process.env.CI === "true" && process.env.RUNNER_TEMP, "Disposable Windows CI only");
   assert(["ia32", "x64"].includes(arch), "Expected ia32 or x64");
   const baseline = versionForTag(previous);
   const { packageVersion: previousVersion, display: previousDisplay } = baseline;
   const current = targetTag(baseline), version = versionForTag(current);
-  const launchSwitches = process.env.GUIYU_UPDATE_HTTP1 === "1" ? ["--disable-http2", "--disable-quic"] : [];
-  if (launchSwitches.length) console.log("Official baseline launched with HTTP/1.1 compatibility switches");
   const { extractFile, uncache } = await import("@electron/asar");
   const temp = await fs.mkdtemp(path.join(process.env.RUNNER_TEMP, `guiyu-public-${arch}-`));
   const installDir = path.join(temp, "归屿 正式安装");
@@ -159,9 +184,13 @@ async function run() {
   const asar = path.join(installDir, "resources", "app.asar");
   let old, client, status, updateDir, helperPid, oldExit, oldError, updateText = "";
   try {
+    const newAsset = releaseAsset(current, `${version.assetPrefix}-Windows-${arch}-setup.exe`);
+    if (process.env.GUIYU_UPDATE_DOWNLOAD_ONLY === "1") {
+      await verifyDownload(newAsset, version, temp);
+      return;
+    }
     const oldName = `${baseline.assetPrefix}-Windows-${arch}-setup.exe`;
     const oldAsset = releaseAsset(previous, oldName);
-    const newAsset = releaseAsset(current, `${version.assetPrefix}-Windows-${arch}-setup.exe`);
     execFileSync("gh", ["release", "download", previous, "--repo", repository, "--pattern", oldName, "--dir", temp],
       { stdio: "inherit", timeout: 240_000 });
     const oldInstaller = path.join(temp, oldName);
@@ -179,7 +208,7 @@ async function run() {
     delete env.GH_TOKEN;
     delete env.GITHUB_TOKEN;
     delete env.GUIYU_REVIEW;
-    old = spawn(executable, [...launchSwitches, `--remote-debugging-port=${port}`, "--remote-debugging-address=127.0.0.1",
+    old = spawn(executable, [`--remote-debugging-port=${port}`, "--remote-debugging-address=127.0.0.1",
       `--user-data-dir=${path.join(temp, "browser-profile")}`], {
       cwd: installDir, env, windowsHide: true, stdio: "ignore",
     });

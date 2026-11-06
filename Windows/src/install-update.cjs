@@ -6,6 +6,29 @@ const { setTimeout: delay } = require("node:timers/promises");
 const downloadAttempts = 3;
 const retryableStatuses = new Set([400, 408, 429, 500, 502, 503, 504]);
 
+// Direct connections use Node's HTTP/1.1 stack. Keep Chromium for routes
+// that need a system proxy, including proxies on a redirected download host.
+function createReleaseDownloadFetch({ chromiumFetch, resolveProxy, directFetch = globalThis.fetch }) {
+  return async function fetchRelease(url, options) {
+    let address = url;
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      const route = await resolveProxy(address).catch(() => "");
+      if (route.trim() !== "DIRECT") return chromiumFetch(url, options);
+      const response = await directFetch(address, { ...options, redirect: "manual" });
+      if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+      const location = response.headers.get("location");
+      await response.body?.cancel().catch(() => {});
+      if (!location) throw Error("更新包下载缺少跳转地址。");
+      const next = new URL(location, address);
+      if (next.protocol !== "https:" || next.username || next.password ||
+          !["github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"].includes(next.hostname))
+        throw Error("更新包下载跳转地址无效。");
+      address = next.href;
+    }
+    throw Error("更新包下载跳转次数过多。");
+  };
+}
+
 async function downloadInstaller(fetch, update, installer, progress) {
   const file = await fs.open(installer, "wx");
   let size = 0, hash = crypto.createHash("sha256"), notified = 0;
@@ -168,4 +191,4 @@ async function launchHelper(helper, manifest, readyFile) {
   const readyText = (await fs.readFile(readyFile, "utf8").catch(() => "未生成就绪记录")).trim();
   throw Error(`更新安装程序准备超时，归屿仍保持运行：${diagnostic || `进程 ${child.pid}，${readyText}`}`);
 }
-module.exports = { createInstallerUpdater };
+module.exports = { createInstallerUpdater, createReleaseDownloadFetch };

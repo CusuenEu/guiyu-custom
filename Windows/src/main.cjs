@@ -7,6 +7,7 @@ const {
   clipboard,
   Menu,
   net,
+  session,
   screen,
 } = require("electron");
 // Keep Chromium's system proxy support while using HTTP/1.1 for release requests.
@@ -37,10 +38,16 @@ const updater = require("./update.cjs").createUpdater({
   openExternal: (url) => shell.openExternal(url),
   current: require("../version.json"),
   arch: process.arch,
-  install: update => require("./install-update.cjs").createInstallerUpdater({
-    app, fetch: (url, options) => net.fetch(url, options),
-    progress: value => win?.webContents.send("guiyu-update-progress", value),
-  })(update),
+  install: update => {
+    const { createInstallerUpdater, createReleaseDownloadFetch } = require("./install-update.cjs");
+    const fetch = createReleaseDownloadFetch({
+      chromiumFetch: (url, options) => net.fetch(url, options),
+      resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+    });
+    return createInstallerUpdater({
+      app, fetch, progress: value => win?.webContents.send("guiyu-update-progress", value),
+    })(update);
+  },
 });
 let store,
   win,

@@ -1,7 +1,7 @@
 "use strict";
 const { test } = require("node:test"), assert = require("node:assert/strict");
 const fs = require("node:fs/promises"), path = require("node:path"), os = require("node:os"), crypto = require("node:crypto");
-const { createInstallerUpdater } = require("../src/install-update.cjs"), { createUpdater } = require("../src/update.cjs");
+const { createInstallerUpdater, createReleaseDownloadFetch } = require("../src/install-update.cjs"), { createUpdater } = require("../src/update.cjs");
 const bytes = Buffer.from("verified installer test fixture");
 const update = { kind:"installer", url:"https://github.com/tiduse1988/guiyu/releases/download/windows-20261102-06/Guiyu-20261102-06-Windows-x64-setup.exe",
   digest:"sha256:" + crypto.createHash("sha256").update(bytes).digest("hex"), size:bytes.length, packageVersion:"2026.1102.6" };
@@ -77,6 +77,26 @@ test("an ignored range restarts cleanly and an inconsistent partial response nev
       assert.deepEqual((await fs.readdir(f.dir)).filter(name => name.startsWith("Guiyu-update-")), []);
     }
     assert.equal(requests, 2);
+  }
+});
+test("direct installer redirects keep Range and a proxy on either hop uses Chromium", async () => {
+  const cdn = "https://release-assets.githubusercontent.com/verified-package";
+  const options = { headers: { Range: "bytes=9-" } };
+  for (const proxyAt of [null, update.url, cdn]) {
+    const direct = [], chromium = [];
+    const download = createReleaseDownloadFetch({
+      resolveProxy: async url => url === proxyAt ? "PROXY gateway:8080" : "DIRECT",
+      chromiumFetch: async (url, request) => { chromium.push([url, request]); return new Response(bytes); },
+      directFetch: async (url, request) => {
+        direct.push([url, request.headers.Range, request.redirect]);
+        return url === update.url ? Response.redirect(cdn) : new Response(bytes);
+      },
+    });
+    const response = await download(update.url, options);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+    assert.deepEqual(chromium, proxyAt ? [[update.url, options]] : []);
+    const expectedDirect = proxyAt === update.url ? [] : proxyAt === cdn ? [update.url] : [update.url, cdn];
+    assert.deepEqual(direct, expectedDirect.map(url => [url, "bytes=9-", "manual"]));
   }
 });
 test("bad hash, size, source and download failure keep the old app running and clean temporary installers", async t => {

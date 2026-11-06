@@ -83,7 +83,7 @@ jobs:
           const r=require('/tmp/build-run.json'),jobs=require('/tmp/build-jobs.json').flatMap(p=>p.jobs);
           const results=jobs.map(j=>'- '+j.name+': '+j.conclusion+(j.steps||[]).filter(s=>s.conclusion==='failure'||s.conclusion==='skipped').map(s=>'\n  - '+s.name+': '+s.conclusion).join('')).join('\n');
           const status='该提交 Windows 完整 CI 已通过。';
-          fs.writeFileSync('release-notes.md',fs.readFileSync('Windows/RELEASE-NOTES.md','utf8')+'\n## 本次构建验证\n\n'+status+'\n\n'+results+'\n\n构建记录：'+r.html_url+'\n源码：'+r.head_sha+'\n\n正式旧版客户端在线升级验证：https://github.com/'+process.env.GH_REPO+'/actions/runs/'+process.env.GITHUB_RUN_ID+'\n');
+          fs.writeFileSync('release-notes.md',fs.readFileSync('Windows/RELEASE-NOTES.md','utf8')+'\n## 本次构建验证\n\n'+status+'\n\n'+results+'\n\n构建记录：'+r.html_url+'\n源码：'+r.head_sha+'\n\n官方安装包在线下载验证：https://github.com/'+process.env.GH_REPO+'/actions/runs/'+process.env.GITHUB_RUN_ID+'\n');
           fs.appendFileSync(process.env.GITHUB_ENV,'RELEASE_TAG=windows-20261106-03\nRELEASE_TITLE=归屿 '+v.display+' Windows\n');
           JS
           cd release-assets
@@ -124,9 +124,9 @@ jobs:
           cache-dependency-path: Windows/package-lock.json
       - run: npm ci --omit=optional --ignore-scripts
         working-directory: Windows
-      - name: Update the official old client through its settings window
+      - name: Verify the complete installer with the new downloader
         env:
           GH_TOKEN: ${{ github.token }}
           GUIYU_UPDATE_BASELINE: windows-20261106-02
-          GUIYU_UPDATE_HTTP1: '1'
+          GUIYU_UPDATE_DOWNLOAD_ONLY: '1'
         run: node Windows/tests/published-update.cjs ${{ matrix.arch }}

@@ -23,10 +23,10 @@ jobs:
           cache-dependency-path: Windows/package-lock.json
       - run: npm ci --omit=optional --ignore-scripts
         working-directory: Windows
-      - name: Update the official old client through its settings window
+      - name: Verify the complete installer with the new downloader
         env:
           GH_TOKEN: ${{ github.token }}
           GUIYU_UPDATE_BASELINE: windows-20261102-08
           GUIYU_UPDATE_TARGET: latest
-          GUIYU_UPDATE_HTTP1: '1'
+          GUIYU_UPDATE_DOWNLOAD_ONLY: '1'
         run: node Windows/tests/published-update.cjs ${{ matrix.arch }}
