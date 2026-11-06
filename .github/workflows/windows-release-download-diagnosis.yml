@@ -1,0 +1,25 @@
+name: Windows release download diagnosis
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/windows-release-download-diagnosis.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Windows/package-lock.json
+      - run: npm ci --omit=optional --ignore-scripts
+        working-directory: Windows
+      - name: Compare the official download using the shipped Electron runtime and Node
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/windows-release-download-diagnosis.cjs
