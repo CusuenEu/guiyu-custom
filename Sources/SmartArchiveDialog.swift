@@ -52,7 +52,7 @@ struct QuickArchiveDialog: View {
                             let matches = matchedChoices
                             if !matches.isEmpty {
                                 Text("匹配项目").font(.system(size:12,weight:.semibold)).padding(.bottom,2)
-                                ForEach(matches) { choice in projectButton(choice.project,evidence:choice.evidence) }
+                                ForEach(matches) { choice in projectButton(choice.project,evidence:choice.evidence,matchingRanges:choice.matchingRanges) }
                             } else {
                                 listMessage(status.isEmpty ? "未找到匹配项目，可输入项目名搜索" : status)
                             }
@@ -76,12 +76,21 @@ struct QuickArchiveDialog: View {
     private func listMessage(_ message: String) -> some View {
         Text(message).font(.system(size:13)).foregroundStyle(WorkspaceTheme.secondary).frame(maxWidth:.infinity).padding(.vertical,24)
     }
-    func projectButton(_ project: Project, evidence: String?) -> some View {
+    private func projectTitle(_ name: String, matchingRanges: [Range<String.Index>]) -> Text {
+        var title = AttributedString(name)
+        for range in matchingRanges {
+            guard let start = AttributedString.Index(range.lowerBound,within:title),
+                  let end = AttributedString.Index(range.upperBound,within:title) else { continue }
+            title[start..<end].backgroundColor = Color(red:0.98,green:0.81,blue:0.81)
+        }
+        return Text(title)
+    }
+    func projectButton(_ project: Project, evidence: String?, matchingRanges: [Range<String.Index>] = []) -> some View {
         Button { selected = project.path } label: {
             HStack(spacing:12) {
                 Image(nsImage:WorkspaceTheme.folder).resizable().frame(width:26,height:25)
                 VStack(alignment:.leading,spacing:5) {
-                    Text(project.name).font(.system(size:13,weight:selected == project.path ? .semibold : .regular)).lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal:false,vertical:true)
+                    projectTitle(project.name,matchingRanges:matchingRanges).font(.system(size:13,weight:selected == project.path ? .semibold : .regular)).lineLimit(2).multilineTextAlignment(.leading).fixedSize(horizontal:false,vertical:true)
                     if let group = project.group, !group.isEmpty { Text(group).font(.system(size:11)).foregroundStyle(WorkspaceTheme.secondary) }
                 }
                 Spacer(minLength:8)

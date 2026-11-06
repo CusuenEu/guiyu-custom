@@ -19,7 +19,7 @@ import AppKit
     defer { store.scanCancellation?.cancel() }
     store.settings.root = workspace.path
     let destination = Project(path:project.path,name:project.lastPathComponent,group:"CD类项目")
-    store.settings.projects = [destination] + ["已解决的 cd 类","青秀 2046","惠水加油站"].map { name in
+    store.settings.projects = [destination] + ["已解决的 cd 类","青秀 2046","惠水加油站","6月 地震大数据贵州中心非通用办公设备、资产采购","4 2025省工业和信息化厅云上统筹云安全保障服务","4月 贵州省民宗委2026年贵州省政务信息化运维项目比选文件（本地安全设备）"].map { name in
         Project(path:workspace.appendingPathComponent("CD类项目/"+name).path,name:name,group:"CD类项目")
     }
     let out = URL(fileURLWithPath:fm.currentDirectoryPath).appendingPathComponent(".impeccable/review/smart-dialogs")

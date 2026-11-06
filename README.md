@@ -35,7 +35,7 @@
 
 | 系统 | 已发布版本 | 安装包 |
 | --- | --- | --- |
-| macOS 13+ · Apple Silicon（M 系列） | 20261106(01) | [下载 DMG](https://github.com/tiduse1988/guiyu/releases/download/v20261106-01/Guiyu-20261106-01-macOS-arm64.dmg) |
+| macOS 13+ · Apple Silicon（M 系列） | 20261106(02) | [下载 DMG](https://github.com/tiduse1988/guiyu/releases/download/v20261106-02/Guiyu-20261106-02-macOS-arm64.dmg) |
 | Windows 10 / 11 · 64 位 | 20261103(01) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261103-01/Guiyu-20261103-01-Windows-x64-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261103-01/Guiyu-20261103-01-Windows-x64.zip) |
 | Windows 10 · 32 位 | 20261103(01) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261103-01/Guiyu-20261103-01-Windows-ia32-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261103-01/Guiyu-20261103-01-Windows-ia32.zip) |
 

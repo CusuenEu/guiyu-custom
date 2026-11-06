@@ -4,8 +4,6 @@ import Foundation
 struct ArchiveProjectIndex {
     private struct Entry {
         let project: Project
-        let characters: [Character]
-        let counts: [Character:Int]
         let searchName: String
         let searchGrams: Set<String>
         let keywords: [String]
@@ -15,26 +13,56 @@ struct ArchiveProjectIndex {
     private let frequency: [String:Int]
     private static let generic: Set<String> = ["建设","采购","项目","文件","公司","服务","技术","方案","响应","中国","贵州","要求","系统","信息","有限","集团","招标","投标","说明","附件","资料","20","2026","xx","rfp","rfq","input","document","scan"]
 
-    private static func characters(_ name: String) -> [Character] {
-        FilenameQuery.normalize(name).filter { $0.isLetter || $0.isNumber }.map { $0 }
+    private static func characters(_ name: String) -> [String?] {
+        name.map { character in
+            guard character.isLetter || character.isNumber else { return nil }
+            return FilenameQuery.normalize(String(character))
+        }
     }
 
-    private static func counts(_ characters: [Character]) -> [Character:Int] {
-        characters.reduce(into:[:]) { $0[$1,default:0] += 1 }
-    }
-
-    // Longest common subsequence. Spaces, punctuation and gaps do not break the order.
-    private static func orderedCount(_ filename: [Character], _ project: [Character]) -> Int {
-        var lengths = Array(repeating:0,count:project.count+1)
-        for character in filename {
-            var diagonal = 0
-            for (index,other) in project.enumerated() {
-                let previous = lengths[index+1]
-                lengths[index+1] = character == other ? diagonal+1 : max(lengths[index],previous)
-                diagonal = previous
+    private static func matchingRanges(in name: String, covered: [Bool]) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        for (index,matched) in zip(name.indices,covered) where matched {
+            let end = name.index(after:index)
+            if let last = ranges.last, last.upperBound == index {
+                ranges[ranges.count-1] = last.lowerBound..<end
+            } else {
+                ranges.append(index..<end)
             }
         }
-        return lengths[project.count]
+        return ranges
+    }
+
+    // Track continuous runs ending at each project character. Walking backwards
+    // then marks their union, so overlapping runs never count a position twice.
+    private static func continuousMatch(_ filename: [String?], _ project: [String?]) -> (longest: Int, count: Int, covered: [Bool])? {
+        guard filename.count >= 2, project.count >= 2 else { return nil }
+        var suffixes = Array(repeating:0,count:project.count+1)
+        var projectEnds = Array(repeating:0,count:project.count)
+        var filenameEnds = Array(repeating:0,count:filename.count)
+        for (fileIndex,character) in filename.enumerated() {
+            for index in project.indices.reversed() {
+                let length = character != nil && character == project[index] ? suffixes[index]+1 : 0
+                suffixes[index+1] = length
+                projectEnds[index] = max(projectEnds[index],length)
+                filenameEnds[fileIndex] = max(filenameEnds[fileIndex],length)
+            }
+        }
+        guard let longest = projectEnds.max(), longest >= 2 else { return nil }
+        let covered = coveredPositions(projectEnds)
+        let count = min(covered.filter { $0 }.count,coveredPositions(filenameEnds).filter { $0 }.count)
+        return (longest,count,covered)
+    }
+
+    private static func coveredPositions(_ longestEndingAt: [Int]) -> [Bool] {
+        var covered = Array(repeating:false,count:longestEndingAt.count)
+        var leftmost = longestEndingAt.count
+        for index in longestEndingAt.indices.reversed() {
+            let length = longestEndingAt[index]
+            if length >= 2 { leftmost = min(leftmost,index+1-length) }
+            covered[index] = index >= leftmost
+        }
+        return covered
     }
 
     private static func usable(_ text: String) -> Bool {
@@ -50,13 +78,12 @@ struct ArchiveProjectIndex {
     init(projects: [Project]) {
         var frequency: [String:Int] = [:]
         entries = projects.filter { $0.shallow != true }.map { project in
-            let characters = Self.characters(project.name)
             let stem = archiveProjectStem(project.name)
             let searchName = Self.usable(stem) ? stem : ""
             let grams = Self.grams(searchName)
             for gram in grams { frequency[gram,default:0] += 1 }
             let keywords = project.keywords.components(separatedBy:CharacterSet(charactersIn:",，;；\n")).map(archiveNormal).filter(Self.usable)
-            return Entry(project:project,characters:characters,counts:Self.counts(characters),searchName:searchName,searchGrams:grams,keywords:keywords)
+            return Entry(project:project,searchName:searchName,searchGrams:grams,keywords:keywords)
         }
         self.frequency = frequency
     }
@@ -64,29 +91,31 @@ struct ArchiveProjectIndex {
     func recommendations(for rows: [BrowserRow], token: IndexCancellation) -> [ProjectArchiveChoice] {
         let filenames = rows.map { row in
             let stem = row.folder ? row.title : URL(fileURLWithPath:row.title).deletingPathExtension().lastPathComponent
-            let characters = Self.characters(stem)
-            return (characters:characters,counts:Self.counts(characters))
+            return Self.characters(stem)
         }
-        var matches: [(choice: ProjectArchiveChoice, ordered: Int)] = []
+        var matches: [(choice: ProjectArchiveChoice, longest: Int)] = []
         for entry in entries {
             guard !token.isCancelled else { return [] }
-            var shared = 0
-            var ordered = 0
+            let project = Self.characters(entry.project.name)
+            var longest = 0
+            var total = 0
+            var highlighted = Array(repeating:false,count:project.count)
             for filename in filenames {
-                let count = filename.counts.reduce(0) { sum, pair in
-                    sum + min(pair.value,entry.counts[pair.key,default:0])
+                guard let match = Self.continuousMatch(filename,project) else { continue }
+                longest = max(longest,match.longest)
+                total += match.count
+                for index in match.covered.indices where match.covered[index] {
+                    highlighted[index] = true
                 }
-                guard count > 0 else { continue }
-                shared += count
-                ordered += Self.orderedCount(filename.characters,entry.characters)
             }
-            guard shared > 0 else { continue }
-            let evidence = rows.count == 1 ? "与项目名有 \(shared) 个相同字符，其中 \(ordered) 个顺序相同" : "所选名称合计匹配 \(shared) 个字符，其中 \(ordered) 个顺序相同"
-            matches.append((ProjectArchiveChoice(project:entry.project,score:shared,evidence:evidence),ordered))
+            guard longest >= 2 else { continue }
+            let evidence = "最长连续匹配 \(longest) 个字符，累计匹配 \(total) 个字符"
+            let ranges = Self.matchingRanges(in:entry.project.name,covered:highlighted)
+            matches.append((ProjectArchiveChoice(project:entry.project,score:total,evidence:evidence,matchingRanges:ranges),longest))
         }
         return matches.sorted {
+            if $0.longest != $1.longest { return $0.longest > $1.longest }
             if $0.choice.score != $1.choice.score { return $0.choice.score > $1.choice.score }
-            if $0.ordered != $1.ordered { return $0.ordered > $1.ordered }
             return $0.choice.project.name.localizedStandardCompare($1.choice.project.name) == .orderedAscending
         }.map(\.choice)
     }

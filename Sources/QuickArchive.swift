@@ -6,6 +6,7 @@ struct QuickArchiveRequest: Identifiable {
 }
 struct ProjectArchiveChoice: Identifiable {
     var id: String { project.path }; let project: Project; let score: Int; let evidence: String
+    let matchingRanges: [Range<String.Index>]
 }
 func archiveProjectAccepts(_ project: Project, request: QuickArchiveRequest) -> Bool {
     let destination = canonicalPath(project.path)
