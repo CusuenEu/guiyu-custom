@@ -7,7 +7,7 @@ import AppKit
     let root = fm.temporaryDirectory.appendingPathComponent("guiyu-smart-dialogs-"+UUID().uuidString)
     try fm.createDirectory(at:root,withIntermediateDirectories:true)
     defer { try? fm.removeItem(at:root) }
-    let workspace = root.appendingPathComponent("Workspace"), project = workspace.appendingPathComponent("2026/10月 民政厅机关网络运维及网络安全运维项目")
+    let workspace = root.appendingPathComponent("Workspace"), project = workspace.appendingPathComponent("CD类项目/53-2023年至2025年（24个月）黔南独山县机关事务服务中心无纸化办公系统项目")
     let inbox = root.appendingPathComponent("Inbox")
     for dir in [project,inbox] { try fm.createDirectory(at:dir,withIntermediateDirectories:true) }
     let file = inbox.appendingPathComponent("民政厅机关网络运维服务方案.txt")
@@ -18,8 +18,10 @@ import AppKit
     namingRules.folder = .month;store.settings.namingRules = namingRules
     defer { store.scanCancellation?.cancel() }
     store.settings.root = workspace.path
-    let destination = Project(path:project.path,name:project.lastPathComponent,group:"2026")
-    store.settings.projects = [destination,Project(path:workspace.appendingPathComponent("CD类项目/惠水加油站").path,name:"惠水加油站",group:"CD类项目")]
+    let destination = Project(path:project.path,name:project.lastPathComponent,group:"CD类项目")
+    store.settings.projects = [destination] + ["已解决的 cd 类","青秀 2046","惠水加油站"].map { name in
+        Project(path:workspace.appendingPathComponent("CD类项目/"+name).path,name:name,group:"CD类项目")
+    }
     let out = URL(fileURLWithPath:fm.currentDirectoryPath).appendingPathComponent(".impeccable/review/smart-dialogs")
     try fm.createDirectory(at:out,withIntermediateDirectories:true)
     func check(_ condition:Bool,_ message:String) throws { try verify(condition,message) }
@@ -157,8 +159,8 @@ import AppKit
     plainFolderWindow.orderOut(nil); plainFolderWindow.contentView = nil
 
     // A source with a matching filename is never selected or moved automatically.
-    let archiveFile = inbox.appendingPathComponent("民政厅机关网络运维及网络安全运维项目.txt")
-    try "归档验收资料".write(to:archiveFile,atomically:true,encoding:.utf8)
+    let archiveFile = inbox.appendingPathComponent("法律意见书暨仲裁预案-无纸化办公.txt")
+    try "项目名称：惠水加油站".write(to:archiveFile,atomically:true,encoding:.utf8)
     let request = QuickArchiveRequest(rows:[browserEntry(archiveFile.path)!])
     var archivedClosed = false
     let archive = mount(QuickArchiveDialog(store:store,request:request,onClose:{archivedClosed=true}),height:620)
@@ -175,6 +177,12 @@ import AppKit
     try capture(archive,"smart-archive-empty.png")
     edit(search,"")
     archive.orderOut(nil); archive.contentView = nil
+    let unknownArchiveFile = inbox.appendingPathComponent("甲乙丙.txt")
+    try "项目名称：惠水加油站".write(to:unknownArchiveFile,atomically:true,encoding:.utf8)
+    let unknownArchive = mount(QuickArchiveDialog(store:store,request:QuickArchiveRequest(rows:[browserEntry(unknownArchiveFile.path)!])),height:620)
+    settle(0.6)
+    try capture(unknownArchive,"smart-archive-no-filename-match.png")
+    unknownArchive.orderOut(nil); unknownArchive.contentView = nil
     let selectedArchive = mount(QuickArchiveDialog(store:store,request:request,selected:destination.path,onClose:{archivedClosed=true}),height:620)
     settle(0.6)
     try capture(selectedArchive,"smart-archive-selected.png")

@@ -17,23 +17,16 @@ struct QuickArchiveDialog: View {
     var onClose: (() -> Void)? = nil
     private func close() { token.cancel(); if let onClose { onClose() } else { dismiss() } }
     var searching: Bool { !query.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty }
-    var projects: [Project] {
-        let values = searching ? searchIndex?.search(query) ?? [] : store.settings.projects
-        let filtered = values.filter { archiveProjectAccepts($0,request:request) }
-        if searching { return filtered }
-        return filtered.sorted { ($0.group ?? "") == ($1.group ?? "") ? $0.name.localizedStandardCompare($1.name) == .orderedDescending : ($0.group ?? "") > ($1.group ?? "") }
+    var searchResults: [Project] {
+        (searchIndex?.search(query) ?? []).filter { archiveProjectAccepts($0,request:request) }
     }
     var destination: Project? {
         guard let project = store.settings.projects.first(where: { $0.path == selected && $0.shallow != true }),
               archiveProjectAccepts(project,request:request),
-              !searching || projects.contains(where: { $0.path == project.path }) else { return nil }
+              (searching ? searchResults.contains { $0.path == project.path } : choices.contains { $0.id == project.path }) else { return nil }
         return project
     }
-    var matchedChoices: [ProjectArchiveChoice] { Array(choices.filter { archiveProjectAccepts($0.project,request:request) }.prefix(5)) }
-    var otherProjects: [Project] {
-        let matched = Set(matchedChoices.map(\.id))
-        return searching ? projects : projects.filter { !matched.contains($0.path) }
-    }
+    var matchedChoices: [ProjectArchiveChoice] { choices.filter { archiveProjectAccepts($0.project,request:request) } }
     var body: some View {
         VStack(spacing:0) {
             SmartDialogHeader(title:"智能归档",symbol:"tray.and.arrow.down",prominentIcon:true)
@@ -47,20 +40,22 @@ struct QuickArchiveDialog: View {
                 }.padding(.horizontal,12).frame(height:36).background(.white,in:RoundedRectangle(cornerRadius:8))
                     .overlay(RoundedRectangle(cornerRadius:8).stroke(fieldFocused ? accent : WorkspaceTheme.line,lineWidth:fieldFocused ? 2 : 1))
                 ScrollView {
-                    VStack(alignment:.leading,spacing:8) {
-                        if !searching {
-                            if loading { HStack(spacing:8) { ProgressView().controlSize(.small); Text("正在匹配项目…").font(.system(size:12)).foregroundStyle(WorkspaceTheme.secondary) }.padding(.bottom,6) }
-                            if !matchedChoices.isEmpty {
+                    LazyVStack(alignment:.leading,spacing:8) {
+                        if searching {
+                            let results = searchResults
+                            Text("搜索结果").font(.system(size:12,weight:.semibold)).padding(.bottom,2)
+                            ForEach(results) { project in projectButton(project,evidence:nil) }
+                            if results.isEmpty { listMessage("没有匹配的项目") }
+                        } else if loading {
+                            HStack(spacing:8) { ProgressView().controlSize(.small); Text("正在匹配项目…").font(.system(size:12)).foregroundStyle(WorkspaceTheme.secondary) }
+                        } else {
+                            let matches = matchedChoices
+                            if !matches.isEmpty {
                                 Text("匹配项目").font(.system(size:12,weight:.semibold)).padding(.bottom,2)
-                                ForEach(matchedChoices) { choice in projectButton(choice.project,evidence:choice.evidence) }
-                            } else if !loading {
-                                Text(status.hasPrefix("项目列表暂不可用") ? status : "未找到匹配项目").font(.system(size:12)).foregroundStyle(WorkspaceTheme.secondary).padding(.bottom,6)
+                                ForEach(matches) { choice in projectButton(choice.project,evidence:choice.evidence) }
+                            } else {
+                                listMessage(status.isEmpty ? "未找到匹配项目，可输入项目名搜索" : status)
                             }
-                        }
-                        Text(searching ? "搜索结果" : matchedChoices.isEmpty ? "全部项目" : "其他项目").font(.system(size:12,weight:.semibold)).padding(.top,(!searching && !matchedChoices.isEmpty) ? 14 : 0).padding(.bottom,2)
-                        VStack(spacing:3) { ForEach(otherProjects) { project in projectButton(project,evidence:nil) } }
-                        if otherProjects.isEmpty && (searching || matchedChoices.isEmpty) {
-                            Text(searching ? "没有匹配的项目" : "请先在设置中关联项目总目录").font(.system(size:13)).foregroundStyle(WorkspaceTheme.secondary).frame(maxWidth:.infinity).padding(.vertical,24)
                         }
                     }
                 }.frame(maxWidth:.infinity,maxHeight:.infinity)
@@ -75,8 +70,11 @@ struct QuickArchiveDialog: View {
         }.frame(width:700,height:620).background(WorkspaceTheme.canvas).foregroundStyle(WorkspaceTheme.ink).tint(accent)
         .onAppear {
             searchIndex = ArchiveProjectIndex(projects:store.settings.projects)
-            store.suggestArchiveProjects(request,token:token) { values,done,message in choices = values; loading = !done; status = message }
+            store.suggestArchiveProjects(request,token:token) { values,message in choices = values; loading = false; status = message }
         }.onChange(of:query) { _ in selected = nil }.onChange(of:store.settings.projects) { values in searchIndex = ArchiveProjectIndex(projects:values) }.onDisappear { token.cancel() }
+    }
+    private func listMessage(_ message: String) -> some View {
+        Text(message).font(.system(size:13)).foregroundStyle(WorkspaceTheme.secondary).frame(maxWidth:.infinity).padding(.vertical,24)
     }
     func projectButton(_ project: Project, evidence: String?) -> some View {
         Button { selected = project.path } label: {

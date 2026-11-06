@@ -354,7 +354,7 @@ struct Preview: NSViewRepresentable {
     try categoryWorkflowTest(root:root)
     try batchOperationsTest(root:root)
     try quickArchiveTest(root:root)
-    try archiveMatchingTest(root:root)
+    try archiveMatchingTest()
     try finderServicesTest(root:root)
     try filenameSearchTest(root:root)
     try lightweightTest(root:root)
