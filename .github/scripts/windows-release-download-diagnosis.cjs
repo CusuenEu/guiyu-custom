@@ -37,6 +37,7 @@ async function checks(fetch, urls, transport) {
     ["new canonical first hop", urls.new, { redirect: "manual" }],
     ["new canonical download", urls.new],
     ["new unique-query download", urls.new + "?guiyu_probe=" + Date.now()],
+    ["new canonical with Node user agent", urls.new, { headers: { "User-Agent": "node" } }],
     ["previous canonical download", urls.old],
     ["new asset API download", urls.api, { headers: { Accept: "application/octet-stream" } }],
   ]) await probe(fetch, transport + " " + label, address, options);
@@ -57,15 +58,17 @@ async function run() {
     const archive = "Guiyu-20261103-01-Windows-x64.zip";
     execFileSync("gh", ["release", "download", baseline, "--repo", repository, "--pattern", archive, "--dir", temp],
       { stdio: "inherit", timeout: 180000 });
-    execFileSync("tar.exe", ["-xf", path.join(temp, archive), "-C", temp]);
+    const extract = `$ErrorActionPreference='Stop'; Expand-Archive -LiteralPath '${path.join(temp, archive)}' -DestinationPath '${temp}'`;
+    execFileSync("pwsh", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(extract, "utf16le").toString("base64")]);
     const runtime = path.join(temp, "Guiyu-win32-x64");
     const shim = path.join(temp, "shim");
     await fs.mkdir(shim);
     await fs.writeFile(path.join(shim, "package.json"), JSON.stringify({ name: "guiyu-download-diagnosis", version: "1.0.0", main: "probe.cjs" }));
     await fs.writeFile(path.join(shim, "probe.cjs"), [
-      "const {app,net}=require('electron');",
+      "const {app,net,session}=require('electron');",
       probe.toString(), checks.toString(),
-      "app.whenReady().then(()=>checks((url,options)=>net.fetch(url,options)," + JSON.stringify(urls) + ",'Electron')).then(()=>setImmediate(()=>app.quit())).catch(e=>{console.error(e);app.exit(1);});",
+      "const urls=" + JSON.stringify(urls) + ";",
+      "app.whenReady().then(async()=>{console.log('Electron default route:',(await session.defaultSession.resolveProxy(urls.new)).split(' ')[0]);await checks((url,options)=>net.fetch(url,options),urls,'Electron');}).then(()=>setImmediate(()=>app.quit())).catch(e=>{console.error(e);app.exit(1);});",
     ].join("\n"));
     const appAsar = path.join(runtime, "resources", "app.asar");
     await fs.rename(appAsar, appAsar + ".original");

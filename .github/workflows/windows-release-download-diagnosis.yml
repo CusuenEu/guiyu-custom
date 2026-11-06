@@ -2,7 +2,7 @@ name: Windows release download diagnosis
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/windows-release-download-diagnosis.yml']
+    paths: ['.github/workflows/windows-release-download-diagnosis.yml', '.github/scripts/windows-release-download-diagnosis.cjs']
   workflow_dispatch:
 permissions:
   contents: read
