@@ -36,10 +36,10 @@
 | 系统 | 已发布版本 | 安装包 |
 | --- | --- | --- |
 | macOS 13+ · Apple Silicon（M 系列） | 20261106(02) | [下载 DMG](https://github.com/tiduse1988/guiyu/releases/download/v20261106-02/Guiyu-20261106-02-macOS-arm64.dmg) |
-| Windows 10 / 11 · 64 位 | 20261103(01) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261103-01/Guiyu-20261103-01-Windows-x64-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261103-01/Guiyu-20261103-01-Windows-x64.zip) |
-| Windows 10 · 32 位 | 20261103(01) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261103-01/Guiyu-20261103-01-Windows-ia32-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261103-01/Guiyu-20261103-01-Windows-ia32.zip) |
+| Windows 10 / 11 · 64 位 | 20261106(01) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-01/Guiyu-20261106-01-Windows-x64-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-01/Guiyu-20261106-01-Windows-x64.zip) |
+| Windows 10 · 32 位 | 20261106(01) | [安装版 EXE](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-01/Guiyu-20261106-01-Windows-ia32-setup.exe) · [便携版 ZIP](https://github.com/tiduse1988/guiyu/releases/download/windows-20261106-01/Guiyu-20261106-01-Windows-ia32.zip) |
 
-Windows 20261103(01) 新增与资源管理器互通的右键复制／粘贴和 Ctrl+C／Ctrl+V，按三栏当前位置粘贴，副本置顶选中；分类配置保存后立即按最新规则分组。保留 45 类文件图标和自动安装重启。07／08 可点击“更新并重启”升级；04／06 请先手动安装一次新版。[发行说明、全部安装包与校验文件](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261103-01) · [历史版本](https://github.com/tiduse1988/guiyu/releases)。
+Windows 20261106(01) 的智能归档按文件名和项目名的连续片段推荐并高亮。已安装 20261103(01) 可在设置中检查更新，点击“更新并重启”。[发行说明、全部安装包与校验文件](https://github.com/tiduse1988/guiyu/releases/tag/windows-20261106-01) · [历史版本](https://github.com/tiduse1988/guiyu/releases)。
 
 Mac 打开 DMG 后拖入“应用程序”；Windows 双击安装包。ZIP 解压版及历史版本见[全部发行版本](https://github.com/tiduse1988/guiyu/releases)。
 

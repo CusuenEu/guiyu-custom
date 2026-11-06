@@ -1,0 +1,44 @@
+name: Record Windows archive upgrade verification
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/windows-archive-upgrade-proof.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  document:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERIFY_RUN: '42181647358'
+      SOURCE_SHA: 'b2feecfcc88a519fc3edfcb05eac27490ec61a52'
+      TAG: windows-20261106-01
+    steps:
+      - name: Verify both public-client upgrade jobs and link their results
+        run: |
+          gh api "repos/$GH_REPO/actions/runs/$VERIFY_RUN" > /tmp/guiyu-proof-run.json
+          gh api "repos/$GH_REPO/actions/runs/$VERIFY_RUN/jobs" > /tmp/guiyu-proof-jobs.json
+          gh api "repos/$GH_REPO/releases/tags/$TAG" > /tmp/guiyu-proof-release.json
+          node - <<'JS'
+          const fs = require('node:fs');
+          const run = require('/tmp/guiyu-proof-run.json');
+          const { jobs } = require('/tmp/guiyu-proof-jobs.json');
+          const release = require('/tmp/guiyu-proof-release.json');
+          if (run.path !== '.github/workflows/windows-published-update-verification.yml' ||
+              run.head_branch !== 'main' || run.head_repository.full_name !== process.env.GH_REPO ||
+              run.conclusion !== 'success') throw Error('Expected successful public-update verification');
+          for (const arch of ['ia32', 'x64']) {
+            if (!jobs.some(job => job.name === 'verify (' + arch + ')' && job.conclusion === 'success' &&
+                job.steps.some(step => step.name === 'Update the official old client through its settings window' && step.conclusion === 'success')))
+              throw Error('Missing verified public update: ' + arch);
+          }
+          if (release.draft || release.prerelease || release.target_commitish !== process.env.SOURCE_SHA)
+            throw Error('Unexpected Windows release');
+          const result = '正式旧版 20261103(01) 在 Windows Server 2022 上通过内置更新发现、实际下载、校验、静默安装并重启到 20261106(01)。ia32 和 x64 均通过。';
+          const body = release.body.split('\n正式旧版客户端在线升级验证：')[0].trimEnd();
+          fs.writeFileSync('/tmp/guiyu-proof-notes.md', body + '\n\n## 正式旧版客户端在线升级\n\n' + result + '\n\n验证记录：' + run.html_url + '\n');
+          JS
+          gh release edit "$TAG" --notes-file /tmp/guiyu-proof-notes.md
