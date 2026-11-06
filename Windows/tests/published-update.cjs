@@ -20,8 +20,9 @@ const current = "windows-" + version.assetPrefix.slice("Guiyu-".length);
 const exeName = "Guiyu.exe";
 
 function powershell(script) {
+  const command = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; " + script;
   return execFileSync("powershell.exe", [
-    "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64"),
+    "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(command, "utf16le").toString("base64"),
   ], { encoding: "utf8", timeout: 120_000, windowsHide: true }).trim();
 }
 
