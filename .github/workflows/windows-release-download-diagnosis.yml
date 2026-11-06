@@ -2,7 +2,7 @@ name: Windows release download diagnosis
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/windows-release-download-diagnosis.yml', '.github/scripts/windows-release-download-diagnosis.cjs']
+    paths: ['.github/workflows/windows-release-download-diagnosis.yml', '.github/scripts/windows-release-download-diagnosis.cjs', '.github/scripts/windows-update-wire-log.cjs']
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,3 +23,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/windows-release-download-diagnosis.cjs
+  verify-client:
+    runs-on: windows-2022
+    timeout-minutes: 22
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ia32, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Windows/package-lock.json
+      - run: npm ci --omit=optional --ignore-scripts
+        working-directory: Windows
+      - name: Observe the official client's own network requests during upgrade
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/windows-update-wire-log.cjs ${{ matrix.arch }}
