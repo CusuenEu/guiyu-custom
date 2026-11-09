@@ -6,6 +6,7 @@ struct QuickArchiveRequest: Identifiable {
 }
 struct ProjectArchiveChoice: Identifiable {
     var id: String { project.path }; let project: Project; let score: Int; let evidence: String
+    let matchingRanges: [Range<String.Index>]
 }
 func archiveProjectAccepts(_ project: Project, request: QuickArchiveRequest) -> Bool {
     let destination = canonicalPath(project.path)
@@ -22,34 +23,28 @@ func archiveProjectStem(_ name: String) -> String {
     for word in ["股份有限公司","有限责任公司","有限公司","投标响应文件","招标文件","投标文件","采购文件","解决方案","服务项目","建设项目","项目","方案"] { text = text.replacingOccurrences(of:word,with:"") }
     return archiveNormal(text)
 }
-func projectArchiveChoices(input: String, projects: [Project], references: [FileItem]) -> [ProjectArchiveChoice] {
-    ArchiveProjectIndex(projects:projects,references:references,includeCachedText:true).choices(input:input,origin:"文件")
-}
 @MainActor extension Store {
-    func suggestArchiveProjects(_ request: QuickArchiveRequest, token: IndexCancellation, update: @escaping ([ProjectArchiveChoice],Bool,String) -> Void) {
-        let workspaceID = settings.workspaceIdentity, roots = settings.activeProjectRoots, saved = settings.projects, known = files
+    func suggestArchiveProjects(_ request: QuickArchiveRequest, token: IndexCancellation, update: @escaping ([ProjectArchiveChoice],String) -> Void) {
+        let workspaceID = settings.workspaceIdentity, roots = settings.activeProjectRoots, saved = settings.projects
         DispatchQueue.global(qos:.userInitiated).async {
             do {
                 // Reuse the workspace's project snapshot. Only a first-use empty list needs discovery.
                 let discovered = saved.isEmpty ? try discoverProjectRoots(roots,saved:[]).projects : saved
                 let projects = discovered.filter { archiveProjectAccepts($0,request:request) }
-                let index = ArchiveProjectIndex(projects:projects,references:known)
+                let index = ArchiveProjectIndex(projects:projects)
                 if saved.isEmpty {
                     DispatchQueue.main.async {
                         guard !token.isCancelled, self.settings.workspaceIdentity == workspaceID, self.settings.projects.isEmpty else { return }
                         self.settings.projects = discovered; self.save()
                     }
                 }
-                matchArchiveRows(request.rows,index:index,token:token,readOpening:{ row in
-                    archiveOpeningText(row,known:known,token:token)
-                }) { choices,done,message in
-                    DispatchQueue.main.async {
-                        guard !token.isCancelled, self.settings.workspaceIdentity == workspaceID else { return }
-                        update(choices,done,message)
-                    }
+                let choices = index.recommendations(for:request.rows,token:token)
+                DispatchQueue.main.async {
+                    guard !token.isCancelled, self.settings.workspaceIdentity == workspaceID else { return }
+                    update(choices,discovered.isEmpty && roots.isEmpty ? "请先在设置中关联项目总目录" : "")
                 }
             } catch {
-                DispatchQueue.main.async { guard !token.isCancelled, self.settings.workspaceIdentity == workspaceID else { return }; update([],true,"项目列表暂不可用："+error.localizedDescription) }
+                DispatchQueue.main.async { guard !token.isCancelled, self.settings.workspaceIdentity == workspaceID else { return }; update([],"项目列表暂不可用："+error.localizedDescription) }
             }
         }
     }
@@ -105,14 +100,6 @@ func projectArchiveChoices(input: String, projects: [Project], references: [File
     let custom = ArchiveSource(id:"custom",name:"资料",kind:"folder",path:inbox.path)
     store.settings.archiveSources = store.availableArchiveSources+[custom]; store.save()
     let saved = try JSONDecoder().decode(Settings.self,from:Data(contentsOf:store.stateURL)); try verify(saved.archiveSources?.last?.path == inbox.path)
-    let choices = projectArchiveChoices(input:"抖音集团机房租赁招采项目",projects:[project,Project(path:"/other",name:"9 水利投资")],references:[])
-    try verify(choices.first?.project.path == project.path,"Short project name can yield a reviewable suggestion")
-    let ambiguous = Project(path:"/other",name:"8 抖音")
-    try verify(projectArchiveChoices(input:"抖音集团资料",projects:[project,ambiguous],references:[]).count == 2,"Ambiguous suggestions remain choices, never automatic moves")
-    let coded = Project(path:projectDir.path,name:"A")
-    let ref = FileItem(path:projectDir.appendingPathComponent("招标文件.txt").path,project:projectDir.path,text:"项目编号：DY-2026-001",size:1,date:Date())
-    try verify(projectArchiveChoices(input:"项目编号：DY-2026-001",projects:[coded],references:[ref]).first?.score == 120)
-    try verify(projectArchiveChoices(input:"项目编号：DY-2026-0012",projects:[coded],references:[ref]).isEmpty,"Identifier matching must honor boundaries")
     let row = browserEntry(first.path)!, request = QuickArchiveRequest(rows:[row])
     try verify(!archiveProjectAccepts(Project(path:inbox.path,name:"来源目录"),request:request),"Already-in-target source is excluded from recommendations and manual choices")
     let alias = root.appendingPathComponent("QuickInboxAlias"); try fm.createSymbolicLink(at:alias,withDestinationURL:inbox)
@@ -134,5 +121,5 @@ func projectArchiveChoices(input: String, projects: [Project], references: [File
     let folderMove = store.settings.moves[0]; store.scanCancellation?.cancel(); store.busy = false; store.undo(folderMove,refreshAfter:false)
     try verify(fm.fileExists(atPath:child.path) && store.workspaceAssignments[child.path]?.categoryID == "方案","Folder undo preserves manual classifications")
     store.removeArchiveSource("custom"); try verify(fm.fileExists(atPath:inbox.path),"Removing a linked source does not delete its folder")
-    print("PASS: Downloads/Recents defaults, linked-source persistence, short-name and identifier project suggestions, confirmation-only move, no overwrite, stale-source rejection, folder hierarchy and undo")
+    print("PASS: Downloads/Recents defaults, linked-source persistence, confirmation-only move, no overwrite, stale-source rejection, folder hierarchy and undo")
 }

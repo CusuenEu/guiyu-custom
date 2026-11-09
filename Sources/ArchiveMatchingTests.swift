@@ -1,101 +1,48 @@
 import Foundation
-import AppKit
 
-@MainActor func archiveMatchingTest(root: URL) throws {
-    let projects = [Project(path:"/archive/municipal",name:"10月 贵州省民政厅厅机关网络运维及网络安全运维项目"),
-                    Project(path:"/archive/douyin",name:"10 抖音"),
-                    Project(path:"/archive/water",name:"9月 水利投资舆情监测服务项目")]
-    let index = ArchiveProjectIndex(projects:projects)
-    let exact = BrowserRow(id:"/inbox/抖音集团机房招采文件.pdf",title:"抖音集团机房招采文件.pdf")
-    let generic = BrowserRow(id:"/inbox/input.pdf",title:"input.pdf")
-    var reads: [String] = []; var updates: [([ProjectArchiveChoice],Bool,String)] = []
-    matchArchiveRows([exact],index:index,token:IndexCancellation(),readOpening:{ row in reads.append(row.id); return "项目名称：水利投资舆情监测服务项目" }) { updates.append(($0,$1,$2)) }
-    try verify(reads.isEmpty && updates.count == 1 && updates[0].1 && updates[0].0.first?.id == projects[1].path,"Clear filename matches finish without opening any source or project document")
-    reads = []; updates = []
-    matchArchiveRows([generic],index:index,token:IndexCancellation(),readOpening:{ row in
-        try! verify(!updates.isEmpty && !updates[0].1,"Publish filename results before source extraction")
-        reads.append(row.id); return "项目名称：水利投资舆情监测服务项目"
-    }) { updates.append(($0,$1,$2)) }
-    try verify(reads == [generic.id] && updates.last?.0.first?.id == projects[2].path && updates.last?.1 == true,"Generic filenames read only their own opening pages and then finish")
-    reads = []; updates = []
-    matchArchiveRows([exact,generic],index:index,token:IndexCancellation(),readOpening:{ row in reads.append(row.id); return "抖音集团机房建设项目" }) { updates.append(($0,$1,$2)) }
-    try verify(reads == [generic.id] && updates.last?.0.first?.id == projects[1].path,"Mixed selections only read the unresolved item")
-    let ambiguous = ArchiveProjectIndex(projects:[projects[1],Project(path:"/archive/douyin2",name:"9 抖音")])
-    try verify(!clearArchiveMatch(ambiguous.choices(input:"抖音招标文件",origin:"文件名")),"Tied filename matches require opening-page evidence and never choose automatically")
-    try verify(index.choices(input:"招标文件 方案 采购项目",origin:"文件名").isEmpty,"Generic document labels alone do not recommend projects")
-    let fuzzy = index.choices(input:"民政厅网络安全运维采购需求",origin:"文件名")
-    try verify(fuzzy.first?.id == projects[0].path,"Distinctive Chinese keywords match shortened, reordered project names")
-    try verify(index.search("民政 运维").first?.path == projects[0].path,"Manual search accepts multiple separated keywords")
-    let metadata = FileItem(path:"/archive/short/贵阳智慧园区招标文件.pdf",project:"/archive/short",text:"",size:1,date:Date())
-    let short = ArchiveProjectIndex(projects:[Project(path:"/archive/short",name:"A")],references:[metadata])
-    try verify(short.choices(input:"贵阳智慧园区响应文件",origin:"文件名").first?.id == "/archive/short","Loaded filenames identify abbreviated project folders without reading their contents")
-    let genericReference = FileItem(path:"/archive/generic/机房.pdf",project:"/archive/generic",text:"",size:1,date:Date())
-    let genericIndex = ArchiveProjectIndex(projects:[Project(path:"/archive/generic",name:"202206")],references:[genericReference])
-    try verify(genericIndex.choices(input:"抖音集团2026年机房租赁招采项目",origin:"文件名").isEmpty,"Year-only folders and generic short reference filenames must not add unrelated recommendations")
-    let containerProjects = [Project(path:"/archive/date",name:"202210"),Project(path:"/archive/month",name:"7"),Project(path:"/archive/chinese-date",name:"2024年7月"),Project(path:"/archive/fullwidth",name:"２０２２１０"),Project(path:"/archive/site",name:"智慧工地")]
-    let containerReferences = containerProjects.prefix(4).map { FileItem(path:$0.path+"/贵安移动智慧工地技术支撑服务项目.pdf",project:$0.path,text:"",size:1,date:Date()) }
-    let containers = ArchiveProjectIndex(projects:containerProjects,references:containerReferences)
-    let specific = "贵安移动智慧工地技术支撑服务项目合同审批表"
-    try verify(containers.choices(input:specific,origin:"文件名").map(\.id) == ["/archive/site"],"Numeric/month/date containers never borrow nested document names as a project identity, even for an exact title match")
-    try verify(containers.choices(input:"2024年7月审批资料",origin:"前两页").isEmpty,"A date occurring in opening-page text is not evidence for a date-named destination")
-    try verify(containers.search("202210").contains{$0.path == "/archive/date"} && containers.search("7").contains{$0.path == "/archive/month"},"Opaque containers remain available through explicit manual name search")
-    let explicit = ArchiveProjectIndex(projects:[Project(path:"/archive/date",name:"202210",keywords:"智慧工地")])
-    try verify(explicit.choices(input:specific,origin:"文件名").first?.id == "/archive/date","An explicit user-defined project keyword remains valid for an opaque container")
-    let weak = ArchiveProjectIndex(projects:[Project(path:"/archive/unrelated",name:"财务资料")],references:[FileItem(path:"/archive/unrelated/智慧工地报价.xls",project:"/archive/unrelated",text:"",size:1,date:Date())])
-    let weakTitle = "贵安智慧工地合同审批表"
-    let weakScores = weak.choices(input:weakTitle,origin:"文件名")
-    try verify(!weakScores.isEmpty && weakScores.allSatisfy{$0.score < 65},"Fixture retains a weak resemblance for manual fuzzy search")
-    updates = [];reads = []
-    matchArchiveRows([BrowserRow(id:"/inbox/weak.pdf",title:weakTitle+".pdf")],index:weak,token:IndexCancellation(),readOpening:{row in reads.append(row.id);return weakTitle}) { updates.append(($0,$1,$2)) }
-    try verify(reads.count == 1 && updates.allSatisfy{$0.0.isEmpty} && updates.last?.1 == true,"Weak filename and content resemblances never enter recommendations or gain credibility from the content bonus")
-    let resolved = ArchiveProjectIndex(projects:[Project(path:"/archive/site-a",name:"智慧工地"),Project(path:"/archive/site-b",name:"智慧工地"),Project(path:"/archive/water-only",name:"水利投资")])
-    updates = []
-    matchArchiveRows([BrowserRow(id:"/inbox/ambiguous.pdf",title:"智慧工地资料.pdf")],index:resolved,token:IndexCancellation(),readOpening:{_ in "水利投资舆情监测项目"}) { updates.append(($0,$1,$2)) }
-    try verify(updates.first?.0.count == 2 && updates.last?.0.map(\.id) == ["/archive/water-only"],"Filename candidates demoted below the confidence floor do not linger as matched projects after opening-page evidence resolves them")
-    let cancelled = IndexCancellation(); cancelled.cancel(); reads = []; updates = []
-    matchArchiveRows([generic],index:index,token:cancelled,readOpening:{ row in reads.append(row.id); return "" }) { updates.append(($0,$1,$2)) }
-    try verify(reads.isEmpty && updates.isEmpty,"Cancellation prevents reads and publication")
-    let cancellation = IndexCancellation(); reads = []; updates = []
-    matchArchiveRows([generic],index:index,token:cancellation,readOpening:{ row in reads.append(row.id); return "" }) { values,done,message in updates.append((values,done,message)); cancellation.cancel() }
-    try verify(reads.isEmpty && updates.count == 1,"Closing after the first filename result prevents content fallback")
+@MainActor func archiveMatchingTest() throws {
+    let paperless = Project(path:"/archive/paperless",name:"53-2023年至2025年（24个月）黔南独山县机关事务服务中心无纸化办公系统项目")
+    let office = Project(path:"/archive/office",name:"6月 地震大数据贵州中心非通用办公设备、资产采购")
+    let industry = Project(path:"/archive/industry",name:"4 2025省工业和信息化厅云上统筹云安全保障服务")
+    let government = Project(path:"/archive/government",name:"4月 贵州省民宗委2026年贵州省政务信息化运维项目比选文件（本地安全设备）")
+    let extensionOnly = Project(path:"/archive/extension",name:"已解决的 docx 类")
+    let fuel = Project(path:"/archive/fuel",name:"惠水加油站")
+    let paperlessFile = BrowserRow(id:"/inbox/paperless.docx",title:"法律意见书暨仲裁预案-无纸化办公.docx")
+    let index = ArchiveProjectIndex(projects:[office,industry,government,paperless,extensionOnly,fuel])
+    let screenshot = index.recommendations(for:[paperlessFile],token:IndexCancellation())
+    try verify(screenshot.map(\.id) == [paperless.path,office.path] && screenshot.map(\.score) == [5,2],"The screenshot retains only the five-character and two-character runs, ignoring isolated characters and the extension")
+    try verify(screenshot.first?.matchingRanges.map { String(paperless.name[$0]) } == ["无纸化办公"],"The five-character run is highlighted in the original project title")
+    try verify(screenshot.last?.matchingRanges.map { String(office.name[$0]) } == ["办公"],"Only the matching portion of the partial project is highlighted")
+    try verify(index.search("惠水").map(\.path) == [fuel.path],"An unrelated destination remains accessible through manual search")
 
-    var pages: [Int] = []
-    let opening = archiveFirstPages(count:500,token:IndexCancellation()) { i in pages.append(i); return ["封面无项目名称","第二页也无名称","第三页不得读取"][min(i,2)] }
-    try verify(pages == [0,1] && !opening.contains("不得读取"),"Archive never scans later pages even when the first two contain no identity")
-    let document = root.appendingPathComponent("archive-three-pages.pdf"); var box = CGRect(x:0,y:0,width:600,height:400)
-    if let context = CGContext(document as CFURL,mediaBox:&box,nil) {
-        for text in ["FIRST PAGE ordinary opening text","SECOND PAGE ordinary opening text","THIRD PAGE MUST NOT BE READ"] {
-            context.beginPDFPage(nil); NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(cgContext:context,flipped:false)
-            (text as NSString).draw(at:NSPoint(x:30,y:200),withAttributes:[.font:NSFont.systemFont(ofSize:16)])
-            NSGraphicsContext.restoreGraphicsState(); context.endPDFPage()
-        }; context.closePDF()
-    }
-    let pdf = FileItem(path:document.path,project:"",text:"",size:1,date:Date())
-    let excerpt = extractArchiveOpening(pdf,token:IndexCancellation())
-    try verify(excerpt.contains("FIRST PAGE") && excerpt.contains("SECOND PAGE") && !excerpt.contains("THIRD PAGE"),"Real PDFKit reading is limited to two pages")
-    let textFile = root.appendingPathComponent("archive-open.txt")
-    try "第一页\u{000C}第二页\u{000C}第三页不得读取".write(to:textFile,atomically:true,encoding:.utf8)
-    let file = FileItem(path:textFile.path,project:"",text:"",size:1,date:Date())
-    try verify(!extractArchiveOpening(file,token:IndexCancellation()).contains("不得读取"),"Explicit text page boundaries have the same two-page limit")
-    let package = root.appendingPathComponent("ArchiveWord/word"); try fm.createDirectory(at:package,withIntermediateDirectories:true)
-    let xml = "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>第一页没有名称</w:t></w:r></w:p><w:p><w:r><w:br w:type=\"page\"/></w:r></w:p><w:p><w:r><w:t>第二页没有名称</w:t></w:r></w:p><w:p><w:r><w:br w:type=\"page\"/></w:r></w:p><w:p><w:r><w:t>第三页不得读取</w:t></w:r></w:p></w:body></w:document>"
-    try xml.write(to:package.appendingPathComponent("document.xml"),atomically:true,encoding:.utf8)
-    let zipper = Process(); zipper.executableURL = URL(fileURLWithPath:"/usr/bin/zip"); zipper.arguments = ["-qr","opening.docx","word"]; zipper.currentDirectoryURL = package.deletingLastPathComponent(); try zipper.run(); zipper.waitUntilExit()
-    let word = FileItem(path:package.deletingLastPathComponent().appendingPathComponent("opening.docx").path,project:"",text:"",size:1,date:Date())
-    let wordText = extractArchiveOpening(word,token:IndexCancellation())
-    try verify(wordText.contains("第二页") && !wordText.contains("不得读取"),"Real zipped Word XML stops at the third-page boundary even without project identity")
+    let continuous = Project(path:"/archive/continuous",name:"甲乙丙丁")
+    let fragmented = Project(path:"/archive/fragmented",name:"甲乙丙、丁戊己、庚辛")
+    let partial = Project(path:"/archive/partial",name:"甲乙丙、丁、戊")
+    let reversed = Project(path:"/archive/reversed",name:"辛庚己戊丁丙乙甲")
+    let scattered = Project(path:"/archive/scattered",name:"甲-乙-丙-丁")
+    let keywordOnly = Project(path:"/archive/keyword",name:"财务资料",keywords:"甲乙丙丁")
+    let orderIndex = ArchiveProjectIndex(projects:[fragmented,partial,reversed,scattered,continuous,keywordOnly])
+    let sequence = BrowserRow(id:"/inbox/sequence.pdf",title:"甲乙丙丁戊己庚辛.pdf")
+    let ranks = orderIndex.recommendations(for:[sequence],token:IndexCancellation())
+    try verify(ranks.map(\.id) == [continuous.path,fragmented.path,partial.path] && ranks.map(\.score) == [4,8,3],"The longest run sorts before total coverage, and isolated characters do not boost scores")
+    try verify(ranks.last?.matchingRanges.map { String(partial.name[$0]) } == ["甲乙丙"],"Isolated matches beside a valid run remain unmarked")
+    try verify(orderIndex.search("甲乙丙丁").contains { $0.path == keywordOnly.path },"Manual search still accepts configured keywords")
 
-    let many = (0..<1000).map { Project(path:"/benchmark/\($0)",name:"10月 测试客户编号\($0)云网设备改造项目") }
-    let started = Date(); let benchmark = ArchiveProjectIndex(projects:many)
-    let buildMS = Date().timeIntervalSince(started)*1000
-    var elapsed: [Double] = []
-    for number in [123,456,789,654,321] {
-        let before = Date(); let values = benchmark.choices(input:"测试客户编号\(number)云网设备改造招标文件",origin:"文件名")
-        elapsed.append(Date().timeIntervalSince(before)*1000)
-        try verify(values.first?.id == many[number].path && clearArchiveMatch(values),"A full specific filename outranks fuzzy near-duplicates and requires no content fallback")
-    }
-    let median = elapsed.sorted()[elapsed.count/2]
-    try verify(median < 500,"In-memory matching must not behave like sequential document extraction")
-    print(String(format:"Archive matching benchmark: 1000 projects; index %.1f ms; median query %.1f ms (no filesystem/content reads)",buildMS,median))
-    print("PASS: filename-first zero-read matches, unresolved-only source fallback, Chinese fuzzy/multi-keyword search, metadata-only short projects, ambiguity, cancellation and strict PDF/Word/text two-page budget")
+    let separated = BrowserRow(id:"/inbox/separated.pdf",title:"甲—乙.pdf")
+    try verify(orderIndex.recommendations(for:[separated],token:IndexCancellation()).isEmpty,"Punctuation in filenames does not connect isolated characters")
+    let singles = [BrowserRow(id:"/inbox/a.txt",title:"甲.txt"),BrowserRow(id:"/inbox/b.txt",title:"乙.txt")]
+    try verify(orderIndex.recommendations(for:singles,token:IndexCancellation()).isEmpty,"Characters from different source files cannot form a run")
+
+    let repeated = Project(path:"/archive/repeated",name:"办公办公")
+    let plain = Project(path:"/archive/plain",name:"办公")
+    let coded = Project(path:"/archive/coded",name:"A2046")
+    let batchIndex = ArchiveProjectIndex(projects:[repeated,plain,coded])
+    let officeFile = BrowserRow(id:"/inbox/office",title:"办公.txt")
+    try verify(batchIndex.recommendations(for:[officeFile],token:IndexCancellation()).map(\.score) == [2,2],"Repeated appearances of one filename run cannot inflate its score")
+    let folder = BrowserRow(id:"/inbox/folder",title:"文件.ａ２０４６",folder:true)
+    let combined = batchIndex.recommendations(for:[officeFile,folder],token:IndexCancellation())
+    try verify(combined.first?.id == coded.path && combined.first?.matchingRanges.map { String(coded.name[$0]) } == ["A2046"],"Batch matching preserves case/width normalization and folder text after a dot")
+    let cancelled = IndexCancellation(); cancelled.cancel()
+    try verify(batchIndex.recommendations(for:[officeFile],token:cancelled).isEmpty,"Cancellation prevents publication of matches")
+    print("PASS: archive continuous runs, longest-first ranking, isolated character and extension exclusion, highlight spans, repeats, batch matching and manual search")
 }

@@ -51,6 +51,62 @@ let data,
   working = false;
 let apiQueue = Promise.resolve();
 let directoryRows = null, directoryPath = "", railFile = "";
+let operationPane = "projects";
+const recentCopies = new Map();
+function resetClassification() {
+  mode = "按类别"; collapsed.clear(); recentCopies.clear();
+}
+function rightLocation() { return source ? sourcePreviewCurrent : current; }
+function copyRank(location, p) {
+  const i = (recentCopies.get(location) || []).indexOf(p);
+  return i < 0 ? Infinity : i;
+}
+function pasteTarget() {
+  if (query) return "";
+  if (operationPane === "files" && (folderError || folderLoading || previewLoading)) return "";
+  if (!source && data.snapshot.unavailable.includes(dir)) return "";
+  return GuiyuWorkspace.pasteTarget({ pane: operationPane, source, dir, current,
+    sourcePreviewCurrent, active: activeFolder(), selected, middleRows });
+}
+function copySelection(items = selectedItems()) {
+  if (!items.length) return;
+  return action(async () => {
+    const result = await api("copyFiles", { items });
+    toast(`已复制 ${result.count} 项，可在归屿或资源管理器粘贴`);
+  });
+}
+function pasteSelection(destination = pasteTarget()) {
+  if (!destination) return;
+  return action(async () => {
+    const result = await api("pasteFiles", { destination });
+    const paths = result.copied.map(e => e.path);
+    recentCopies.set(destination, [...paths, ...(recentCopies.get(destination) || []).filter(p => !paths.includes(p))]);
+    await refresh();
+    if (paths.length) {
+      const right = rightLocation() === destination && activeFolder();
+      const middle = (source ? current || source.path : dir) === destination;
+      if (right || middle) {
+        focusPane(right ? "files" : "projects");
+        selected = new Set(paths); anchor = null; render();
+        $(selectionPane === "files" ? "#files" : "#projects").focus({ preventScroll: true });
+        $(selectionPane === "files" ? "#files" : "#projects").scrollTop = 0;
+      }
+    }
+    toast(result.errors.length
+      ? `已完成 ${paths.length} 项，${result.errors.length} 项失败：${result.errors.map(e => basename(e.path) + "：" + e.message).join("；")}`
+      : `已粘贴 ${paths.length} 项`, result.errors.length > 0);
+  });
+}
+async function clipboardActions(items = []) {
+  const target = pasteTarget();
+  let count = 0;
+  try { count = (await api("clipboardFiles", { destination: target })).count; } catch {}
+  return [
+    { label: "复制", disabled: !items.length || working, fn: () => copySelection(items) },
+    { label: "粘贴", disabled: !target || !count || working, fn: () => pasteSelection(target) },
+    null,
+  ];
+}
 const api = (method, arg) => {
   if (!window.guiyu) throw Error("请从归屿应用启动。");
   const request = apiQueue.then(() => window.guiyu.invoke(method, arg));
@@ -82,6 +138,7 @@ async function action(fn) {
   }
 }
 function apply(d) {
+  if (data && JSON.stringify(data.settings.categories) !== JSON.stringify(d.settings.categories)) resetClassification();
   data = d;
   const w = data.settings.widths || [240, 390];
   document.documentElement.style.setProperty("--left", w[0] + "px");
@@ -147,6 +204,7 @@ function fileIndex() { return [...data.snapshot.files, ...(data.snapshot.rootFil
 function activeFolder() { return source ? sourceFolder : project; }
 function middleSelected(e) { return selectionPane === "projects" ? selected.has(e.path) : activeFolder()?.path === e.path; }
 function focusPane(pane) {
+  operationPane = pane;
   if (selectionPane !== pane) {
     selected.clear(); anchor = null;
     const context = activeFolder();
@@ -173,7 +231,7 @@ function render() {
           )),
     );
   projects = [...projects].sort(
-    (a, b) => (query ? relevance(a) - relevance(b) : 0) || (source ? b.mtime-a.mtime || a.name.localeCompare(b.name,'zh') : order(a, b)),
+    (a, b) => copyRank(source ? current || source.path : dir, a.path) - copyRank(source ? current || source.path : dir, b.path) || (query ? relevance(a) - relevance(b) : 0) || (source ? b.mtime-a.mtime || a.name.localeCompare(b.name,'zh') : order(a, b)),
   );
   middleRows = projects;
   const projectMarkup =
@@ -195,7 +253,7 @@ function render() {
   $("#subnav").innerHTML = "";
   $("#source-subnav").innerHTML = "";
   if(source?.kind==='folder' && current && current!==source.path) renderBreadcrumbs(source.path,'#source-subnav',source.name);
-  $(".file-toolbar").hidden = Boolean(source || (!project && !query) || !data.settings.categories.length);
+  $(".file-toolbar").hidden = Boolean((!activeFolder() && !query) || !data.settings.categories.length);
   let files = [];
   if (source && sourceFolder) {
     files = [...sourceChildren].sort((a, b) => Number(b.folder) - Number(a.folder) || a.name.localeCompare(b.name, "zh"));
@@ -219,12 +277,11 @@ function render() {
   let body = "";
   if (folderError && activeFolder()) body = `<div class="empty">无法读取当前文件夹：${esc(folderError)}</div>`;
   else if (!source && project && folderLoading) body = '<div class="empty">正在读取文件夹…</div>';
-  else if (source && sourceFolder) {
-    body = previewLoading ? '<div class="empty">正在读取文件夹…</div>' : files.length ? files.map(fileRow).join("") : '<div class="empty">当前文件夹没有内容</div>';
-  } else if (!data.settings.categories.length && !project && !query)
+  else if (source && sourceFolder && previewLoading) body = '<div class="empty">正在读取文件夹…</div>';
+  else if (!data.settings.categories.length && !activeFolder() && !query)
     body =
       '<div class="empty"><button id="empty-categories">请设置文件分类</button></div>';
-  else if (source || (!project && !query)) body = "";
+  else if (!activeFolder() && !query) body = "";
   else if (!files.length)
     body =
       '<div class="empty">' +
@@ -234,17 +291,23 @@ function render() {
     body = [...files]
       .sort(
         (a, b) =>
+          copyRank(rightLocation(), a.path) - copyRank(rightLocation(), b.path) ||
           Number(b.folder) - Number(a.folder) ||
           a.name.localeCompare(b.name, "zh"),
       )
       .map(fileRow)
       .join("");
   } else {
+    const fresh = files.filter(e => Number.isFinite(copyRank(rightLocation(), e.path)))
+      .sort((a,b) => copyRank(rightLocation(), a.path) - copyRank(rightLocation(), b.path));
+    if (fresh.length) body += groupHeader("__just_copied__", "刚复制", fresh.length) + fresh.map(fileRow).join("");
+    const remaining = files.filter(e => !fresh.includes(e));
     let groups = new Map();
     if (mode === "按类别") {
       for (const c of data.settings.categories)
         groups.set(c.id, { name: c.name, items: [] });
-      for (const e of files) {
+      groups.set(GuiyuWorkspace.fallbackID, { name: "其他", items: [] });
+      for (const e of remaining) {
         let c = category(e);
         if (groups.has(c)) groups.get(c).items.push(e);
       }
@@ -254,7 +317,7 @@ function render() {
             groupHeader(id, g.name, g.items.length) +
             (collapsed.has(id) ? "" : g.items.map(fileRow).join(""));
     } else {
-      for (const e of [...files].sort((a, b) => b.mtime - a.mtime)) {
+      for (const e of [...remaining].sort((a, b) => b.mtime - a.mtime)) {
         const k = new Intl.DateTimeFormat("zh-CN", {
           year: "numeric",
           month: "long",
@@ -269,6 +332,9 @@ function render() {
     }
   }
   $("#files").innerHTML = body;
+  const byPath = new Map(files.map(e => [e.path, e]));
+  fileRows = [...$("#files").querySelectorAll("[data-file]")].map(el => byPath.get(el.dataset.file)).filter(Boolean);
+  visibleRows = selectionPane === "projects" ? middleRows : fileRows;
   $("#count").textContent =
     (source && sourceFolder) || (!source && (project || query)) ? `${files.length} 个项目` : "";
   $("#selected-count").textContent = `已选 ${selected.size} 项`;
@@ -277,55 +343,7 @@ function render() {
     b.setAttribute("aria-selected", b.dataset.mode === mode),
   );
 }
-function term(n, t) {
-  t = norm(t);
-  if (/^[\x20-\x7f]+$/.test(t))
-    return new RegExp(
-      "(^|[^a-z0-9])" +
-        t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
-        "($|[^a-z0-9])",
-    ).test(norm(n));
-  return norm(n).includes(t);
-}
-function category(e) {
-  let s = data.settings,
-    a = s.assignments[e.path];
-  if (
-    a?.identity === e.identity &&
-    s.categories.some((c) => c.id === a.categoryID)
-  )
-    return a.categoryID;
-  let scores = s.categories.map((c) => {
-    let r = c.rule;
-    if (
-      !r?.enabled ||
-      (r.scope === "仅文件" && e.folder) ||
-      (r.scope === "仅文件夹" && !e.folder) ||
-      r.excludedKeywords.some((t) => term(e.name, t))
-    )
-      return [c.id, -1];
-    let hits = r.keywords.filter((t) => term(e.name, t));
-    return [
-      c.id,
-      hits.length
-        ? r.priority * 1000 +
-          200 +
-          Math.min(80, Math.max(...hits.map((t) => t.length)))
-        : !e.folder &&
-            r.extensions.some((x) => norm(e.name).endsWith("." + norm(x)))
-          ? r.priority * 1000 + 20
-          : -1,
-    ];
-  });
-  let max = Math.max(-1, ...scores.map((x) => x[1])),
-    wins = scores.filter((x) => x[1] === max);
-  return max >= 0 && wins.length === 1
-    ? wins[0][0]
-    : (
-        s.categories.find((c) => c.id === "其他" || c.name === "其他") ||
-        s.categories[0]
-      )?.id;
-}
+function category(e) { return GuiyuWorkspace.category(e, data.settings); }
 function groupHeader(id, name, count) {
   return `<div role="button" tabindex="0" aria-expanded="${!collapsed.has(id)}" class="category-header" data-group="${esc(id)}"><svg class="chevron" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style="transform:rotate(${collapsed.has(id)?'-90deg':'0deg'})"><path d="m2 4 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${esc(name)}</span><small>${count}</small></div>`;
 }
@@ -433,6 +451,7 @@ $("#clear-query").onclick = () => {
 $("#directories").onclick = async (e) => {
   const b = e.target.closest("[data-dir], [data-rail-file]");
   if (!b) return;
+  resetClassification(); operationPane = "directories";
   railFile = b.dataset.railFile || "";
   dir = b.dataset.dir || b.dataset.orderRoot;
   const gen = ++generation;
@@ -466,6 +485,7 @@ $("#sources").onclick = (e) => {
   const b = e.target.closest("[data-source]");
   if (!b) return;
   action(async () => {
+    resetClassification(); operationPane = "projects";
     generation++; anchor = null; folderError = ""; folderLoading = false;
     selected.clear(); rows = [];
     source = data.settings.sources.find((s) => s.id === b.dataset.source);
@@ -478,6 +498,7 @@ $("#sources").onclick = (e) => {
   });
 };
 function showMiddleFolder(item) {
+  resetClassification();
   const gen = ++generation, sourceID = source?.id;
   sourceGeneration++;
   folderError = "";
@@ -524,6 +545,7 @@ async function openMiddleFolder(item) {
 $("#projects").onclick = (event) => {
   const row = event.target.closest("[data-project]");
   if (!row) {
+    focusPane("projects"); selected.clear(); anchor = null; render();
     if (event.target.id === "empty-settings") settings();
     if (event.target.id === "demo") action(async () => apply(await api("demo")));
     return;
@@ -546,16 +568,19 @@ $("#files").onclick = (e) => {
     select(fileRows.find((x) => x.path === b.dataset.file), e);
   }
   else if (g) {
+    focusPane("files");
     collapsed.has(g.dataset.group)
       ? collapsed.delete(g.dataset.group)
       : collapsed.add(g.dataset.group);
     render();
   } else if (e.target.id === "empty-categories") settings("文件分类");
+  else { focusPane("files"); selected.clear(); anchor = null; render(); $("#files").focus({ preventScroll: true }); }
 };
 function openFileItem(item) {
   if (!item) return;
   action(async () => {
     if (item.folder) {
+      resetClassification();
       if (source) {
         const gen = ++sourceGeneration;
         const children = await api("list", { path: item.path });
@@ -608,6 +633,7 @@ function breadcrumbClick(e) {
   if (!target || index === parts.length - 1) return;
   action(async () => {
     const sourceID = source?.id, owner = root;
+    resetClassification();
     const gen = fromSource || preview ? ++sourceGeneration : ++generation;
     await api('closePreview');
     const children = fromSource && target===source.path ? await api('source',{id:source.id}) : await api("list", { path: target });
@@ -639,6 +665,7 @@ $$("[data-mode]").forEach(
   (b) =>
     (b.onclick = () => {
       mode = b.dataset.mode;
+      if (mode === "按类别") recentCopies.clear();
       collapsed.clear();
       selected.clear();
       render();
@@ -683,7 +710,8 @@ function menu(event, items) {
   };
   el.querySelector("button")?.focus();
 }
-function fileMenu(ev, items, archive = false) {
+async function fileMenu(ev, items, canArchive = true) {
+  $("#context").hidden = true;
   if (!items.length) return;
   let actions = [
     {
@@ -695,9 +723,9 @@ function fileMenu(ev, items, archive = false) {
       fn: () => namingDialog(items, false),
     },
   ];
-  if (archive)
+  if (canArchive)
     actions.push({ label: "智能归档…", fn: () => archiveDialog(items) });
-  else
+  if (!source)
     for (const c of data.settings.categories)
       if (!items.every((e) => category(e) === c.id))
         actions.push({
@@ -720,34 +748,44 @@ function fileMenu(ev, items, archive = false) {
         }),
     },
   );
-  menu(ev, actions);
+  const clipboard = await clipboardActions(items);
+  if (!$("#modal").open) menu(ev, [...clipboard, ...actions]);
 }
-$("#files").oncontextmenu = (e) => {
+$("#files").oncontextmenu = async (e) => {
+  e.preventDefault();
+  $("#context").hidden = true;
+  focusPane("files");
   const p = e.target.closest("[data-file]")?.dataset.file;
   if (p) {
-    focusPane("files");
     if (!selected.has(p)) selected = new Set([p]);
     render();
-    fileMenu(e, selectedItems(), !!source);
-  }
+    fileMenu(e, selectedItems());
+  } else menu(e, await clipboardActions());
 };
-$("#projects").oncontextmenu = event => {
+$("#projects").oncontextmenu = async event => {
+  event.preventDefault();
+  $("#context").hidden = true;
+  focusPane("projects");
   const row = event.target.closest("[data-project]");
   const item = middleRows.find(e => e.path === row?.dataset.project);
-  if (!item) return;
-  focusPane("projects");
+  if (!item) { selected.clear(); render(); return menu(event, await clipboardActions()); }
   if (!selected.has(item.path)) selected = new Set([item.path]);
   render();
-  fileMenu(event, selectedItems(), !!source);
+  const items = selectedItems();
+  fileMenu(event, items, Boolean(source) || items.every(item => !item.folder));
 };
-$("#batch-menu").onclick = (e) => fileMenu(e, selectedItems(), !!source);
+$("#batch-menu").onclick = (e) => fileMenu(e, selectedItems());
 document.addEventListener("pointerdown", (e) => {
   if (!e.target.closest("#context")) $("#context").hidden = true;
 });
-$("#directories").oncontextmenu = (e) => {
-  let d = e.target.closest("[data-dir]")?.dataset.dir;
-  if (d)
-    menu(e, [
+$("#directories").oncontextmenu = async (e) => {
+  e.preventDefault();
+  $("#context").hidden = true;
+  const button = e.target.closest("[data-dir], [data-rail-file]");
+  if (!button) return;
+  await $("#directories").onclick({ target: button });
+  const d = button.dataset.dir || button.dataset.railFile;
+  menu(e, [...await clipboardActions([{ path: d }]),
       {
         label: "在资源管理器中显示",
         fn: () => action(() => api("reveal", { path: d })),
@@ -1045,37 +1083,46 @@ async function namingDialog(items, smart) {
   confirm.onclick = () => submit(false);
   if (confirmArchive) confirmArchive.onclick = () => submit(true);
 }
+function archiveName(name, ranges = []) {
+  let markup = "", offset = 0;
+  for (const [start, end] of ranges) {
+    markup += esc(name.slice(offset, start)) + `<mark>${esc(name.slice(start, end))}</mark>`;
+    offset = end;
+  }
+  return markup + esc(name.slice(offset));
+}
 async function archiveDialog(items) {
   modal(
     `<div class="dialog-body smart-dialog archive-dialog" style="height:620px">${smartHeader("智能归档", "⇩")}<div class="file-summary">${icon(items[0] || { name: "" })}<span>${esc(items[0]?.name || "")}${items.length > 1 ? ` 等 ${items.length} 项` : ""}<small>${items.length} 项待归档</small></span></div><input id="archive-query" placeholder="搜索项目名、单位词或关键词" aria-label="搜索归档项目"><div class="scroll" id="archive-projects">正在查找推荐项目…</div>${actions("确认归档")}</div>`,
   );
   $("#confirm").disabled = true;
+  const input = $("#archive-query");
   let results;
   try {
     results = await api("archiveSuggest", { items });
   } catch (e) {
-    errorIn(e);
+    if ($("#modal").open && $("#archive-query") === input) errorIn(e);
     return;
   }
-  if (!$("#modal").open) return;
+  if (!$("#modal").open || $("#archive-query") !== input) return;
   let target = null;
   function draw() {
     target = null;
     $("#confirm").disabled = true;
-    let q = $("#archive-query").value;
-    const filtered = results.projects.filter(p => q.trim() ? match(p.name, q) : p.score >= 75);
+    const query = input.value.trim();
+    const filtered = query
+      ? results.projects.filter(p => match(p.name, query))
+      : results.recommendations;
     $("#archive-projects").innerHTML =
-      filtered
+      (filtered.length ? `<h3>${query ? "搜索结果" : "匹配项目"}</h3>` + filtered
         .map(
-          (p, i) =>
-            `${i === 0 ? `<h3>${q ? "搜索结果" : p.score > 0 ? "匹配项目" : "全部项目"}</h3>` : !q && p.score === 0 && filtered[i - 1]?.score > 0 ? "<h3>其他项目</h3>" : ""}<button class="archive-choice" aria-pressed="false" data-target="${esc(p.path)}" title="${esc(p.evidence)}">${folder}<span class="name-wrap"><span class="name">${esc(p.name)}</span><small>${esc(basename(p.directory))}</small></span><span class="choice-mark" aria-hidden="true"></span></button>`,
+          p =>
+            `<button class="archive-choice" aria-pressed="false" data-target="${esc(p.path)}" title="${esc(p.evidence)}">${folder}<span class="name-wrap"><span class="name">${archiveName(p.name, query ? [] : p.matchingRanges)}</span><small>${esc(basename(p.directory))}</small></span><span class="choice-mark" aria-hidden="true"></span></button>`,
         )
-        .join("") || `<p class="muted">${q.trim() ? "没有搜索到符合名称的项目，请调整关键词。" : "暂无可靠推荐，请输入项目名或关键词自行搜索。"}</p>`;
-    if (results.warnings.length)
-      $("#dialog-error").textContent = results.warnings.join("\n");
+        .join("") : `<p class="muted">${query ? "没有搜索到符合名称的项目，请调整关键词。" : "未找到匹配项目，可输入项目名搜索"}</p>`);
   }
   draw();
-  $("#archive-query").oninput = draw;
+  input.oninput = draw;
   $("#archive-projects").onclick = (e) => {
     let b = e.target.closest("[data-target]");
     if (!b) return;
@@ -1299,8 +1346,7 @@ function categoryEvents() {
     (b) =>
       (b.onclick = () => {
         const target = data.settings.categories.find((c) => c.id === b.dataset.deleteCategory);
-        const fallback = data.settings.categories.find((c) => c.id !== target.id && (c.id === "其他" || c.name === "其他")) || data.settings.categories.find((c) => c.id !== target.id);
-        modal(`<div class="dialog-body confirm-dialog"><h2>删除分类？</h2><p>删除「${esc(target.name)}」后，其中的条目显示在「${esc(fallback?.name || "其他")}」。源文件和文件夹保留。</p>${actions("删除分类")}</div>`);
+        modal(`<div class="dialog-body confirm-dialog"><h2>删除分类？</h2><p>删除「${esc(target.name)}」后，源文件和文件夹保留；未匹配的条目显示在「其他」。</p>${actions("删除分类")}</div>`);
         $("[data-cancel]").onclick = drawSettings;
         $("#confirm").onclick = () => save(data.settings.categories.filter((c) => c.id !== target.id));
       }),
@@ -1572,6 +1618,12 @@ document.addEventListener("keydown", (e) => {
     action(refresh);
     return;
   }
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "v") {
+    e.preventDefault(); pasteSelection(); return;
+  }
+  if (operationPane === "directories" && e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c") {
+    e.preventDefault(); copySelection([{ path: railFile || dir }]); return;
+  }
   if (
     !["projects", "files"].includes(document.activeElement?.id) &&
     !e.target.closest(".file-row,.project-row")
@@ -1587,10 +1639,7 @@ document.addEventListener("keydown", (e) => {
   let items = selectedItems();
   if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "c" && items.length) {
     e.preventDefault();
-    action(async () => {
-      const result = await api("copyFiles", { items });
-      toast(`已复制 ${result.count} 项，可到资源管理器粘贴`);
-    });
+    copySelection(items);
   } else if (e.key === " " && items.length) {
     e.preventDefault();
     action(() => api("preview", { path: items[0].path }));
@@ -1632,7 +1681,12 @@ window.guiyu?.onCommand?.((command) => {
 });
 window.guiyu?.onUpdateProgress?.(value => {
   const status = $("#update-status");
-  if (status) status.textContent = value.phase === "downloading" ? `正在下载更新 ${value.percent}%` : value.phase === "verifying" ? "正在校验更新包…" : "正在安装，完成后自动重新打开…";
+  if (status) {
+    if (value.phase === "retrying") status.textContent = `正在重试下载（已下载 ${value.percent}%）…`;
+    else if (value.phase === "downloading") status.textContent = `正在下载更新 ${value.percent}%`;
+    else if (value.phase === "verifying") status.textContent = "正在校验更新包…";
+    else status.textContent = "正在安装，完成后自动重新打开…";
+  }
 });
 api("state")
   .then((d) => {

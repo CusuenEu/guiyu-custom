@@ -2,7 +2,7 @@ import AppKit
 import QuickLookUI
 
 // File shortcuts live on the focused native table, never on a global event monitor.
-enum FileShortcut: Equatable { case preview, trash, rename, open, copy }
+enum FileShortcut: Equatable { case preview, trash, rename, open, copy, paste }
 func fileShortcut(for event: NSEvent) -> FileShortcut? {
     guard event.type == .keyDown else { return nil }
     let modifiers = event.modifierFlags.intersection([.command,.option,.control,.shift])
@@ -12,6 +12,7 @@ func fileShortcut(for event: NSEvent) -> FileShortcut? {
     if modifiers == .command && event.keyCode == 31 { return .open }
     let character = event.charactersIgnoringModifiers?.lowercased() ?? ""
     if modifiers == .command && (character == "c" || (character.isEmpty && event.keyCode == 8)) { return .copy }
+    if modifiers == .command && (character == "v" || (character.isEmpty && event.keyCode == 9)) { return .paste }
     return nil
 }
 final class FileQuickLook: NSObject, QLPreviewPanelDataSource, QLPreviewPanelDelegate {

@@ -34,12 +34,19 @@ func presentDirectory(_ entries: [BrowserRow], mode: String, query: String, coll
     }
     let classifier = CategoryClassifier(categories:categories)
     let grouped = Dictionary(grouping:entries,by:{ classifier.resolve($0,assignments:assignments)?.id ?? "" })
-    return categories.flatMap { category -> [BrowserRow] in
+    var result = categories.flatMap { category -> [BrowserRow] in
         let values = newest(grouped[category.id] ?? []).map { row -> BrowserRow in var row = row; row.categoryID = category.id; return row }
         guard !values.isEmpty else { return [] }
         let id = "category:"+category.id
         return [BrowserRow(id:id,title:category.name,header:true,count:values.count,expanded:!collapsed.contains(id),categoryID:category.id)] + (collapsed.contains(id) ? [] : values)
     }
+    // A user need not create an "Other" category to keep unmatched files
+    // visible. Never label them as the first unrelated configured category.
+    if !categories.isEmpty, let entries = grouped[""], !entries.isEmpty {
+        let values = newest(entries), id = "category:unmatched"
+        result += [BrowserRow(id:id,title:"其他",header:true,count:values.count,expanded:!collapsed.contains(id))] + (collapsed.contains(id) ? [] : values)
+    }
+    return result
 }
 func projectMonth(_ name: String) -> Int? {
     guard let range = name.range(of:"^(1[0-2]|[1-9])(?=月|\\s|[^0-9]|$)",options:.regularExpression) else { return nil }

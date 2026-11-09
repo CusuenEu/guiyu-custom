@@ -107,6 +107,9 @@ func score(_ file: FileItem, project: Project) -> (Int,String) {
     @Published var metadataReady = false
     @Published var globalRefreshRevision = 0
     @Published var fileOperationRevision = 0
+    @Published var isPastingFiles = false
+    @Published var pastedPathsByDirectory: [String:[String]] = [:]
+    @Published var lastFilePaste: FilePasteResult?
     let progress = IndexProgress()
     var message: String { get { progress.message } set { progress.message = newValue } }
     @Published var busy = false; @Published var error = ""; @Published var selected = "all"
@@ -351,13 +354,14 @@ struct Preview: NSViewRepresentable {
     try categoryWorkflowTest(root:root)
     try batchOperationsTest(root:root)
     try quickArchiveTest(root:root)
-    try archiveMatchingTest(root:root)
+    try archiveMatchingTest()
     try finderServicesTest(root:root)
     try filenameSearchTest(root:root)
     try lightweightTest(root:root)
     try interactionTest()
     try finderShortcutTest(root:root)
     try fileCopyTests(root:root)
+    try filePasteTests(root:root)
     try namingArchiveTests(root:root)
     try indexingTest(root:root)
     try directoryOrderingTest(root:root)
@@ -368,7 +372,9 @@ struct Preview: NSViewRepresentable {
     try automationTest(root:root)
     print("PASS: extraction + OCR; explicit-click routing, no unrequested moves, ambiguity, stable downloads, undo suppression, time sorting, persisted records")
 }
-if CommandLine.arguments.contains("--file-icons-review") { do { try MainActor.assumeIsolated { try fileTypeIconsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+if CommandLine.arguments.contains("--automatic-categories-review") { do { try MainActor.assumeIsolated { try automaticCategoryUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--file-paste-review") { do { try MainActor.assumeIsolated { try filePasteUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
+else if CommandLine.arguments.contains("--file-icons-review") { do { try MainActor.assumeIsolated { try fileTypeIconsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--self-test") { do { try MainActor.assumeIsolated { try selfTest() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if let index = CommandLine.arguments.firstIndex(of:"--window-frame-read-test"), CommandLine.arguments.indices.contains(index+1) { do { try MainActor.assumeIsolated { try windowFrameReadTest(CommandLine.arguments[index+1]) } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }
 else if CommandLine.arguments.contains("--project-roots-review") { do { try MainActor.assumeIsolated { try projectRootsUIReview() } } catch { fputs("FAIL: \(error)\n",stderr); exit(1) } }

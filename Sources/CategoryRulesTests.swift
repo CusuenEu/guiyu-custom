@@ -71,5 +71,12 @@ import Foundation
     let many = (0..<1000).map { row("售中技术方案-\($0).docx") }
     let presented = presentDirectory(many,mode:"按类别",query:"",collapsed:[],categories:store.workspaceCategories,assignments:[:])
     try verify(presented.filter{!$0.header}.count == many.count && presented.first?.categoryID == sales.id,"The complete grouping path must apply generated rules once per entry without dropping or duplicating entries")
+    let custom = [WorkspaceCategory(id:"contracts",name:"合同")]
+    let unmatched = row("普通说明.txt")
+    try verify(resolvedCategory(unmatched,categories:custom,assignments:[:]) == nil,"Unmatched files must not inherit the first custom category")
+    let limited = presentDirectory([row("采购合同.pdf"),unmatched],mode:"按类别",query:"",collapsed:[],categories:custom)
+    try verify(limited.filter{$0.header}.map(\.title) == ["合同","其他"] && limited.filter{!$0.header}.count == 2,"Display an Other group without adding a saved category or dropping files")
+    let namedOther = WorkspaceCategory(id:"custom-other",name:"其他")
+    try verify(resolvedCategory(unmatched,categories:custom+[namedOther],assignments:[:])?.id == namedOther.id,"A user-created Other category is the real fallback regardless of its UUID")
     print("PASS: automatic category rules, vocabulary/name/type generation, conservative unknowns, English boundaries, persistence/editing/scope/exclusions, manual precedence, conflict/priority, legacy compatibility and non-destructive failure")
 }

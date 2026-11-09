@@ -7,8 +7,14 @@ const {
   clipboard,
   Menu,
   net,
+  session,
   screen,
 } = require("electron");
+// Keep Chromium's system proxy support while using HTTP/1.1 for release requests.
+if (process.platform === "win32") {
+  app.commandLine?.appendSwitch("disable-http2");
+  app.commandLine?.appendSwitch("disable-quic");
+}
 const fs = require("node:fs/promises"),
   path = require("node:path"),
   { pathToFileURL } = require("node:url");
@@ -32,10 +38,16 @@ const updater = require("./update.cjs").createUpdater({
   openExternal: (url) => shell.openExternal(url),
   current: require("../version.json"),
   arch: process.arch,
-  install: update => require("./install-update.cjs").createInstallerUpdater({
-    app, fetch: (url, options) => net.fetch(url, options),
-    progress: value => win?.webContents.send("guiyu-update-progress", value),
-  })(update),
+  install: update => {
+    const { createInstallerUpdater, createReleaseDownloadFetch } = require("./install-update.cjs");
+    const fetch = createReleaseDownloadFetch({
+      chromiumFetch: (url, options) => net.fetch(url, options),
+      resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+    });
+    return createInstallerUpdater({
+      app, fetch, progress: value => win?.webContents.send("guiyu-update-progress", value),
+    })(update);
+  },
 });
 let store,
   win,
@@ -109,6 +121,12 @@ function state() {
   };
 }
 let busy = false;
+async function clipboardFiles() {
+  if (process.platform !== "win32") return [];
+  const script = await fs.readFile(path.join(__dirname, "../scripts/read-file-clipboard.ps1"), "utf8");
+  const paths = JSON.parse(await runPS(script, {}, 15000));
+  return Array.isArray(paths) ? paths.filter(p => typeof p === "string" && path.isAbsolute(p)) : [];
+}
 async function dispatch(method, arg = {}) {
   switch (method) {
     case "state":
@@ -121,13 +139,24 @@ async function dispatch(method, arg = {}) {
       if (!Array.isArray(arg.items) || !arg.items.length) throw Error("请选择要复制的文档或文件夹。");
       const paths = [];
       for (const item of arg.items) {
-        const current = await store.guard(item.path);
-        await verify(item);
+        const current = await store.guard(item.path).catch(() => store.browse(item.path));
+        if (item.identity) await verify(item);
         if (!paths.includes(current.path)) paths.push(current.path);
       }
       const script = await fs.readFile(path.join(__dirname, "../scripts/copy-files.ps1"), "utf8");
       await runPS(script, { GUIYU_COPY_PATHS: JSON.stringify(paths) }, 45000);
       return { count: paths.length };
+    }
+    case "clipboardFiles": {
+      if (arg.destination) {
+        try { await store.browse(arg.destination); }
+        catch { return { count: 0 }; }
+      }
+      return { count: (await clipboardFiles()).length };
+    }
+    case "pasteFiles": {
+      await store.browse(arg.destination);
+      return require("./file-paste.cjs").pasteFiles(await clipboardFiles(), arg.destination);
     }
     case "explorerMenu": {
       if (process.platform !== "win32") throw Error("此功能仅适用于 Windows。");
@@ -250,11 +279,11 @@ async function dispatch(method, arg = {}) {
       for (const c of arg.categories) validateRule(c.rule || ruleFor(c.name));
       next.categories = arg.categories;
       const fallback =
-        next.categories.find((c) => c.id === "其他" || c.name === "其他") ||
-        next.categories[0];
-      for (const a of Object.values(next.assignments))
+        next.categories.find((c) => c.id === "其他" || c.name === "其他");
+      for (const [p, a] of Object.entries(next.assignments))
         if (!next.categories.some((c) => c.id === a.categoryID))
-          a.categoryID = fallback?.id;
+          if (fallback) a.categoryID = fallback.id;
+          else delete next.assignments[p];
       await store.save(next);
       return state();
     }
@@ -341,23 +370,10 @@ async function dispatch(method, arg = {}) {
       }
     }
     case "archiveSuggest": {
-      const texts = arg.items.map(e => e.name);
       const projects = [...new Map([...store.snapshot.rootEntries, ...store.snapshot.projects]
         .filter(p => p.folder).map(p => [p.path, p])).values()];
       const { rank } = require("./archive-match.cjs");
-      let result = rank(projects, texts);
-      const warnings = [];
-      if (!result.some(p => p.score >= 75)) {
-        for (const e of arg.items) {
-          await store.guard(e.path); await verify(e);
-          try {
-            const docs = e.folder ? (await list(e.path)).filter(x => !x.folder).slice(0, 2) : [e];
-            for (const d of docs) texts.push(await extract(d, 2));
-          } catch (error) { warnings.push(error.message); }
-        }
-        result = rank(projects, texts);
-      }
-      return { projects: result, warnings };
+      return { projects, recommendations: rank(projects, arg.items) };
     }
     case "rename": {
       const result = await store.rename(arg.plans);

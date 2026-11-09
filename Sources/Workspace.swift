@@ -47,6 +47,9 @@ struct BrowserTable: NSViewRepresentable {
     var categoryOptions: (BrowserRow) -> [WorkspaceCategory] = { _ in [] }
     var moveCategory: (BrowserRow,String) -> Void = { _,_ in }
     var toggle: (BrowserRow) -> Void = { _ in }; var preview: () -> Void = {}; var previewRequest: Binding<Bool>? = nil
+    var pasteStore: Store? = nil
+    var pasteDestination: String? = nil
+    var pasteIntoSelectedFolder = false
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context:Context) -> NSScrollView {
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true
@@ -64,6 +67,13 @@ struct BrowserTable: NSViewRepresentable {
             guard let table else { return }
             context.coordinator.copySelection(to:table.copyPasteboard)
         }
+        table.onPaste = { [weak table] in
+            guard let table else { return }; context.coordinator.pasteSelection(from:table.copyPasteboard)
+        }
+        table.canPaste = { [weak table] in
+            guard let table else { return false }
+            return context.coordinator.parent.pasteStore?.canPasteFiles(into:context.coordinator.resolvedPasteDestination,from:table.copyPasteboard) == true
+        }
         table.onColumnWidthChange = { [weak coordinator = context.coordinator] in coordinator?.projectWidthChanged() }
         let menu = NSMenu(); menu.delegate = context.coordinator; table.menu = menu
         scroll.documentView = table; return scroll
@@ -80,7 +90,10 @@ struct BrowserTable: NSViewRepresentable {
         if signature != c.signature { c.signature = signature; c.rows = rows; c.projectHeights.removeAll(); table.reloadData() }
         let ids = multipleSelection?.wrappedValue ?? Set(selection.map { [$0] } ?? [])
         let indexes = IndexSet(c.rows.indices.filter { ids.contains(c.rows[$0].id) && !c.rows[$0].header })
-        if table.selectedRowIndexes != indexes { table.selectRowIndexes(indexes,byExtendingSelection:false) }
+        if table.selectedRowIndexes != indexes {
+            table.selectRowIndexes(indexes,byExtendingSelection:false)
+            if let row = indexes.first { table.scrollRowToVisible(row) }
+        }
         if changedDataset { scroll.contentView.scroll(to:.zero); scroll.reflectScrolledClipView(scroll.contentView) }
         c.updating = false
         if previewRequest?.wrappedValue == true {
@@ -169,13 +182,36 @@ struct BrowserTable: NSViewRepresentable {
         func renameSelection() { if selectedRows.count == 1 { parent.directRename?(selectedRows[0]) } else if !selectedRows.isEmpty { parent.batchRename?(selectedRows,false) } }
         func openSelection() { for row in selectedRows { parent.activate(row) } }
         func copySelection(to pasteboard:NSPasteboard) { copyFileRows(selectedRows,to:pasteboard) }
+        var resolvedPasteDestination: String? {
+            guard parent.appearance == .projects || parent.pasteIntoSelectedFolder else { return parent.pasteDestination }
+            return filePasteDestination(directory:parent.pasteDestination,selectedFolder:selectedRows.count == 1 && selectedRows.first?.folder == true ? selectedRows.first?.id : nil)
+        }
+        func pasteSelection(from pasteboard:NSPasteboard) {
+            guard let destination = resolvedPasteDestination else { return }
+            MainActor.assumeIsolated { parent.pasteStore?.pasteFiles(into:destination,from:pasteboard) }
+        }
         @objc func clicked(_ sender:NSTableView) { if rows.indices.contains(sender.clickedRow), rows[sender.clickedRow].header { parent.toggle(rows[sender.clickedRow]) } }
         @objc func open(_ sender:NSTableView) { if rows.indices.contains(sender.clickedRow), !rows[sender.clickedRow].header { parent.activate(rows[sender.clickedRow]) } }
         func menuNeedsUpdate(_ menu:NSMenu) {
-            menu.removeAllItems(); contextRow = nil
-            guard let t = table, rows.indices.contains(t.clickedRow), !rows[t.clickedRow].header else { return }
-            let row = rows[t.clickedRow]; contextRow = row
-            contextRows = t.selectedRowIndexes.contains(t.clickedRow) ? t.selectedRowIndexes.compactMap { rows.indices.contains($0) && !rows[$0].header ? rows[$0] : nil } : [row]
+            guard let t = table else { return }
+            updateContextMenu(menu,at:(t as? BrowserNSTable)?.contextClickRow ?? t.clickedRow)
+        }
+        func updateContextMenu(_ menu:NSMenu, at index:Int) {
+            menu.removeAllItems(); menu.autoenablesItems = false; contextRow = nil; contextRows = []
+            guard let t = table else { return }
+            let row = rows.indices.contains(index) && !rows[index].header ? rows[index] : nil
+            if let row {
+                contextRow = row
+                contextRows = t.selectedRowIndexes.contains(index) ? t.selectedRowIndexes.compactMap { rows.indices.contains($0) && !rows[$0].header ? rows[$0] : nil } : [row]
+                let copy = NSMenuItem(title:"复制",action:#selector(copyClicked),keyEquivalent:""); copy.target = self; menu.addItem(copy)
+            }
+            if parent.pasteStore != nil {
+                let paste = NSMenuItem(title:"粘贴",action:#selector(pasteClicked),keyEquivalent:""); paste.target = self
+                paste.isEnabled = MainActor.assumeIsolated { parent.pasteStore?.canPasteFiles(into:resolvedPasteDestination,from:(t as? BrowserNSTable)?.copyPasteboard ?? .general) == true }
+                menu.addItem(paste)
+            }
+            guard let row else { return }
+            menu.addItem(.separator())
             if parent.quickArchive != nil {
                 let quick = NSMenuItem(title:"智能归档…",action:#selector(quickArchiveClicked),keyEquivalent:""); quick.target = self; menu.addItem(quick); menu.addItem(.separator())
             }
@@ -200,6 +236,8 @@ struct BrowserTable: NSViewRepresentable {
             let reveal = NSMenuItem(title:"在 Finder 中显示",action:#selector(revealClicked),keyEquivalent:""); reveal.target = self; menu.addItem(reveal)
         }
         @objc func quickArchiveClicked() { parent.quickArchive?(contextRows) }
+        @objc func copyClicked() { copyFileRows(contextRows,to:(table as? BrowserNSTable)?.copyPasteboard ?? .general) }
+        @objc func pasteClicked() { pasteSelection(from:(table as? BrowserNSTable)?.copyPasteboard ?? .general) }
         @objc func batchRecommendClicked() { parent.batchRename?(contextRows,true) }
         @objc func batchManualClicked() { parent.batchRename?(contextRows,false) }
         func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
@@ -242,7 +280,9 @@ final class BrowserRowView: NSTableRowView {
     }
 }
 final class BrowserNSTable: NSTableView {
-    var onSpace: (() -> Void)?; var onTrash: (() -> Void)?; var onRename: (() -> Void)?; var onOpen: (() -> Void)?; var onCopy: (() -> Void)?
+    var onSpace: (() -> Void)?; var onTrash: (() -> Void)?; var onRename: (() -> Void)?; var onOpen: (() -> Void)?; var onCopy: (() -> Void)?; var onPaste: (() -> Void)?
+    var canPaste: (() -> Bool)?
+    var contextClickRow: Int?
     var copyPasteboard: NSPasteboard = .general
     var onColumnWidthChange: (() -> Void)?
     private var measuredColumnWidth: CGFloat = -1
@@ -261,7 +301,7 @@ final class BrowserNSTable: NSTableView {
     func performFileShortcut(_ event: NSEvent) -> Bool {
         guard let window, window.firstResponder === self, window.attachedSheet == nil, let action = fileShortcut(for:event) else { return false }
         let handler: (() -> Void)?
-        switch action { case .preview: handler = onSpace; case .trash: handler = onTrash; case .rename: handler = onRename; case .open: handler = onOpen; case .copy: handler = onCopy }
+        switch action { case .preview: handler = onSpace; case .trash: handler = onTrash; case .rename: handler = onRename; case .open: handler = onOpen; case .copy: handler = onCopy; case .paste: handler = canPaste?() == true ? onPaste : nil }
         guard let handler else { return false }; handler(); return true
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool { performFileShortcut(event) || super.performKeyEquivalent(with:event) }
@@ -269,6 +309,22 @@ final class BrowserNSTable: NSTableView {
     @objc func copy(_ sender:Any?) {
         guard let window,window.firstResponder === self,window.attachedSheet == nil else { return }
         onCopy?()
+    }
+    @objc func paste(_ sender:Any?) {
+        guard let window,window.firstResponder === self,window.attachedSheet == nil,canPaste?() == true else { return }
+        onPaste?()
+    }
+    override func mouseDown(with event:NSEvent) {
+        window?.makeFirstResponder(self); super.mouseDown(with:event)
+    }
+    override func menu(for event:NSEvent) -> NSMenu? {
+        guard window?.attachedSheet == nil else { return nil }
+        window?.makeFirstResponder(self)
+        contextClickRow = row(at:convert(event.locationInWindow,from:nil))
+        if let index = contextClickRow, index >= 0, !selectedRowIndexes.contains(index), delegate?.tableView?(self,shouldSelectRow:index) != false {
+            selectRowIndexes(IndexSet(integer:index),byExtendingSelection:false)
+        }
+        return super.menu(for:event)
     }
 }
 final class BrowserCell: NSTableCellView {
@@ -319,6 +375,11 @@ struct ProjectWorkspace: View {
     @State var sidebarDragOrigin: CGFloat?
     @State var searchFolderToOpen: String?
     @State private var archiveAfterNaming:QuickArchiveRequest?
+    @State var projectDirectoryEntries: [BrowserRow] = []
+    @State var projectDirectoryGeneration = UUID()
+    @State var projectDirectoryEntriesPath = ""
+    @State var pendingPasteSelection: FilePasteResult?
+    @State var preferCategoryGrouping = false
     var isScopeSearch: Bool { archiveSourceID == nil && !FilenameQuery(query).tokens.isEmpty }
     var activeSourceRows: [BrowserRow] { isScopeSearch ? search.output.searchEntries : sourceRows }
     var activeDragScope: String { isScopeSearch ? "search:"+(selectedDirectory?.path ?? year) : sourceFolder }
@@ -326,12 +387,18 @@ struct ProjectWorkspace: View {
     var selectedDirectory: Project? { store.settings.projects.first { $0.shallow == true && $0.scopeID == year } }
     var project: Project? { store.settings.projects.first { $0.path == projectPath && $0.shallow != true && $0.scopeID == year } }
     var selectedFile: FileItem? { guard fileSelections.count <= 1 else { return nil }; return store.files.first { $0.path == filePath } ?? activeSourceRows.first { $0.id == filePath }?.file }
-    var projectRows: [BrowserRow] { search.output.projectRows }
+    var projectRows: [BrowserRow] {
+        let base = search.output.projectRows, ids = Set(base.map(\.id)), filter = FilenameQuery(query)
+        let extra = (projectDirectoryEntriesPath == selectedDirectory?.path ? projectDirectoryEntries : []).filter { !$0.folder && !ids.contains($0.id) && filter.matches($0.title) }
+        return pastedRowsFirst(base+extra,paths:store.pastedPathsByDirectory[selectedDirectory?.path ?? ""] ?? [])
+    }
     var fileRows: [BrowserRow] { search.output.fileRows }
     func refreshSearch() {
-        search.submit(index:store.filenameIndex,query:query,scope:year,projects:store.settings.projects,files:store.files,sourceRows:sourceRows,byMonth:projectOrder == "月份倒序",mode:mode,collapsed:collapsed,categories:store.workspaceCategories,assignments:store.workspaceAssignments,aggregateThirdLevel:isScopeSearch,metadataRevision:store.searchRevision+store.fileOperationRevision)
+        let copied = mode == "按类别" && preferCategoryGrouping ? [] : store.pastedPathsByDirectory[sourceFolder] ?? []
+        search.submit(index:store.filenameIndex,query:query,scope:year,projects:store.settings.projects,files:store.files,sourceRows:sourceRows,byMonth:projectOrder == "月份倒序",mode:mode,collapsed:collapsed,categories:store.workspaceCategories,assignments:store.workspaceAssignments,aggregateThirdLevel:isScopeSearch,metadataRevision:store.searchRevision+store.fileOperationRevision,pastedPaths:copied,pasteScope:sourceFolder)
     }
-    var body: some View {
+    var body: some View { workspacePresentation }
+    var workspaceContent: some View {
         VStack(spacing:0) {
             HSplitView {
                 yearsPane.frame(minWidth:200,idealWidth:220,maxWidth:280)
@@ -349,14 +416,29 @@ struct ProjectWorkspace: View {
                 }.frame(minWidth:store.workspaceCategories.isEmpty || (archiveSourceID == nil && (project != nil || isScopeSearch)) ? 430 : 0,idealWidth:570,maxWidth:.infinity)
             }.background(WorkspaceSplitLayout())
         }.frame(minWidth:1060,minHeight:700).background(WorkspaceTheme.canvas).tint(accent).ignoresSafeArea(.container,edges:.top)
-        .onAppear { processedRenameCount = store.settings.renames?.count ?? 0; if !years.contains(year) { year = years.first ?? "" }; refreshSearch() }
+    }
+    var workspaceSearchObservers: some View {
+        workspaceContent
+        .onAppear { processedRenameCount = store.settings.renames?.count ?? 0; if !years.contains(year) { year = years.first ?? "" }; preferCategoryGrouping = mode == "按类别"; loadProjectDirectory(); refreshSearch() }
         .onChange(of:query) { _ in fileSelections = []; filePath = nil; refreshSearch() }
         .onChange(of:store.searchRevision) { _ in refreshSearch() }
         .onChange(of:sourceRows) { _ in refreshSearch() }
         .onChange(of:collapsed) { _ in refreshSearch() }
-        .onChange(of:store.workspaceCategories) { _ in refreshSearch() }
+        .onChange(of:store.workspaceCategories) { _ in useAutomaticCategories() }
         .onChange(of:store.workspaceAssignments) { _ in refreshSearch() }
         .onChange(of:projectOrder) { _ in refreshSearch() }
+    }
+    var workspacePasteObservers: some View {
+        workspaceSearchObservers
+        .onChange(of:search.output) { _ in selectPastedItemsWhenReady() }
+        .onChange(of:store.busy) { value in if !value { selectPastedItemsWhenReady() } }
+        .onChange(of:store.lastFilePaste?.id) { _ in
+            guard let result = store.lastFilePaste, archiveSourceID == nil else { return }
+            if (result.destination == selectedDirectory?.path && project == nil) || result.destination == sourceFolder {
+                if result.destination == sourceFolder { preferCategoryGrouping = false }
+                pendingPasteSelection = result; query = ""; loadProjectDirectory(); loadSource(); refreshSearch()
+            }
+        }
         .onChange(of:archiveSourceID) { _ in refreshSearch() }
         .onChange(of:store.settings.archiveSources) { _ in if let id = archiveSourceID, !store.availableArchiveSources.contains(where:{$0.id == id}) { archiveSourceID = nil } }
         .onChange(of:store.settings.projects) { _ in
@@ -366,11 +448,21 @@ struct ProjectWorkspace: View {
             }
             refreshSearch()
         }
-        .onChange(of:year) { _ in projectPath = nil; filePath = nil; fileSelections = []; sourceRows = []; sourceFolder = ""; loadSource(); refreshSearch() }
-        .onChange(of:projectPath) { path in if path != nil { archiveSourceID = nil }; filePath = nil; fileSelections = []; sourceRows = []; sourceFolder = searchFolderToOpen ?? projectPath ?? ""; searchFolderToOpen = nil; loadSource() }
+    }
+    var workspaceNavigationObservers: some View {
+        workspacePasteObservers
+        .onChange(of:year) { _ in pendingPasteSelection = nil; projectPath = nil; filePath = nil; fileSelections = []; sourceRows = []; sourceFolder = ""; loadProjectDirectory(); loadSource(); refreshSearch() }
+        .onChange(of:projectPath) { path in pendingPasteSelection = nil; if path != nil { archiveSourceID = nil }; filePath = nil; fileSelections = []; sourceRows = []; sourceFolder = searchFolderToOpen ?? projectPath ?? ""; searchFolderToOpen = nil; loadSource() }
+        .onChange(of:sourceFolder) { path in
+            if let pending = pendingPasteSelection, pending.destination != path && pending.destination != selectedDirectory?.path { pendingPasteSelection = nil }
+            if !path.isEmpty, archiveSourceID == nil { useAutomaticCategories() }
+        }
         .onChange(of:mode) { _ in filePath = nil; fileSelections = []; collapsed = []; refreshSearch() }
-        .onChange(of:store.fileOperationRevision) { _ in fileSelections = []; filePath = nil; loadSource() }
-        .onChange(of:store.metadataReady) { ready in if ready { loadSource() } }
+    }
+    var workspaceFileObservers: some View {
+        workspaceNavigationObservers
+        .onChange(of:store.fileOperationRevision) { _ in fileSelections = []; filePath = nil; loadProjectDirectory(); loadSource() }
+        .onChange(of:store.metadataReady) { ready in if ready { loadProjectDirectory(); loadSource(); selectPastedItemsWhenReady() } }
         .onChange(of:store.settings.renames?.count) { _ in
             for last in (store.settings.renames ?? []).dropFirst(processedRenameCount) {
                 projectPath = projectPath.map { remapPath($0,source:last.source,destination:last.destination,folder:last.folder) }
@@ -380,6 +472,9 @@ struct ProjectWorkspace: View {
             }
             processedRenameCount = store.settings.renames?.count ?? 0; loadSource()
         }
+    }
+    var workspacePresentation: some View {
+        workspaceFileObservers
         .sheet(item:$quickArchiveRequest) { QuickArchiveDialog(store:store,request:$0) }
         .sheet(item:$naming,onDismiss:{
             if let request = archiveAfterNaming { archiveAfterNaming = nil;quickArchiveRequest = request }
@@ -423,6 +518,7 @@ struct ProjectWorkspace: View {
         store.refresh()
         store.globalRefreshRevision += 1
         loadSource()
+        loadProjectDirectory()
     }
     var sidebarPreferredProjectHeight: CGFloat {
         let roots = store.settings.activeProjectRoots
@@ -506,15 +602,15 @@ struct ProjectWorkspace: View {
     }
     var projectsPane: some View {
         VStack(alignment:.leading,spacing:0) {
-            if projectRows.isEmpty { VStack(spacing:14) { Spacer(); Image(systemName:"folder").font(.largeTitle).foregroundStyle(accent); Text(store.busy ? "正在读取项目目录…" : (!store.settings.hasProjectRoots ? "在设置中选择项目总目录，开始浏览" : "当前目录没有匹配的项目或文件")).foregroundStyle(.secondary); if !store.settings.hasProjectRoots { Button("打开设置") { settingsDestination = .locations }.buttonStyle(.borderedProminent); Button("体验示例空间") { store.demo() } }; Spacer() }.frame(maxWidth:.infinity) }
-            else { BrowserTable(rows:projectRows,selection:$projectPath,dataset:year,appearance:.projects,activate:{ row in if row.folder { query = ""; projectPath = row.id } else if let file = row.file { NSWorkspace.shared.open(file.url) } },rename:{ requestRename($0.id,folder:$0.folder) },directRename:{ requestDirectRename($0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) }) }
+            if projectRows.isEmpty && selectedDirectory == nil { VStack(spacing:14) { Spacer(); Image(systemName:"folder").font(.largeTitle).foregroundStyle(accent); Text(store.busy ? "正在读取项目目录…" : (!store.settings.hasProjectRoots ? "在设置中选择项目总目录，开始浏览" : "当前目录没有匹配的项目或文件")).foregroundStyle(.secondary); if !store.settings.hasProjectRoots { Button("打开设置") { settingsDestination = .locations }.buttonStyle(.borderedProminent); Button("体验示例空间") { store.demo() } }; Spacer() }.frame(maxWidth:.infinity) }
+            else { BrowserTable(rows:projectRows,selection:$projectPath,dataset:year,appearance:.projects,activate:{ row in if row.folder { query = ""; projectPath = row.id } else if let file = row.file { NSWorkspace.shared.open(file.url) } },rename:{ requestRename($0.id,folder:$0.folder) },directRename:{ requestDirectRename($0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) },pasteStore:store,pasteDestination:selectedDirectory?.path).overlay { if projectRows.isEmpty { Text("当前目录为空").foregroundStyle(.secondary).allowsHitTesting(false) } } }
         }
     }
     var filesPane: some View {
         VStack(alignment:.leading,spacing:0) {
             HStack(spacing:2) {
                 ForEach(["按类别","按时间","源文档"],id:\.self) { value in
-                    Button { mode = value } label: {
+                    Button { if value == "按类别" { useAutomaticCategories() } else { mode = value } } label: {
                         Text(value).font(.system(size:13,weight:mode == value ? .semibold : .medium))
                             .foregroundStyle(mode == value ? accent : WorkspaceTheme.ink)
                             .frame(width:76,height:32)
@@ -553,10 +649,38 @@ struct ProjectWorkspace: View {
             else if project == nil && !isScopeSearch { VStack { Spacer(); Text("在中间选择项目，查看其中的资料").foregroundStyle(.secondary); Spacer() }.frame(maxWidth:.infinity) }
             else if sourceLoading && !isScopeSearch { VStack { Spacer(); ProgressView("正在读取当前目录…"); Spacer() }.frame(maxWidth:.infinity) }
             else if !sourceError.isEmpty && !isScopeSearch { VStack { Spacer(); Text(sourceError).foregroundStyle(.secondary); Button("重试") { loadSource() }; Spacer() }.padding().frame(maxWidth:.infinity) }
-            else { BrowserTable(rows:fileRows,selection:$filePath,multipleSelection:$fileSelections,batchRename:{ rows,recommended in requestBatchNaming(rows,recommended:recommended) },batchCategoryOptions:{ rows in batchCategoryDestinations(rows,categories:store.workspaceCategories,assignments:store.workspaceAssignments) },moveCategories:{ rows,id in _ = store.assignCategories(rows,to:id) },dragScope:activeDragScope,dragging:{ isDragging = $0 },dataset:(isScopeSearch ? "search:"+year : (project?.path ?? ""))+"|"+mode+"|"+(isScopeSearch ? query : sourceFolder),activate:{ row in if isScopeSearch && row.folder { openSearchFolder(row) } else if row.folder { if store.settings.projects.contains(where:{$0.path == row.id && $0.shallow != true}) { projectPath = row.id } else { sourceFolder = row.id; filePath = nil; loadSource() } } else if let f = row.file { NSWorkspace.shared.open(f.url) } },rename:{ requestRename($0.id,folder:$0.folder) },directRename:{ requestDirectRename($0) },quickArchive:{ quickArchiveRequest = QuickArchiveRequest(rows:$0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) },categoryOptions:{ categoryDestinations($0,categories:store.workspaceCategories,assignments:store.workspaceAssignments) },moveCategory:{ row,id in _ = store.assignCategory(row,to:id) },toggle:{ row in if collapsed.contains(row.id) { collapsed.remove(row.id) } else { collapsed.insert(row.id) } },previewRequest:$showPreview) }
+            else { BrowserTable(rows:fileRows,selection:$filePath,multipleSelection:$fileSelections,batchRename:{ rows,recommended in requestBatchNaming(rows,recommended:recommended) },batchCategoryOptions:{ rows in batchCategoryDestinations(rows,categories:store.workspaceCategories,assignments:store.workspaceAssignments) },moveCategories:{ rows,id in _ = store.assignCategories(rows,to:id) },dragScope:activeDragScope,dragging:{ isDragging = $0 },dataset:(isScopeSearch ? "search:"+year : (project?.path ?? ""))+"|"+mode+"|"+(isScopeSearch ? query : sourceFolder),activate:{ row in if isScopeSearch && row.folder { openSearchFolder(row) } else if row.folder { if store.settings.projects.contains(where:{$0.path == row.id && $0.shallow != true}) { projectPath = row.id } else { sourceFolder = row.id; filePath = nil; loadSource() } } else if let f = row.file { NSWorkspace.shared.open(f.url) } },rename:{ requestRename($0.id,folder:$0.folder) },directRename:{ requestDirectRename($0) },quickArchive:{ quickArchiveRequest = QuickArchiveRequest(rows:$0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) },categoryOptions:{ categoryDestinations($0,categories:store.workspaceCategories,assignments:store.workspaceAssignments) },moveCategory:{ row,id in _ = store.assignCategory(row,to:id) },toggle:{ row in if collapsed.contains(row.id) { collapsed.remove(row.id) } else { collapsed.insert(row.id) } },previewRequest:$showPreview,pasteStore:store,pasteDestination:isScopeSearch ? nil : sourceFolder) }
         }
     }
     var selectedRows: [BrowserRow] { activeSourceRows.filter { fileSelections.contains($0.id) } }
+    func useAutomaticCategories() {
+        guard !store.workspaceCategories.isEmpty else { refreshSearch(); return }
+        mode = "按类别"; preferCategoryGrouping = true; collapsed = []
+        refreshSearch()
+    }
+    func loadProjectDirectory() {
+        let ticket = UUID(); projectDirectoryGeneration = ticket
+        guard let directory = selectedDirectory else { projectDirectoryEntries = []; return }
+        let path = directory.path
+        DispatchQueue.global(qos:.userInitiated).async {
+            let rows = (try? directoryEntries(path:path,project:path)) ?? []
+            DispatchQueue.main.async {
+                guard projectDirectoryGeneration == ticket, selectedDirectory?.path == path else { return }
+                projectDirectoryEntries = rows; projectDirectoryEntriesPath = path; selectPastedItemsWhenReady()
+            }
+        }
+    }
+    func selectPastedItemsWhenReady() {
+        guard let result = pendingPasteSelection, !store.busy, archiveSourceID == nil else { return }
+        if result.destination == selectedDirectory?.path {
+            guard let first = result.paths.first, projectRows.contains(where:{$0.id == first}) else { return }
+            pendingPasteSelection = nil; projectPath = first
+        } else if result.destination == sourceFolder {
+            let paths = Set(result.paths), available = Set(fileRows.filter{!$0.header}.map(\.id))
+            guard paths.isSubset(of:available) else { return }
+            pendingPasteSelection = nil; fileSelections = paths; filePath = result.paths.count == 1 ? result.paths.first : nil
+        } else { pendingPasteSelection = nil }
+    }
     func requestBatchNaming(_ rows: [BrowserRow], recommended: Bool) {
         guard !rows.isEmpty else { return }
         batchNaming = BatchNamingRequest(rows:rows,projectPath:project?.path ?? sourceFolder,recommended:recommended)

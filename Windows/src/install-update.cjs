@@ -1,6 +1,123 @@
 "use strict";
 const fs = require("node:fs/promises"), path = require("node:path"), crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
+const { setTimeout: delay } = require("node:timers/promises");
+
+const downloadAttempts = 3;
+const retryableStatuses = new Set([400, 408, 429, 500, 502, 503, 504]);
+
+// Direct connections use Node's HTTP/1.1 stack. Keep Chromium for routes
+// that need a system proxy, including proxies on a redirected download host.
+function createReleaseDownloadFetch({ chromiumFetch, resolveProxy, directFetch = globalThis.fetch }) {
+  return async function fetchRelease(url, options) {
+    let address = url;
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      const route = await resolveProxy(address).catch(() => "");
+      if (route.trim() !== "DIRECT") return chromiumFetch(url, options);
+      const response = await directFetch(address, { ...options, redirect: "manual" });
+      if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+      const location = response.headers.get("location");
+      await response.body?.cancel().catch(() => {});
+      if (!location) throw Error("更新包下载缺少跳转地址。");
+      const next = new URL(location, address);
+      if (next.protocol !== "https:" || next.username || next.password ||
+          !["github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"].includes(next.hostname))
+        throw Error("更新包下载跳转地址无效。");
+      address = next.href;
+    }
+    throw Error("更新包下载跳转次数过多。");
+  };
+}
+
+async function downloadInstaller(fetch, update, installer, progress) {
+  const file = await fs.open(installer, "wx");
+  let size = 0, hash = crypto.createHash("sha256"), notified = 0;
+  const report = () => progress({ phase: "downloading", percent: Math.floor(size / update.size * 100) });
+  async function reset() {
+    await file.truncate(0);
+    size = 0;
+    hash = crypto.createHash("sha256");
+    report();
+  }
+
+  try {
+    report();
+    for (let attempt = 0; attempt < downloadAttempts; attempt++) {
+      if (attempt) {
+        progress({ phase: "retrying", percent: Math.floor(size / update.size * 100) });
+        await delay(750 * attempt);
+      }
+      const url = new URL(update.url);
+      if (attempt) url.searchParams.set("guiyu-retry", crypto.randomUUID());
+      const headers = size ? { Range: `bytes=${size}-` } : {};
+      let response;
+      try {
+        response = await fetch(url.href, { headers, signal: AbortSignal.timeout(10 * 60 * 1000) });
+      } catch (error) {
+        if (attempt + 1 === downloadAttempts) throw error;
+        continue;
+      }
+      if (!response.ok || !response.body) {
+        await response.body?.cancel().catch(() => {});
+        if (attempt + 1 < downloadAttempts) {
+          if (response.status === 416 && size) {
+            await reset();
+            continue;
+          }
+          if (retryableStatuses.has(response.status)) continue;
+        }
+        throw Error(`更新包下载失败（${response.status}），请重试。`);
+      }
+      let limit = update.size;
+      if (response.status === 206) {
+        const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get("content-range") || "");
+        const [, start, end, total] = (range || []).map(Number);
+        if (!range || start !== size || end < start || end >= update.size || total !== update.size) {
+          await response.body.cancel().catch(() => {});
+          throw Error("更新包续传范围异常，已停止安装。");
+        }
+        limit = end + 1;
+      } else if (response.status !== 200) {
+        await response.body.cancel().catch(() => {});
+        throw Error(`更新包下载失败（${response.status}），请重试。`);
+      } else if (size) {
+        await reset(); // A server may ignore Range and return the complete package.
+      }
+
+      const reader = response.body.getReader();
+      let interrupted;
+      try {
+        for (;;) {
+          let next;
+          try { next = await reader.read(); }
+          catch (error) { interrupted = error; break; }
+          if (next.done) break;
+          const chunk = Buffer.from(next.value);
+          if (size + chunk.length > limit) throw Error("更新包大小异常，已停止安装。");
+          // Explicit positions also work after the server requires a fresh download.
+          for (let offset = 0; offset < chunk.length;) {
+            const { bytesWritten } = await file.write(chunk, offset, chunk.length - offset, size + offset);
+            if (!bytesWritten) throw Error("更新包无法写入磁盘。");
+            offset += bytesWritten;
+          }
+          hash.update(chunk);
+          size += chunk.length;
+          if (Date.now() - notified > 200) { report(); notified = Date.now(); }
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
+      }
+      if (size === update.size) break;
+      if (attempt + 1 === downloadAttempts)
+        throw interrupted || Error("更新包下载不完整，请重试。");
+    }
+  } finally { await file.close(); }
+
+  progress({ phase: "verifying" });
+  if (size !== update.size || hash.digest("hex") !== update.digest.slice(7).toLowerCase())
+    throw Error("更新包校验失败，已删除下载文件，请重新检查更新。");
+}
 
 function createInstallerUpdater({ fetch, app, progress = () => {}, launch = launchHelper, platform = process.platform }) {
   let installing = false;
@@ -20,28 +137,7 @@ function createInstallerUpdater({ fetch, app, progress = () => {}, launch = laun
       catch { throw Error("当前安装位置不可写，请把归屿安装到当前用户的可写目录后更新。"); }
       temp = await fs.mkdtemp(path.join(app.getPath("temp"), "Guiyu-update-"));
       const installer = path.join(temp, "update-setup.exe");
-      const response = await fetch(update.url, { signal: AbortSignal.timeout(10 * 60 * 1000) });
-      if (!response.ok || !response.body) throw Error(`更新包下载失败（${response.status}），请重试。`);
-      const file = await fs.open(installer, "wx"), hash = crypto.createHash("sha256");
-      let size = 0, notified = 0;
-      progress({ phase: "downloading", percent: 0 });
-      try {
-        for await (const raw of response.body) {
-          const chunk = Buffer.from(raw); size += chunk.length;
-          if (size > update.size) throw Error("更新包大小异常，已停止安装。");
-          hash.update(chunk);
-          // FileHandle.write may write fewer bytes than requested.
-          for (let offset = 0; offset < chunk.length;) {
-            const { bytesWritten } = await file.write(chunk, offset, chunk.length - offset);
-            if (!bytesWritten) throw Error("更新包无法写入磁盘。");
-            offset += bytesWritten;
-          }
-          if (Date.now() - notified > 200) { progress({ phase: "downloading", percent: Math.floor(size / update.size * 100) }); notified = Date.now(); }
-        }
-      } finally { await file.close(); }
-      progress({ phase: "verifying" });
-      if (size !== update.size || hash.digest("hex") !== update.digest.slice(7).toLowerCase())
-        throw Error("更新包校验失败，已删除下载文件，请重新检查更新。");
+      await downloadInstaller(fetch, update, installer, progress);
       const manifest = { installer, digest: update.digest.slice(7).toLowerCase(), installDir,
         executable, parentPid: process.pid, packageVersion: update.packageVersion,
         statusFile: path.join(temp, "status.json"), readyFile: path.join(temp, "ready.json") };
@@ -95,4 +191,4 @@ async function launchHelper(helper, manifest, readyFile) {
   const readyText = (await fs.readFile(readyFile, "utf8").catch(() => "未生成就绪记录")).trim();
   throw Error(`更新安装程序准备超时，归屿仍保持运行：${diagnostic || `进程 ${child.pid}，${readyText}`}`);
 }
-module.exports = { createInstallerUpdater };
+module.exports = { createInstallerUpdater, createReleaseDownloadFetch };

@@ -176,14 +176,7 @@ const server = http.createServer(async (req, res) => {
         case "reviewRenameStatus": result = { renameCalls, lastRename, lastArchiveItems }; break;
         case "archiveSuggest":
           lastArchiveItems = arg.items;
-          result = {
-            projects: projects.map((p, i) => ({
-              ...p,
-              score: i === 0 ? 10 : 0,
-              evidence: "隔离示例名称匹配",
-            })),
-            warnings: [],
-          };
+          result = { projects, recommendations: require("../src/archive-match.cjs").rank(projects, arg.items) };
           break;
         case "checkUpdate":
           result = { message: "隔离预览，不访问更新服务。" };

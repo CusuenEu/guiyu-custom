@@ -47,6 +47,8 @@ struct DirectoryOrderRow: NSViewRepresentable {
         view.title = URL(fileURLWithPath:directory.path).lastPathComponent
         view.toolTip = directory.path+"\n按住文件夹上下拖动调整顺序"
         view.selected = selected; view.select = select
+        view.onPaste = { board in store.pasteFiles(into:directory.path,from:board) }
+        view.canPaste = { board in store.canPasteFiles(into:directory.path,from:board) }
         view.setAccessibilityLabel(view.title)
         view.setAccessibilityValue(selected ? "已选中" : "")
         view.needsDisplay = true
@@ -66,6 +68,8 @@ final class DirectoryOrderRowView: NSView, NSDraggingSource {
     var selected = false
     var select: () -> Void = {}
     var copyPasteboard:NSPasteboard = .general
+    var onPaste: ((NSPasteboard) -> Void)?
+    var canPaste: ((NSPasteboard) -> Bool)?
     private let icon = NSImageView()
     private var pressPoint: NSPoint?
     private var isDragging = false
@@ -94,9 +98,23 @@ final class DirectoryOrderRowView: NSView, NSDraggingSource {
         guard let window,window.firstResponder === self,window.attachedSheet == nil,selected,let payload else { return }
         copyFilePaths([payload.path],to:copyPasteboard)
     }
+    @objc func paste(_ sender:Any?) {
+        guard let window,window.firstResponder === self,window.attachedSheet == nil,selected,canPaste?(copyPasteboard) == true else { return }
+        onPaste?(copyPasteboard)
+    }
     private func performCopyShortcut(_ event:NSEvent) -> Bool {
-        guard let window,window.firstResponder === self,window.attachedSheet == nil,selected,payload != nil,fileShortcut(for:event) == .copy else { return false }
-        copy(nil);return true
+        guard let window,window.firstResponder === self,window.attachedSheet == nil,selected,payload != nil else { return false }
+        if fileShortcut(for:event) == .copy { copy(nil); return true }
+        if fileShortcut(for:event) == .paste, canPaste?(copyPasteboard) == true { paste(nil); return true }
+        return false
+    }
+    override func menu(for event:NSEvent) -> NSMenu? {
+        guard window?.attachedSheet == nil else { return nil }
+        window?.makeFirstResponder(self); select()
+        let menu = NSMenu(); menu.autoenablesItems = false
+        let copy = NSMenuItem(title:"复制",action:#selector(copy(_:)),keyEquivalent:""); copy.target = self; menu.addItem(copy)
+        let paste = NSMenuItem(title:"粘贴",action:#selector(paste(_:)),keyEquivalent:""); paste.target = self; paste.isEnabled = canPaste?(copyPasteboard) == true; menu.addItem(paste)
+        return menu
     }
     override func performKeyEquivalent(with event:NSEvent) -> Bool { performCopyShortcut(event) || super.performKeyEquivalent(with:event) }
     override func keyDown(with event:NSEvent) {

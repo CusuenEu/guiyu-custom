@@ -97,7 +97,8 @@ struct ArchiveSourcePane: View {
     @State private var folder = ""; @State private var loading = false; @State private var error = ""; @State private var generation = UUID(); @State private var recent: RecentFilesQuery?
     @State private var quick: QuickArchiveRequest?; @State private var rename: NamingTarget?; @State private var manual: NamingTarget?; @State private var batch: BatchNamingRequest?
     @State private var archiveAfterNaming:QuickArchiveRequest?
-    var filtered: [BrowserRow] { rows }
+    @State private var pendingPaste: FilePasteResult?
+    var filtered: [BrowserRow] { pastedRowsFirst(rows,paths:store.pastedPathsByDirectory[folder] ?? []) }
     var body: some View {
         VStack(alignment:.leading,spacing:0) {
             if source.kind == "folder", !folder.isEmpty, folder != source.path {
@@ -108,14 +109,17 @@ struct ArchiveSourcePane: View {
             }
             if loading { Spacer(); ProgressView("正在读取文件列表…").frame(maxWidth:.infinity); Spacer() }
             else if !error.isEmpty { Spacer(); Text(error).foregroundStyle(.secondary).padding(); Button("重试") { load() }.padding(.horizontal); Spacer() }
-            else if rows.isEmpty { Spacer(); Text("暂时没有可显示的文件").foregroundStyle(.secondary).frame(maxWidth:.infinity); Spacer() }
             else {
-                BrowserTable(rows:filtered,selection:$selected,multipleSelection:$selections,batchRename:{ values,recommended in batch = BatchNamingRequest(rows:values,projectPath:"",recommended:recommended) },dataset:source.id+"|"+folder,activate:{ row in if row.folder { folder = row.id; load() } else { NSWorkspace.shared.open(URL(fileURLWithPath:row.id)) } },rename:{ row in rename = NamingTarget(path:row.id,folder:row.folder,projectPath:"") },directRename:{ row in manual = NamingTarget(path:row.id,folder:row.folder,projectPath:"") },quickArchive:{ quick = QuickArchiveRequest(rows:$0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) })
+                BrowserTable(rows:filtered,selection:$selected,multipleSelection:$selections,batchRename:{ values,recommended in batch = BatchNamingRequest(rows:values,projectPath:"",recommended:recommended) },dataset:source.id+"|"+folder,activate:{ row in if row.folder { folder = row.id; load() } else { NSWorkspace.shared.open(URL(fileURLWithPath:row.id)) } },rename:{ row in rename = NamingTarget(path:row.id,folder:row.folder,projectPath:"") },directRename:{ row in manual = NamingTarget(path:row.id,folder:row.folder,projectPath:"") },quickArchive:{ quick = QuickArchiveRequest(rows:$0) },trash:{ _ = store.moveToTrash($0,undoManager:NSApplication.shared.keyWindow?.undoManager) },pasteStore:store,pasteDestination:source.kind == "folder" ? folder : nil,pasteIntoSelectedFolder:true).overlay { if rows.isEmpty { Text("暂时没有可显示的文件").foregroundStyle(.secondary).allowsHitTesting(false) } }
             }
         }
         .onAppear { folder = source.path; load() }.onDisappear { generation = UUID(); recent?.stop() }
         .onChange(of:source.path) { _ in folder = source.path; load() }
         .onChange(of:store.fileOperationRevision) { _ in load() }
+        .onChange(of:store.lastFilePaste?.id) { _ in
+            guard let result = store.lastFilePaste, source.kind == "folder", result.destination == folder || rows.contains(where:{$0.id == result.destination && $0.folder}) else { return }
+            pendingPaste = result; folder = result.destination; load()
+        }
         .onChange(of:store.globalRefreshRevision) { _ in load() }
         .onChange(of:store.settings.moves.map { $0.id.uuidString+String($0.undone) }) { _ in load() }
         .onChange(of:store.settings.renames?.count) { _ in load() }
@@ -137,7 +141,9 @@ struct ArchiveSourcePane: View {
             DispatchQueue.global(qos:.userInitiated).async {
                 let result = Result { try directoryEntries(path:path,project:"") }
                 DispatchQueue.main.async { guard generation == ticket else { return }; loading = false
-                    switch result { case .success(let values): rows = values.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }; case .failure(let e): error = "无法读取关联文件夹："+e.localizedDescription; rows = [] }
+                    switch result { case .success(let values):
+                        rows = values.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+                        if let pasted = pendingPaste, pasted.destination == path { selections = Set(pasted.paths); selected = pasted.paths.count == 1 ? pasted.paths.first : nil; pendingPaste = nil }; case .failure(let e): error = "无法读取关联文件夹："+e.localizedDescription; rows = [] }
                 }
             }
         }

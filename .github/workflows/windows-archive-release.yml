@@ -1,0 +1,132 @@
+name: Publish Windows archive matching
+on:
+  workflow_run:
+    workflows: ['Windows validation']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Windows validation run for 20261106(03)
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.release.outputs.published }}
+      sha: ${{ steps.source.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      BUILD_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+    steps:
+      - name: Verify source build and installation checks
+        id: source
+        run: |
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]] || exit 1
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN_ID" > /tmp/build-run.json
+          gh api --paginate --slurp "repos/$GH_REPO/actions/runs/$BUILD_RUN_ID/jobs?per_page=100" > /tmp/build-jobs.json
+          node - <<'JS'
+          const fs=require('node:fs'),r=require('/tmp/build-run.json');
+          const jobs=require('/tmp/build-jobs.json').flatMap(p=>p.jobs);
+          if(r.status!=='completed'||r.event!=='push'||r.head_branch!=='main'||r.head_repository.full_name!==process.env.GH_REPO||r.path!=='.github/workflows/windows.yml')throw Error('Expected this repository main push Windows validation');
+          const core=jobs.filter(j=>/^core \(/.test(j.name));
+          const packageJob=jobs.find(j=>j.name==='package');
+          if(r.conclusion!=='success'||packageJob?.conclusion!=='success'||core.length!==2||core.some(j=>j.conclusion!=='success'))throw Error('Both architecture core checks must pass');
+          const required=['Verify installer integration','Packaged workspace regression (ia32 and x64)','Automatic update installation and restart (ia32 and x64)'];
+          if(required.some(name=>!packageJob.steps.some(s=>s.name===name&&s.conclusion==='success')))throw Error('Installer, packaged workspace, and updater checks must all pass');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'sha='+r.head_sha+'\n');
+          fs.appendFileSync(process.env.GITHUB_ENV,'SOURCE_SHA='+r.head_sha+'\nVALIDATION_RESULT='+r.conclusion+'\n');
+          JS
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+      - name: Check requested Windows version
+        id: version
+        run: |
+          if [[ "$(gh release view windows-20261106-03 --json isDraft --jq '.isDraft' 2>/dev/null)" == 'false' ]]; then
+            echo 'eligible=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          export MAIN_WINDOWS_TREE="$(gh api "repos/$GH_REPO/git/trees/main" --jq '.tree[] | select(.path=="Windows") | .sha')"
+          export SOURCE_WINDOWS_TREE="$(git rev-parse HEAD:Windows)"
+          node - <<'JS'
+          const fs=require('node:fs'),v=require('./Windows/version.json');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'eligible='+(v.date==='20261106'&&v.sequence===3&&process.env.MAIN_WINDOWS_TREE===process.env.SOURCE_WINDOWS_TREE)+'\n');
+          JS
+      - uses: actions/download-artifact@v4
+        if: steps.version.outputs.eligible == 'true'
+        with:
+          name: Guiyu-Windows
+          run-id: ${{ env.BUILD_RUN_ID }}
+          github-token: ${{ github.token }}
+          path: release-assets
+      - name: Verify four separate Windows packages and prepare release
+        if: steps.version.outputs.eligible == 'true'
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),v=require('./Windows/version.json');
+          const {metadata}=require('./Windows/scripts/version.cjs');
+          if(v.date!=='20261106'||v.sequence!==3||JSON.stringify(v)!==JSON.stringify(metadata(v)))throw Error('Expected Windows 20261106(03)');
+          const wanted=['ia32','x64'].flatMap(a=>[`${v.assetPrefix}-Windows-${a}.zip`,`${v.assetPrefix}-Windows-${a}-setup.exe`]).sort();
+          const actual=fs.readdirSync('release-assets').sort();
+          if(JSON.stringify(actual)!==JSON.stringify(wanted)||actual.some(n=>!fs.statSync('release-assets/'+n).size))throw Error('Expected exactly four nonempty Windows assets');
+          const r=require('/tmp/build-run.json'),jobs=require('/tmp/build-jobs.json').flatMap(p=>p.jobs);
+          const results=jobs.map(j=>'- '+j.name+': '+j.conclusion+(j.steps||[]).filter(s=>s.conclusion==='failure'||s.conclusion==='skipped').map(s=>'\n  - '+s.name+': '+s.conclusion).join('')).join('\n');
+          const status='该提交 Windows 完整 CI 已通过。';
+          fs.writeFileSync('release-notes.md',fs.readFileSync('Windows/RELEASE-NOTES.md','utf8')+'\n## 本次构建验证\n\n'+status+'\n\n'+results+'\n\n构建记录：'+r.html_url+'\n源码：'+r.head_sha+'\n\n官方安装包在线下载验证：https://github.com/'+process.env.GH_REPO+'/actions/runs/'+process.env.GITHUB_RUN_ID+'\n');
+          fs.appendFileSync(process.env.GITHUB_ENV,'RELEASE_TAG=windows-20261106-03\nRELEASE_TITLE=归屿 '+v.display+' Windows\n');
+          JS
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+      - name: Publish each package as a separate release asset
+        id: release
+        if: steps.version.outputs.eligible == 'true'
+        run: |
+          current_tree="$(gh api "repos/$GH_REPO/git/trees/main" --jq '.tree[] | select(.path=="Windows") | .sha')"
+          if [ "$current_tree" != "$(git rev-parse HEAD:Windows)" ]; then
+            echo 'A newer Windows source is awaiting validation; skip this older build.'
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" --target "$SOURCE_SHA" --draft --latest=false --title "$RELEASE_TITLE" --notes-file release-notes.md release-assets/*
+          test "$(gh release view "$RELEASE_TAG" --json assets --jq '.assets | length')" = '5'
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --latest=false
+          gh release view "$RELEASE_TAG" --json url,assets,isDraft,isPrerelease
+          echo 'published=true' >> "$GITHUB_OUTPUT"
+  verify-public-update:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 22
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ia32, x64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish.outputs.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Windows/package-lock.json
+      - run: npm ci --omit=optional --ignore-scripts
+        working-directory: Windows
+      - name: Verify the complete installer with the new downloader
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GUIYU_UPDATE_BASELINE: windows-20261106-02
+          GUIYU_UPDATE_DOWNLOAD_ONLY: '1'
+        run: node Windows/tests/published-update.cjs ${{ matrix.arch }}
